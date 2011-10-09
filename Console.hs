@@ -25,10 +25,10 @@ main = do
     s <- readFile f
     case parse input f s of
         Left err -> print err
-        Right p -> withSequencer "Mode" $ execute ( rules p ) ( read "main" )
+        Right p -> withSequencer "Mode" $ execute p ( read "main" )
       
-execute rs t sq = do      
-    let s = normal rs t
+execute p t sq = do      
+    let s = force_head p t
     print s
     case s of
         Node (Identifier "Nil") [] -> return ()
@@ -42,7 +42,7 @@ execute rs t sq = do
             Node (Identifier "Off") [Number n] ->
                 sendNote sq Event.NoteOn (ChannelMsg.toChannel 0) 
                                        (ChannelMsg.toPitch $ fromIntegral n)
-          execute rs xs sq
+          execute p xs sq
         
 sendNote :: Sequencer SndSeq.OutputMode 
          -> Event.NoteEv
