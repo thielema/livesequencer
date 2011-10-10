@@ -7,14 +7,7 @@ import Program
 import Control.Monad ( mzero )
 import qualified Data.Map as M
 
-full :: Program -> Term -> Term
-full p x = 
-    case top p x of
-        Node f args -> Node f ( map (full p) args )
-        Number n -> Number n
-   
-
--- | force heaf of stream:
+-- | force head of stream:
 -- evaluate until we have Cons or Nil at root,
 -- then evaluate first argument of Cons fully.
 force_head :: Program -> Term -> Term
@@ -25,6 +18,14 @@ force_head p t = case top p t of
       Node ( Identifier "Nil" ) []
     _ -> error $ "force_head: missing case for " ++ show t
 
+-- | force full evaluation 
+-- (result has only constructors and numbers)
+full :: Program -> Term -> Term
+full p x = 
+    case top p x of
+        Node f args -> Node f ( map (full p) args )
+        Number n -> Number n
+   
 -- | evaluate until root symbol is constructor.
 -- TODO: need to add tracing here
 top :: Program -> Term -> Term
@@ -34,6 +35,15 @@ top p t = case t of
       if isConstructor f then t 
       else top p $ eval p (rules p) t
         
+eval p _ t @ ( Node (Identifier op) xs ) 
+  | op `elem` [ "less", "minus", "plus", "times" ] = 
+      let ys = map ( full p ) xs
+      in  case ( op, ys ) of    
+           ( "less", [ Number a, Number b] ) -> Node ( Identifier $ show (a < b) ) []
+           ( "minus", [ Number a, Number b] ) -> Number $ a - b
+           ( "plus", [ Number a, Number b] ) -> Number $ a + b
+           ( "times", [ Number a, Number b] ) -> Number $ a * b
+           
 eval p [] t = error $ unwords [ "eval", show t ]
 eval p (r : rs) t = 
   let Node f xs = lhs r ; Node g ys = t

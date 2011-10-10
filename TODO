@@ -15,8 +15,8 @@ and a feedback loop to the GUI)
 
 * highlight "the rule that is currently applied" in the editor
 
-* highlight "the data (Number) that is currently
-being output" in the editor
+* highlight "the data (Number) that is 
+currently being output" in the editor
 
 * show parse errors in the editor window
 
@@ -25,3 +25,9 @@ being output" in the editor
 
 * add a type checker to the implementation 
   (and data declarations to the language)
+
+* add some numeric computations (as built-ins),
+we need at least "min" and "minus" to merge streams.
+of course "plus", "times" would be nice as well,
+as would comparisons.
+
