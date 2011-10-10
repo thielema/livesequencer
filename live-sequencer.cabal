@@ -9,11 +9,12 @@ Synopsis:
    an interpreter is computing the stream of MIDI events, 
    and (that's the main point) the user can change the program on the fly.
 
+Build-Type: Simple
+
 Source-Repository head
    type: git
-   location: 
+   location: none
 
-Build-Type: Simple
 
 Executable live-sequencer
   Main-is: GUI.hs
