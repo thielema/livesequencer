@@ -4,6 +4,7 @@ Author: Henning Thielemann and Johannes Waldmann
 Category: Sound, Music, GUI
 License: GPL
 License-file: LICENSE
+Cabal-Version: >= 1.2
 Synopsis: 
    An editor shows a textual description of music (like Haskore), 
    an interpreter is computing the stream of MIDI events, 
@@ -16,8 +17,13 @@ Source-Repository head
    location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
 
 Executable live-sequencer
+  Main-is: Console.hs
+  GHC-Options: -Wall -threaded
+  Build-Depends: base, parsec, pretty, containers, 
+    midi-alsa, midi, alsa-seq, alsa-core
+
+Executable live-sequencer-gui
   Main-is: GUI.hs
   GHC-Options: -Wall -threaded
   Build-Depends: base, parsec, pretty, containers, 
     wx, midi-alsa, midi, alsa-seq, alsa-core
-

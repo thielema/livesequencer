@@ -20,9 +20,9 @@ main = do
     s <- readFile f
     case parse input f s of
         Left err -> print err
-        Right p -> withSequencer "Mode" $ execute p ( read "main" )
-      
-execute p t sq = do      
+        Right p -> withSequencer "Rewrite-Sequencer" $ execute p ( read "main" )
+
+execute p t sq = do
     let s = force_head p t
     print s
     case s of
@@ -30,4 +30,4 @@ execute p t sq = do
         Node (Identifier "Cons") [x, xs] -> do
           play_event x sq
           execute p xs sq
-      
+
