@@ -15,12 +15,15 @@ expand ( Cons C xs ) = Cons A (  expand xs ) ;
 append Nil y = y ;
 append (Cons x y) z = Cons x (append y z) ;
 
-hi = note 70 200 ;
-mid = note 64 300 ;
-lo = note 60 200 ;
+hi = note 200 0 72 64 ;
+mid = note 300 0 60 64 ;
+lo = note 400 0 50 64 ;
 
 
-note x y =
-  Cons (On x) (Cons (Wait y) (Cons (Off x) Nil)) ;
+note duration channel pitch velocity =
+  Cons (On channel pitch velocity ) 
+      (Cons (Wait duration) 
+          (Cons (Off channel pitch velocity) 
+               Nil)) ;
 
 

@@ -11,7 +11,9 @@ import Graphics.UI.WX as WX
 import Control.Concurrent
 import Control.Concurrent.MVar
 
+import Event
 import Common
+
 import qualified Sound.MIDI.Message.Channel.Mode as Mode
 import qualified Sound.MIDI.Message.Channel as ChannelMsg
 import qualified Sound.MIDI.ALSA as MidiAlsa
@@ -59,16 +61,8 @@ execute ( program :: MVar Program ) t output sq = do
         Node (Identifier "Nil") [] -> do
             hPutStrLn stderr "finished."
         Node (Identifier "Cons") [x, xs] -> do
-          case x of    
-            Node (Identifier "Wait") [Number n] ->
-                threadDelay (fromIntegral n * 10^3)
-            Node (Identifier "On") [Number n] ->
-                sendNote sq Event.NoteOn (ChannelMsg.toChannel 0) 
-                                       (ChannelMsg.toPitch $ fromIntegral n)
-            Node (Identifier "Off") [Number n] ->
-                sendNote sq Event.NoteOn (ChannelMsg.toChannel 0) 
-                                       (ChannelMsg.toPitch $ fromIntegral n)
-          execute program xs output sq
+            play_event x sq
+            execute program xs output sq
         
 gui input output s = WX.start $ do
     f <- WX.frame [ text := "f" ]
@@ -89,7 +83,7 @@ gui input output s = WX.start $ do
         -- following line is what is intended
         -- (show string in text widget)
         -- but it will crash wx
-        -- set tracer [ text := s ]
+        --    set tracer [ text := s ]
     set f [ layout := container p $ margin 10 
             $ column 5 $ map WX.hfill 
             [ widget editor
@@ -100,18 +94,3 @@ gui input output s = WX.start $ do
     return ()
     
     
-sendMode :: Sequencer SndSeq.OutputMode -> ChannelMsg.Channel -> Mode.T -> IO ()
-sendMode h chan mode = do
-  sendEvent h $
-    Event.CtrlEv Event.Controller $ MidiAlsa.modeEvent chan mode
-               
-               
-sendNote :: Sequencer SndSeq.OutputMode 
-         -> Event.NoteEv
-            -> ChannelMsg.Channel -> ChannelMsg.Pitch -> IO ()
-sendNote h onoff chan pitch = do
-  sendEvent h $
-    Event.NoteEv onoff $ MidiAlsa.noteEvent chan pitch 
-        ( ChannelMsg.toVelocity 64 ) ( ChannelMsg.toVelocity 64 ) 0
-        
-               
