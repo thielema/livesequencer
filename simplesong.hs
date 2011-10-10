@@ -7,7 +7,6 @@ voice1 = concat [ note q 0 60 64 , note h 0 63 64 , note q 0 68 64 ] ;
 
 voice2 = concat [ note h 0 80 64 , note h 0 82 64  ]  ;
 
-
 repeat s = append s (repeat s) ;
 
 append Nil ys = ys ;
