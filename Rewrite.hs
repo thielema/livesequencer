@@ -7,10 +7,20 @@ import Program
 import Control.Monad ( mzero )
 import qualified Data.Map as M
 
+full :: Program -> Term -> Term
+full p x = 
+    case top p x of
+        Node f args -> Node f ( map (full p) args )
+        Number n -> Number n
+   
+
+-- | force heaf of stream:
+-- evaluate until we have Cons or Nil at root,
+-- then evaluate first argument of Cons fully.
 force_head :: Program -> Term -> Term
 force_head p t = case top p t of
     Node ( Identifier "Cons") [ x, xs ] -> 
-      Node ( Identifier "Cons" ) [ top p x, xs ]
+      Node ( Identifier "Cons" ) [ full p x, xs ]
     Node ( Identifier "Nil" ) [] ->
       Node ( Identifier "Nil" ) []
     _ -> error $ "force_head: missing case for " ++ show t
