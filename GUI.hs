@@ -61,10 +61,10 @@ execute ::
    Sequencer SndSeq.OutputMode ->
    IO ()
 execute ( program :: MVar Program ) t output sq = do
-    hPutStrLn stderr "execute"
+    -- hPutStrLn stderr "execute"
     p :: Program <- readMVar program -- this happens anew at each click
                           -- since the program text might have changed in the editor
-    hPutStrLn stderr "got program from MVar"
+    -- hPutStrLn stderr "got program from MVar"
     let s = force_head p t
     writeChan output $ show s
     case s of
@@ -78,24 +78,24 @@ execute ( program :: MVar Program ) t output sq = do
 gui :: Chan String -> Chan String -> String -> IO ()
 gui input output sinit = WX.start $ do
     putStrLn "frame"
-    f <- WX.frame [ text := "f" ]
+    f <- WX.frame [ text := "live-sequencer" ]
     putStrLn "panel"
     p <- WX.panel f [ ]
-
     -- continue <- WX.button p [ text := "continue" ]
     -- pause <- WX.button p [ text := "pause" ]
     -- reset <- WX.button p [ text := "reset" ]
     editor <- textCtrl p [ text := sinit ]
     set editor [ on enterKey :=
                       writeChan input =<< get editor text ]
-    tracer <- textCtrl p []
-    void $ forkIO $ forever $ do
-        s <- readChan output
-        hPutStrLn stderr s
-        -- following line is what is intended
-        -- (show string in text widget)
-        -- but it will crash wx
-        --    set tracer [ text := s ]
+    tracer <- staticText p [ ]
+    -- FIXME: should not poll here
+    WX.timer f [ WX.interval := 100
+               , on command := do  
+                   e <- isEmptyChan output
+                   when ( not e ) $ do
+                       s <- readChan output
+                       set tracer [ text := s ]
+               ]        
     set f [ layout := container p $ margin 10
             $ column 5 $ map WX.fill
             [ widget editor
