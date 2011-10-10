@@ -1,0 +1,23 @@
+Name: live-sequencer
+Version: 0.0
+Author: Henning Thielemann and Johannes Waldmann
+Category: Sound, Music, GUI
+License: GPL
+License-file: LICENSE
+Synopsis: 
+   An editor shows a textual description of music (like Haskore), 
+   an interpreter is computing the stream of MIDI events, 
+   and (that's the main point) the user can change the program on the fly.
+
+Source-Repository head
+   type: git
+   location: 
+
+Build-Type: Simple
+
+Executable live-sequencer
+  Main-is: GUI.hs
+  GHC-Options: -Wall -threaded
+  Build-Depends: base, parsec, pretty, containers, 
+    wx, midi-alsa, midi, alsa-seq, alsa-core
+

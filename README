@@ -1,0 +1,17 @@
+example usage:
+
+timidity -iA &
+./live-sequencer stream.hs &
+aconnect Mode TiMidity &
+
+this should give you an ongoing stream
+of notes
+
+then change one of the numbers 
+that appear in the lines like
+"mid = note 64 300"
+
+this should immediately have an effect
+(change pitch and duration of some
+of the notes)
+

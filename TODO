@@ -1,0 +1,21 @@
+* (easy, not important now) 
+implement start/stop/reset, file loading
+
+* (easy, important) 
+fix the crash that happens when
+writing to textCtrl, cf. line
+-- set tracer [ text := s ]
+in GUI.hs
+
+* proper event handling, cf.
+http://thread.gmane.org/gmane.comp.lang.haskell.cafe/92969
+
+* proper timing (done by the alsa sequencer,
+and a feedback loop to the GUI)
+
+* highlight "the rule that is currently applied" in the editor
+
+* highlight "the data (Number) that is currently
+being output" in the editor
+
+* show parse errors in the editor window
