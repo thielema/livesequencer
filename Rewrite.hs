@@ -36,10 +36,11 @@ top p t = case t of
       else top p $ eval p (rules p) t
         
 eval p _ t @ ( Node (Identifier op) xs ) 
-  | op `elem` [ "less", "minus", "plus", "times" ] = 
+  | op `elem` [ "compare", "less", "minus", "plus", "times" ] = 
       let ys = map ( full p ) xs
       in  case ( op, ys ) of    
            ( "less", [ Number a, Number b] ) -> Node ( Identifier $ show (a < b) ) []
+           ( "compare", [ Number a, Number b] ) -> Node ( Identifier $ show (compare a b) ) []
            ( "minus", [ Number a, Number b] ) -> Number $ a - b
            ( "plus", [ Number a, Number b] ) -> Number $ a + b
            ( "times", [ Number a, Number b] ) -> Number $ a * b

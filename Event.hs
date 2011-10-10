@@ -23,6 +23,9 @@ play_event x sq = case x of
                 sendNote sq Event.NoteOff (ChannelMsg.toChannel $ fromIntegral c) 
                                        (ChannelMsg.toPitch $ fromIntegral p)
                                           (ChannelMsg.toVelocity $ fromIntegral v)
+            Node (Identifier "PgmChange") [Number c, Number p, Number v] ->
+                sendEvent sq $ Event.CtrlEv Event.PgmChange $ Event.Ctrl
+                               (fromIntegral c) (fromIntegral p) (fromIntegral v)
 
         
 sendNote :: Sequencer SndSeq.OutputMode 
