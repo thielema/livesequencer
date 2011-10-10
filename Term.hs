@@ -34,7 +34,12 @@ instance Read Term where readsPrec = parsec_reader
 
 instance Input Term where 
   input = let p atomic = do ds <- many1 digit ; spaces ; return $ Number $ read ds
-                 <|> do string "(" ; spaces ; x <- p False ; string ")" ; spaces ; return x
+                 <|> do string "(" ; spaces ; x <- input ; string ")" ; spaces ; return x
+                 <|> do string "[" ; spaces       
+                        xs <- sepBy input $ do string "," ; spaces
+                        string "]" ; spaces
+                        return $ foldr ( \ x xs -> Node (Identifier "Cons") [x, xs] )
+                                       ( Node (Identifier "Nil") [] ) xs
                  <|> do f <- input ; args <- if atomic then return [] else many ( p True )
                         return $ Node f args
           in  p False

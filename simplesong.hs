@@ -3,18 +3,18 @@ main = repeat ( merge voice1 voice2 ) ;
 q = 600 ;
 h = times 2 q ;
 
-voice1 = append ( note q 0 60 64 )
-       ( append ( note h 0 63 64 )
-                ( note q 0 68 64 ) ) ;
+voice1 = concat [ note q 0 60 64 , note h 0 63 64 , note q 0 68 64 ] ;
 
-voice2 = append ( note h 0 80 64 )
-                ( note h 0 82 64 )  ;
+voice2 = concat [ note h 0 80 64 , note h 0 82 64  ]  ;
 
 
 repeat s = append s (repeat s) ;
 
 append Nil ys = ys ;
 append (Cons x xs) ys = Cons x (append xs ys) ;
+
+concat Nil = Nil ;
+concat (Cons x xs) = append x (concat xs) ;
 
 merge (Cons (Wait a) xs) (Cons (Wait b) ys) = 
   mergehelper (less a b) a xs b ys ;
@@ -32,9 +32,8 @@ mergehelper False a xs b ys =
   Cons (Wait b) (merge (Cons (Wait (minus a b)) xs) ys) ;
 
 note duration channel pitch velocity =
-  Cons (On channel pitch velocity ) 
-      (Cons (Wait duration) 
-          (Cons (Off channel pitch velocity) 
-               Nil)) ;
-
+  [ On channel pitch velocity 
+  , Wait duration
+  , Off channel pitch velocity
+  ] ;
 
