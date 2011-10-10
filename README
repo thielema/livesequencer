@@ -24,7 +24,7 @@ no local bindings (no lambda, let, where)
 semantics is similar to lazy evaluation,
 the value of "main" is a stream of midi events
 (On/Off <channel> <pitch> <velocity>)
-or (Delay <milliseconds>)
+or (Wait <milliseconds>)
 
 in each step, the head of the stream gets reduced
 to head normal form (with Cons at the top),

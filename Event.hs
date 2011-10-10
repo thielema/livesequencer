@@ -20,7 +20,7 @@ play_event x sq = case x of
                           (ChannelMsg.toPitch $ fromIntegral p)
                                        (ChannelMsg.toVelocity $ fromIntegral v)
             Node (Identifier "Off") [Number c, Number p, Number v] ->
-                sendNote sq Event.NoteOn (ChannelMsg.toChannel $ fromIntegral c) 
+                sendNote sq Event.NoteOff (ChannelMsg.toChannel $ fromIntegral c) 
                                        (ChannelMsg.toPitch $ fromIntegral p)
                                           (ChannelMsg.toVelocity $ fromIntegral v)
 
