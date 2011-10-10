@@ -13,8 +13,7 @@ Build-Type: Simple
 
 Source-Repository head
    type: git
-   location: none
-
+   location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
 
 Executable live-sequencer
   Main-is: GUI.hs
