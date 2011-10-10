@@ -19,3 +19,9 @@ and a feedback loop to the GUI)
 being output" in the editor
 
 * show parse errors in the editor window
+
+* use haskell-src(-exts) for parsing, to be sure
+  we have a subset of haskell
+
+* add a type checker to the implementation 
+  (and data declarations to the language)
