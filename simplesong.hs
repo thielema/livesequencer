@@ -10,9 +10,9 @@ base = append (note q 10 10 64)
               (note q 10 40 64) ) ) ;
 
 break = append (note q 10 20 64)
-          (append (note q 10 25 64)
-             (append (note q 10 25 64)
-                     (note q 10 35 64) ) ) ;
+       (append (note q 10 25 64)
+       (append (note q 10 25 64)
+               (note q 10 35 64) ) ) ;
 
 repeat s = append s (repeat s) ;
 
