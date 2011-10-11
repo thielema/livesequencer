@@ -14,11 +14,12 @@ import Control.Monad ( forM )
 
 import Control.Concurrent
 
--- | read rules file, start expansion of "main"
+-- | read rules files, start expansion of "main"
 main = do
-    [ f ] <- getArgs
-    s <- readFile f
-    case parse input f s of
+    fs <- getArgs
+    ss <- forM fs readFile 
+    let s = concat ss
+    case parse input "fs" s of
         Left err -> print err
         Right p -> withSequencer "Rewrite-Sequencer" $ execute p ( read "main" )
 

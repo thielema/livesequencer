@@ -22,17 +22,18 @@ import Common
 
 import qualified Sound.ALSA.Sequencer as SndSeq
 
-import Control.Monad ( forever, void )
+import Control.Monad ( forever, void, forM )
 import Text.Parsec ( parse )
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
--- | read rules file, should contain definition for "main"
+-- | read rules files, should contain definition for "main"
 main :: IO ()
 main = do
     hSetBuffering stderr LineBuffering
-    [ f ] <- getArgs
-    s <- readFile f
+    fs <- getArgs
+    ss <- forM fs readFile 
+    let s = concat ss
     input <- newChan
     writeChan input s
     output <- newChan
