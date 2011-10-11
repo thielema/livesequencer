@@ -12,6 +12,11 @@ import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 
+import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
+import Graphics.UI.WXCore.WxcClassesMZ ( wxEVT_COMMAND_MENU_SELECTED )
+import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
+
+import Graphics.UI.WXCore.Events 
 import Event
 import Common
 
@@ -52,12 +57,19 @@ machine input output sinit sq = do
                 hPutStrLn stderr "parser OK"
                 void $ swapMVar program p
                 hPutStrLn stderr "swapped OK"
-    execute program ( read "main" ) output sq
+    execute program ( read "main" ) ( writeChan output ) sq
+
+-- | following code taken from http://snipplr.com/view/17538/
+myEventId = wxID_HIGHEST+1 -- the custom event ID
+-- | the custom event is registered as a menu event
+createMyEvent = commandEventCreate wxEVT_COMMAND_MENU_SELECTED myEventId
+registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
+ 
 
 execute ::
    MVar Program ->
    Term ->
-   Chan String ->
+   ( String -> IO () ) ->
    Sequencer SndSeq.OutputMode ->
    IO ()
 execute ( program :: MVar Program ) t output sq = do
@@ -66,7 +78,7 @@ execute ( program :: MVar Program ) t output sq = do
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
     let s = force_head p t
-    writeChan output $ show s
+    output $ show s
     case s of
         Node (Identifier "Nil") [] -> do
             hPutStrLn stderr "finished."
@@ -79,6 +91,15 @@ gui :: Chan String -> Chan String -> String -> IO ()
 gui input output sinit = WX.start $ do
     putStrLn "frame"
     f <- WX.frame [ text := "live-sequencer" ]
+
+    out <- varCreate "output"
+
+    forkIO $ forever $ do
+        s <- readChan output
+        varSet out s
+        ev <- createMyEvent
+        evtHandlerAddPendingEvent f ev
+
     putStrLn "panel"
     p <- WX.panel f [ ]
     -- continue <- WX.button p [ text := "continue" ]
@@ -88,6 +109,14 @@ gui input output sinit = WX.start $ do
     set editor [ on enterKey :=
                       writeChan input =<< get editor text ]
     tracer <- staticText p [ ]
+
+
+    registerMyEvent f $ do
+        -- putStrLn "The custom event is fired!!"
+        s <- varGet out
+        set tracer [ text := s ]
+
+{-
     -- FIXME: should not poll here
     WX.timer f [ WX.interval := 100
                , on command := do  
@@ -96,6 +125,8 @@ gui input output sinit = WX.start $ do
                        s <- readChan output
                        set tracer [ text := s ]
                ]        
+-}
+
     set f [ layout := container p $ margin 10
             $ column 5 $ map WX.fill
             [ widget editor
