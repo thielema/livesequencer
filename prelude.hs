@@ -4,6 +4,10 @@ note duration channel pitch velocity =
   , Off channel pitch velocity
   ] ;
 
+replicate 0 x = [] ;
+replicate n x = 
+  Cons x ( replicate ( minus n 1 ) x ) ;
+
 repeat s = append s (repeat s) ;
 
 append Nil ys = ys ;

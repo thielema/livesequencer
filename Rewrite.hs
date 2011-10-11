@@ -62,6 +62,10 @@ eval p (r : rs) t =
 match_expand :: Program -> Term -> Term -> ( Maybe (M.Map Identifier Term) , Term )
 match_expand p pat t = case pat of
   Node f [] | isVariable f -> ( Just $ M.fromList [( f, t )], t )
+  Number a -> 
+      let t' @ ( Number b ) = top p t
+      in  if a /= b then ( Nothing, t' )    
+          else ( Just M.empty, t' )               
   Node f xs ->
       let t' @ ( Node g ys ) = top p t
       in  if f /= g then ( Nothing, t' )

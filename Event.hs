@@ -26,7 +26,7 @@ play_event x sq = case x of
             Node (Identifier "PgmChange") [Number c, Number p, Number v] ->
                 sendEvent sq $ Event.CtrlEv Event.PgmChange $ Event.Ctrl
                                (fromIntegral c) (fromIntegral p) (fromIntegral v)
-
+            _ -> error $ "Event.play_event: missing case for: " ++ show x
         
 sendNote :: Sequencer SndSeq.OutputMode 
          -> Event.NoteEv
