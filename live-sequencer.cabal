@@ -26,4 +26,4 @@ Executable live-sequencer-gui
   Main-is: GUI.hs
   GHC-Options: -Wall -threaded
   Build-Depends: base, parsec, pretty, containers, 
-    wx, midi-alsa, midi, alsa-seq, alsa-core
+    wx, wxcore, midi-alsa, midi, alsa-seq, alsa-core
