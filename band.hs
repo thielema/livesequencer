@@ -71,6 +71,3 @@ note duration channel pitch velocity =
   , Wait duration
   , Off channel pitch velocity
   ] ;
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

@@ -108,30 +108,18 @@ gui input output sinit = WX.start $ do
     editor <- textCtrl p [ text := sinit ]
     set editor [ on enterKey :=
                       writeChan input =<< get editor text ]
+
     tracer <- staticText p [ ]
-
-
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
         s <- varGet out
         set tracer [ text := s ]
 
-{-
-    -- FIXME: should not poll here
-    WX.timer f [ WX.interval := 100
-               , on command := do  
-                   e <- isEmptyChan output
-                   when ( not e ) $ do
-                       s <- readChan output
-                       set tracer [ text := s ]
-               ]        
--}
-
-    set f [ layout := container p $ margin 10
+    set f [ layout := minsize (sz 500 300) $ container p $ margin 10
             $ column 5 $ map WX.fill
             [ widget editor
             -- , widget continue, widget pause, widget reset
             , widget tracer
             ]
           ]
-    putStrLn "return"
+
