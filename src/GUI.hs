@@ -21,7 +21,7 @@ import Common
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Control.Monad ( forever, forM )
-import Control.Monad.Writer
+import Control.Monad.Trans.Writer ( runWriter )
 import Text.Parsec ( parse )
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )

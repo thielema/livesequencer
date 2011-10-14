@@ -10,8 +10,7 @@ import Common
 
 import Text.Parsec
 import System.Environment
-import Control.Monad.Writer
-import Control.Concurrent
+import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad ( forM, forM_ )
 
 -- | read rules files, start expansion of "main"

@@ -4,8 +4,8 @@ import Term
 import Rule
 import Program
 
-import Control.Monad ( mzero )
-import Control.Monad.Writer
+import Control.Monad ( forM )
+import Control.Monad.Trans.Writer ( Writer, tell )
 import qualified Data.Map as M
 import Text.Parsec.Pos ( SourcePos )
 
