@@ -18,7 +18,7 @@ match vs p t = case p of
       Node g ys | f == g && length xs == length ys -> do
           ms <- forM ( zip xs ys ) $ \ (x,y) -> match vs x y
           return $ M.unionsWith ( error "non-linear pattern" ) ms
-      _ -> mzero    
+      _ -> mzero
 
 
 root_step :: Rule -> Term -> Maybe Term

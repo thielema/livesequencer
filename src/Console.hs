@@ -22,7 +22,7 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     fs <- getArgs
-    ss <- forM fs readFile 
+    ss <- forM fs readFile
     let s = concat ss
     case parse input "fs" s of
         Left err -> print err

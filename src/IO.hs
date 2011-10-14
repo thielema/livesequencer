@@ -4,7 +4,7 @@ import Text.Parsec
 import Text.PrettyPrint.HughesPJ
 
 class Input a where input :: Parsec String () a
-class Output a where output :: a -> Doc                    
+class Output a where output :: a -> Doc
 
 parsec_reader ::
     (Input a) =>

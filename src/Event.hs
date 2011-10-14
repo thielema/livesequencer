@@ -20,19 +20,19 @@ play_event x sq = case x of
             Node i [Number n] | name i == "Wait" ->
                 threadDelay (fromIntegral n * 1000)
             Node i [Number c, Number p, Number v] | name i == "On" ->
-                sendNote sq Event.NoteOn (ChannelMsg.toChannel $ fromIntegral c) 
+                sendNote sq Event.NoteOn (ChannelMsg.toChannel $ fromIntegral c)
                           (ChannelMsg.toPitch $ fromIntegral p)
                                        (ChannelMsg.toVelocity $ fromIntegral v)
             Node i [Number c, Number p, Number v] | name i == "Off" ->
-                sendNote sq Event.NoteOff (ChannelMsg.toChannel $ fromIntegral c) 
+                sendNote sq Event.NoteOff (ChannelMsg.toChannel $ fromIntegral c)
                                        (ChannelMsg.toPitch $ fromIntegral p)
                                           (ChannelMsg.toVelocity $ fromIntegral v)
             Node i [Number c, Number p, Number v] | name i == "PgmChange" ->
                 sendEvent sq $ Event.CtrlEv Event.PgmChange $ Event.Ctrl
                                (fromIntegral c) (fromIntegral p) (fromIntegral v)
             _ -> error $ "Event.play_event: missing case for: " ++ show x
-        
-sendNote :: Sequencer SndSeq.OutputMode 
+
+sendNote :: Sequencer SndSeq.OutputMode
          -> Event.NoteEv
             -> ChannelMsg.Channel -> ChannelMsg.Pitch -> ChannelMsg.Velocity
             -> IO ()

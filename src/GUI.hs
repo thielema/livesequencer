@@ -1,3 +1,5 @@
+-- module GUI where
+
 {-# LANGUAGE ScopedTypeVariables #-}
 
 import qualified IO
@@ -15,7 +17,7 @@ import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 import Graphics.UI.WXCore.WxcClassesMZ ( wxEVT_COMMAND_MENU_SELECTED )
 import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
 
-import Graphics.UI.WXCore.Events 
+import Graphics.UI.WXCore.Events
 import Event
 import Common
 
@@ -51,8 +53,8 @@ main = do
 
 machine :: Chan (FilePath, String) -- ^ machine reads program text from here
         -> Chan String -- ^ and writes output to here
-        -> ( M.Map FilePath Program ) -- ^ initial program 
-        -> Sequencer SndSeq.OutputMode 
+        -> ( M.Map FilePath Program ) -- ^ initial program
+        -> Sequencer SndSeq.OutputMode
         -> IO ()
 machine input output pack sq = do
     package <- newMVar pack
@@ -79,7 +81,8 @@ createMyEvent = commandEventCreate wxEVT_COMMAND_MENU_SELECTED myEventId
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
-execute :: MVar ( M.Map FilePath Program ) 
+
+execute :: MVar ( M.Map FilePath Program )
                   -- ^ current program (GUI might change the contents)
         -> Term -- ^ current term
         -> ( String -> IO () ) -- ^ sink for messages (show current term)
@@ -101,7 +104,7 @@ execute program t output sq = do
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
-gui :: Chan (FilePath, String) -- ^  the gui writes here 
+gui :: Chan (FilePath, String) -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan String -- ^ the machine writes here
       -- (a textual representation of "current expression")
@@ -109,8 +112,8 @@ gui :: Chan (FilePath, String) -- ^  the gui writes here
     -> IO ()
 gui input output pack = WX.start $ do
     putStrLn "frame"
-    f <- WX.frame 
-        [ text := "live-sequencer", visible := False 
+    f <- WX.frame
+        [ text := "live-sequencer", visible := False
         ]
 
     out <- varCreate "output"
