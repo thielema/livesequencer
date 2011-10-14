@@ -21,9 +21,9 @@ lo = note 400 0 50 64 ;
 
 
 note duration channel pitch velocity =
-  Cons (On channel pitch velocity ) 
-      (Cons (Wait duration) 
-          (Cons (Off channel pitch velocity) 
+  Cons (On channel pitch velocity )
+      (Cons (Wait duration)
+          (Cons (Off channel pitch velocity)
                Nil)) ;
 
 
