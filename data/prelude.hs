@@ -1,8 +1,11 @@
 note duration pitch velocity =
-  [ On pitch velocity
+  [ Event (On pitch velocity)
   , Wait duration
-  , Off pitch velocity
+  , Event (Off pitch velocity)
   ] ;
+
+program n =
+  [ Event ( PgmChange n ) ] ;
 
 replicate 0 x = [] ;
 replicate n x =
@@ -15,10 +18,8 @@ channel chan Nil = Nil ;
 channel chan (Cons x xs) =
    Cons (channelEvent chan x) (channel chan xs) ;
 
-channelEvent chan (On  pitch velocity) = Channel chan (On  pitch velocity) ;
-channelEvent chan (Off pitch velocity) = Channel chan (Off pitch velocity) ;
-channelEvent chan (PgmChange program)  = Channel chan (PgmChange program) ;
-channelEvent chan (Wait duration)      = Wait duration ;
+channelEvent chan (Event event) = Event (Channel chan event) ;
+channelEvent chan (Wait duration) = Wait duration ;
 
 append Nil ys = ys ;
 append (Cons x xs) ys = Cons x (append xs ys) ;

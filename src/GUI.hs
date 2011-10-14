@@ -111,7 +111,6 @@ gui :: Chan (FilePath, String) -- ^  the gui writes here
     -> M.Map FilePath String -- ^ initial texts for modules
     -> IO ()
 gui input output pack = WX.start $ do
-    putStrLn "frame"
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]

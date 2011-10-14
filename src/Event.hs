@@ -19,23 +19,25 @@ play_event ::
 play_event x sq = case x of
     Node i [Number n] | name i == "Wait" ->
         threadDelay (fromIntegral n * 1000)
-    Node ic [Number c, body] | name ic == "Channel" ->
-        let chan = ChannelMsg.toChannel $ fromIntegral c
-        in  case body of
-                Node i [Number p, Number v] | name i == "On" ->
-                    sendNote sq Event.NoteOn chan
-                        (ChannelMsg.toPitch $ fromIntegral p)
-                        (ChannelMsg.toVelocity $ fromIntegral v)
-                Node i [Number p, Number v] | name i == "Off" ->
-                    sendNote sq Event.NoteOff chan
-                        (ChannelMsg.toPitch $ fromIntegral p)
-                        (ChannelMsg.toVelocity $ fromIntegral v)
-                Node i [Number p] | name i == "PgmChange" ->
-                    sendEvent sq $ Event.CtrlEv Event.PgmChange $
-                        MidiAlsa.programChangeEvent chan
-                            (ChannelMsg.toProgram $ fromIntegral p)
-                _ -> putStrLn $ "Event.play_event: unknown channel event " ++ show x
-    _ -> putStrLn $ "Event.play_event: cannot play " ++ show x
+    Node ie [event] | name ie == "Event" -> case event of
+        Node ic [Number c, body] | name ic == "Channel" ->
+            let chan = ChannelMsg.toChannel $ fromIntegral c
+            in  case body of
+                    Node i [Number p, Number v] | name i == "On" ->
+                        sendNote sq Event.NoteOn chan
+                            (ChannelMsg.toPitch $ fromIntegral p)
+                            (ChannelMsg.toVelocity $ fromIntegral v)
+                    Node i [Number p, Number v] | name i == "Off" ->
+                        sendNote sq Event.NoteOff chan
+                            (ChannelMsg.toPitch $ fromIntegral p)
+                            (ChannelMsg.toVelocity $ fromIntegral v)
+                    Node i [Number p] | name i == "PgmChange" ->
+                        sendEvent sq $ Event.CtrlEv Event.PgmChange $
+                            MidiAlsa.programChangeEvent chan
+                                (ChannelMsg.toProgram $ fromIntegral p)
+                    _ -> putStrLn $ "Event.play_event: unknown channel event " ++ show x
+        _ -> putStrLn $ "Event.play_event: Event must contain Channel, but not " ++ show x
+    _ -> putStrLn $ "Event.play_event: can only process Wait or Event, but not " ++ show x
 
 sendNote :: Sequencer SndSeq.OutputMode
          -> Event.NoteEv
