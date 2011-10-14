@@ -17,12 +17,14 @@ Source-Repository head
    location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
 
 Executable live-sequencer
+  hs-source-dirs: src
   Main-is: Console.hs
   GHC-Options: -Wall -threaded
   Build-Depends: base, parsec, pretty, containers, 
     midi-alsa, midi, alsa-seq, alsa-core
 
 Executable live-sequencer-gui
+  hs-source-dirs: src
   Main-is: GUI.hs
   GHC-Options: -Wall -threaded
   Build-Depends: base, parsec, pretty, containers, 
