@@ -1,0 +1,203 @@
+\documentclass[a4paper]{easychair}
+\title{Haskell Live Programming}
+\titlerunning{Haskell Live Programming}
+\author{
+  Henning Thielemann \\ Universität Halle 
+  \and
+  Johannes Waldmann \\ HTWK Leipzig
+}
+\authorrunning{Thielemann and Waldmann}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  We present the design of a software system 
+  that allows to interleave the execution of Haskell code
+  with user interactions that change parts of the code.
+  The system presents visial aids for the programmer,
+  to see ``what's currently happening''.
+  The system is used for ``live composition'' of music,
+  where a potentially infinite stream of MIDI events is produced.
+  Another application is visualization of the Haskell
+  evaluation strategy, which is useful in  teaching or debugging.
+\end{abstract}
+
+\section{Introduction}
+
+\paragraph{Motivation from a musician's perspective.}
+
+A piece of music can be represented as a sequence of events
+(note-on, note-off) with parameters (instrument, pitch, etc.)
+The MIDI standard \cite{mma:midispec} defines such a notation.
+
+Such a stream of events is obtained as the rendering
+of a composition that has a tree-like structure,
+where the leaf nodes are basic events,
+and the inner nodes are operators (e.g., for
+sequential and parallel composition, and transformations).
+The Haskore language \cite{hudak:theory} defines such a tree-like structure
+(an algebra).
+
+In a live performance, the musician typically wants to change
+the tree model, in order to include spontaneous ideas
+(improvisations) of his own, or in reaction to actions of
+the other musicians in a group performance.
+Such improvised changes usually are localized: Some
+sub-tree is changed while the context of the subtree is kept.
+
+The performance must be kept going, so an edit/compile/run mode
+of operation cannot be used. This poses the challenge of
+rendering and editing a structured composition at the same time.
+
+\paragraph{Motivation from a programmer's perspective.}
+
+When trying to understand the observable behaviour of a computer program,
+it can be helpful to inspect some of the internal behaviour
+of the (virtual) machine that executes the program.
+E.g., in debugging sessions for programs in an imperative language,
+the ``current statement'' is highlighted, and ``current assignment''
+of some variables that are in scope is shown.
+
+For the execution of Haskell programs, 
+a similar tracing of program execution is desirable.
+Haskell can be considere a rule-based language:
+a program consists of function definitions,
+these are ordered equations that are applied
+(as rewrite rules) to the ``main'' expression that is under evaluation.
+
+Therefore the execution of a Haskel program is a sequence of states,
+where a state is the expression being rewritten,
+and a state transition is the application of one program rule
+to one subterm (redex).
+
+The idea of live programming can then be modelled by
+adding the rules to the state, and introducing another kind of
+state transitions, namely, changes in the rules.
+
+\paragraph{Lazy Evaluation and live programming.}
+
+Haskell's lazy evalution fits well with music,
+and with live programming:
+
+A music performance is a stream of events.
+These events happen in time, and future events need not be
+computed too much in advance. It is enought to produce events as needed.
+This allows potentially infinite compositions
+that still could be rendered in finite space. 
+(Quite often, the space is bounded as the composition is a finite automaton).
+
+Now it is a natural idea that changes in the program
+will influence the computation of future events
+This is obtained for free since for each state,
+the ``tail'' of the event stream is un-evaluated (since Cons is lazy),
+and when evaluation happens, it will use the then-current rules.
+
+\paragraph{Design considerations.}
+
+The input language syntactically is a subset of Haskell,
+and for this subset, the semantics should be identical to that of Haskell.
+
+Reasons: programmers don't have to learn a different language,
+programs could be executed (with the same output, but without live editing) 
+on any Haskell system.
+
+
+\section{Realization of Operational Semantics.}
+
+To simplify matters for the moment, we consider first-order programs only.
+The underlying model is term rewriting,
+with an evaluation strategy that corresponds 
+to Call-By-Need evaluation where the ``need'' arised by pattern matching.
+
+A rewrite step consists of 
+\begin{itemize}
+\item 
+  determining a position (a subterm) in the input term,
+  according to the evaluation strategy
+\item
+  determining a substitution,
+  by matching the left-hand side of a rule
+  with the subterm,
+\item 
+  the application of this substitution
+  to the right-hand side of this rule.
+\end{itemize}
+
+\section{Named Subterms}
+
+Assume a rule $l \to f(A,B)$ is applied to the input expression,
+for a function symbol $f$, and sub-terms $A,B$.
+Assume $f$ has the semantics of ``append''.
+Evaluation proceeds, and the subterm $A$ is evaluated
+(the sub-composition is rendered).
+
+What happens if the programmer changes the expression $B$
+in the source text? Actually, nothing will change, 
+since the original shape of $B$ is already present
+in the current term, so the sub-composition $B$ will
+be rendered as it was when the rule was originally given.
+This may or may not be the intented semantics.
+
+We can transform the program: add a fresh symbol $b$,
+and consider the rule set $\{l \to f(A, b), b\to B\}$ instead.
+The overall semantics is identical (with one extra
+reduction step $b\to B$ that would go unnoticed since it does not
+procuce events)
+but the live-programming behaviour is different:
+as long as $A$ is evaluated, the rule $b\to B$
+could be replaced by another rule $b\to B'$
+and this change would have an effect.
+
+The transformation, as given, does not handle the case
+that $B$ contains variables. 
+Values for these variables will be determined by matching $l$, 
+but they need to be transported. 
+Assume $l$ and $B$ contain a variable $v$,
+then the transformed program should be $\{l \to f(A,b(v)), b(v) \to B\}$.
+
+It is conceivable to apply this transformation
+to each subterm of the right-hand side of each rule.
+(In other words, each subterm gets a fresh name,
+and is made a ``top-level'' entity.)
+
+The execution of the program then involves additional steps
+that correspond to the distribution of the ``current substitution''
+down the right-hand side. This is typical for calculi
+of explicit substitution \cite{DBLP:conf/popl/Lescanne94}.
+
+The program transformation should be hidden from the programmer.
+Instead, the source code parser needs to ensure a reasonable relation
+between the names for subterms, from one version of the program text
+to the next, using some form of common-subtree detection.
+
+A welcome side effect of this translation is that
+each reduction step refers to one subterm (of the rhs),
+so this position can be highlighted in the editor window,
+so the programmer can observer the execution of the program.
+
+\section{Implementation}
+
+Implementation started October 8, 2011.
+The software is written in Haskell,
+using Alsa/Midi modules,
+and the WX graphical user interface toolkit.
+
+\begin{itemize}
+\item download source code: \url{git://dfa.imn.htwk-leipzig.de/srv/git/seq/}
+\item browse source code: \url{http://dfa.imn.htwk-leipzig.de/cgi-bin/gitweb.cgi?p=seq.git}
+\item bugs database: \url{http://dfa.imn.htwk-leipzig.de/bugzilla/describecomponents.cgi?product=live-sequencer}
+\end{itemize}
+
+\section{Related Work}
+
+\begin{itemize}
+\item systems for live programming of music
+\item hot code replacement in Erlang
+\item Java code replacement in debugging sessions in Eclipse
+\end{itemize}
+
+\bibliographystyle{alpha}
+\bibliography{seq}
+
+\end{document}
