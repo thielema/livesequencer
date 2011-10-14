@@ -10,9 +10,9 @@ import Common
 
 import Text.Parsec
 import System.Environment
-import Control.Monad ( forM )
 import Control.Monad.Writer
 import Control.Concurrent
+import Control.Monad ( forM, forM_ )
 
 -- | read rules files, start expansion of "main"
 main = do
@@ -25,7 +25,7 @@ main = do
 
 execute p t sq = do
     let (s, log) = runWriter $ force_head p t
-    forM log print
+    forM_ log print
     print s
     case s of
         Node i [] | name i == "Nil" -> return ()
