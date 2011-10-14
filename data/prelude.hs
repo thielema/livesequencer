@@ -34,8 +34,7 @@ merge (Cons (Wait a) xs) (Cons y ys) =
 merge (Cons x xs) (Cons (Wait b) ys) =
   Cons x (merge xs (Cons (Wait b) ys)) ;
 merge (Cons x xs) ys = Cons x (merge xs ys) ;
-merge xs (Cons y ys) = Cons y (merge xs ys) ;
-merge Nil ys = ys ; merge xs Nil = xs ;
+merge Nil ys = ys ;
 
 mergehelper LT  a xs b ys =
   Cons (Wait a) (merge xs (Cons (Wait (minus b a)) ys)) ;
