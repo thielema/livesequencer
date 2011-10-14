@@ -5,6 +5,7 @@ Category: Sound, Music, GUI
 License: GPL
 License-file: LICENSE
 Cabal-Version: >= 1.2
+Tested-With: GHC==6.12.3, GHC==7.2.1
 Synopsis: 
    An editor shows a textual description of music (like Haskore), 
    an interpreter is computing the stream of MIDI events, 
