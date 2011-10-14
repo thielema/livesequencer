@@ -7,7 +7,7 @@ note duration pitch velocity =
 program n =
   [ Event ( PgmChange n ) ] ;
 
-replicate 0 x = [] ;
+replicate 0 x = Nil ;
 replicate n x =
   Cons x ( replicate ( minus n 1 ) x ) ;
 
