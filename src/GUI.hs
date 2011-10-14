@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternSignatures #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import qualified IO
 import Term
