@@ -1,7 +1,7 @@
 note duration channel pitch velocity =
-  [ On channel pitch velocity 
+  [ Channel channel (On pitch velocity)
   , Wait duration
-  , Off channel pitch velocity
+  , Channel channel (Off pitch velocity)
   ] ;
 
 replicate 0 x = [] ;
@@ -32,4 +32,3 @@ mergehelper EQ  a xs b ys =
   Cons (Wait a) (merge xs ys) ;
 mergehelper GT a xs b ys = 
   Cons (Wait b) (merge (Cons (Wait (minus a b)) xs) ys) ;
-
