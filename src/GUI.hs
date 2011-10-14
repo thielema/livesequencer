@@ -20,7 +20,7 @@ import Common
 
 import qualified Sound.ALSA.Sequencer as SndSeq
 
-import Control.Monad ( forever, void, forM )
+import Control.Monad ( forever, forM )
 import Control.Monad.Writer
 import Text.Parsec ( parse )
 import System.Environment ( getArgs )
@@ -106,7 +106,7 @@ gui input output pack = WX.start $ do
 
     out <- varCreate "output"
 
-    forkIO $ forever $ do
+    void $ forkIO $ forever $ do
         s <- readChan output
         varSet out s
         ev <- createMyEvent
