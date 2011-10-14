@@ -122,7 +122,7 @@ gui input output pack = WX.start $ do
 
     panels <- forM (M.toList pack) $ \ (f, s) -> do
         psub <- panel nb []
-        editor <- textCtrl psub [ text := s ]
+        editor <- textCtrl psub [ font := fontFixed ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
         set editor [ text := s
@@ -132,7 +132,7 @@ gui input output pack = WX.start $ do
                    ]
         return $ tab f  $ container psub $ WX.fill $ widget editor
 
-    tracer <- staticText p [ ]
+    tracer <- staticText p [ font := fontFixed ]
 
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
