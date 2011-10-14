@@ -1,14 +1,18 @@
 module Term where
 
 import IO
+import Common ( void )
 
-import Text.Parsec
+import qualified Text.ParserCombinators.Parsec.Token as T
+import qualified Text.ParserCombinators.Parsec.Language as L
+import Text.ParserCombinators.Parsec ( Parser )
+import Text.Parsec as Parsec
 import Text.PrettyPrint.HughesPJ
 
 import qualified Data.Set as S
 import Control.Monad ( mzero )
 import Data.Char (isUpper, isLower)
-                     
+
 data Identifier =  Identifier { name :: String , position :: SourcePos }
 
 instance Eq Identifier where
@@ -18,18 +22,40 @@ instance Eq Identifier where
 
 instance Ord Identifier where
     compare i j = compare ( name i ) ( name j )
-                            
+
 isConstructor :: Identifier -> Bool
 isConstructor i = isUpper $ head $ name i
 
 isVariable :: Identifier -> Bool
 isVariable i = isLower $ head $ name i
 
+
+
+lexer :: T.TokenParser st
+lexer =
+   T.makeTokenParser $ L.emptyDef {
+      L.commentStart = "{-",
+      L.commentEnd = "-}",
+      L.commentLine = "--",
+      L.nestedComments = True,
+      L.identStart = letter <|> Parsec.char '_',
+      L.identLetter = alphaNum <|> Parsec.char '_',
+      L.caseSensitive = True
+   }
+
+
+identifier :: Parser String
+identifier = T.identifier lexer
+
+symbol :: String -> Parser ()
+symbol = void . T.symbol lexer
+
+
 instance Input Identifier where
-  input = do 
+  input = do
       p <- getPosition
-      x <- letter ; xs <- many alphaNum ; spaces ; 
-      return $ Identifier { name = x : xs , position = p }
+      x <- identifier
+      return $ Identifier { name = x , position = p }
 
 instance Output Identifier where
   output i = text $ name i
@@ -37,31 +63,34 @@ instance Output Identifier where
 data Term = Node Identifier [ Term ]
           | Number Integer  -- ^ FIXME: Number is missing source information
     deriving ( Eq, Ord )
-             
+
 instance Show Term where show = render . output
 instance Read Term where readsPrec = parsec_reader
 
 
-instance Input Term where 
-  input = let p atomic = do ds <- many1 digit ; spaces ; return $ Number $ read ds
-                 <|> do string "(" ; spaces ; x <- input ; string ")" ; spaces ; return x
-                 <|> do bracketed_list
+instance Input Term where
+  input = let p atomic =
+                     fmap Number (T.integer lexer)
+                 <|> T.parens lexer input
+                 <|> bracketed_list
                  <|> do f <- input ; args <- if atomic then return [] else many ( p True )
                         return $ Node f args
           in  p False
 
+bracketed_list :: Parser Term
 bracketed_list = do
-    start <- getPosition ; string "[" ; spaces 
-    inside_bracketed_list start 
+    start <- getPosition ; symbol "["
+    inside_bracketed_list start
 
-inside_bracketed_list p = 
-        do q <- getPosition ; string "]" ; spaces
+inside_bracketed_list :: SourcePos -> Parser Term
+inside_bracketed_list p =
+        do q <- getPosition ; symbol "]"
            return $ Node ( Identifier { name = "Nil", position = q } ) []
-    <|> do x <- input 
+    <|> do x <- input
            q <- getPosition
-           xs <-   do string "]" ; spaces
+           xs <-   do symbol "]"
                       return $ Node ( Identifier { name = "Nil", position = q } ) []
-               <|> do string "," ; spaces
+               <|> do symbol ","
                       inside_bracketed_list q
            return $ Node ( Identifier { name = "Cons", position = p } ) [ x, xs ]
 
