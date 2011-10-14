@@ -11,7 +11,7 @@ import Common
 import Text.Parsec
 import System.Environment
 import Control.Monad ( forM )
-
+import Control.Monad.Writer
 import Control.Concurrent
 
 -- | read rules files, start expansion of "main"
@@ -24,11 +24,12 @@ main = do
         Right p -> withSequencer "Rewrite-Sequencer" $ execute p ( read "main" )
 
 execute p t sq = do
-    let s = force_head p t
+    let (s, log) = runWriter $ force_head p t
+    forM log print
     print s
     case s of
-        Node (Identifier "Nil") [] -> return ()
-        Node (Identifier "Cons") [x, xs] -> do
+        Node i [] | name i == "Nil" -> return ()
+        Node i [x, xs] | name i == "Cons" -> do
           play_event x sq
           execute p xs sq
 

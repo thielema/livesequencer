@@ -21,6 +21,7 @@ import Common
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Control.Monad ( forever, void, forM )
+import Control.Monad.Writer
 import Text.Parsec ( parse )
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
@@ -81,8 +82,8 @@ execute program t output sq = do
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
     let p = Program { rules = concat $ map rules $ M.elems pa }
-    let s = force_head p t
-    output $ show s
+    let ( s, log ) = runWriter $ force_head p t
+    output $ unlines [ show log, show s ]
     case s of
         Node i [] | name i == "Nil" -> do
             hPutStrLn stderr "finished."
