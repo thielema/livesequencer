@@ -1,5 +1,3 @@
--- module GUI where
-
 {-# LANGUAGE PatternSignatures #-}
 
 import qualified IO
@@ -27,38 +25,42 @@ import Text.Parsec ( parse )
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
+import qualified Data.Map as M
+
 -- | read rules files, should contain definition for "main"
 main :: IO ()
 main = do
     hSetBuffering stderr LineBuffering
     fs <- getArgs
-    ss <- forM fs readFile 
-    let s = concat ss
+    ss <- forM fs readFile
+    let pack = M.fromList $ zip fs ss
+    let parsed_pack = flip M.mapWithKey pack $ \ f s -> case parse IO.input f s of
+            Left err -> error $ show err
+            Right p  -> p
     input <- newChan
-    writeChan input s
     output <- newChan
     void $ forkIO $
-        withSequencer "Rewrite-Sequencer" $ machine input output s
-    gui input output s
+        withSequencer "Rewrite-Sequencer" $ machine input output $ parsed_pack
+    gui input output pack
 
-machine ::
-    Chan String ->
-    Chan String ->
-    String ->
-    Sequencer SndSeq.OutputMode ->
-    IO ()
-machine input output sinit sq = do
-    program :: MVar Program <- newMVar $ read sinit
+
+machine :: Chan (FilePath, String) -- ^ machine reads program text from here
+        -> Chan String -- ^ and writes output to here
+        -> ( M.Map FilePath Program ) -- ^ initial program 
+        -> Sequencer SndSeq.OutputMode 
+        -> IO ()
+machine input output pack sq = do
+    package <- newMVar pack
     void $ forkIO $ forever $ do
-        s <- readChan input
-        hPutStrLn stderr $ "new input\n" ++ s
-        case parse IO.input "editor" s of
+        (f, s) <- readChan input
+        hPutStrLn stderr $ "module " ++ f ++ " has new input\n" ++ s
+        case parse IO.input f s of
             Left err -> print err
             Right ( p :: Program ) -> do
                 hPutStrLn stderr "parser OK"
-                void $ swapMVar program p
-                hPutStrLn stderr "swapped OK"
-    execute program ( read "main" ) ( writeChan output ) sq
+                modifyMVar_ package $ \ pack -> return $ M.insert f p pack
+                hPutStrLn stderr "modified OK"
+    execute package ( read "main" ) ( writeChan output ) sq
 
 -- | following code taken from http://snipplr.com/view/17538/
 myEventId = wxID_HIGHEST+1 -- the custom event ID
@@ -67,17 +69,18 @@ createMyEvent = commandEventCreate wxEVT_COMMAND_MENU_SELECTED myEventId
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
  
 
-execute ::
-   MVar Program ->
-   Term ->
-   ( String -> IO () ) ->
-   Sequencer SndSeq.OutputMode ->
-   IO ()
-execute ( program :: MVar Program ) t output sq = do
+execute :: MVar ( M.Map FilePath Program ) 
+                  -- ^ current program (GUI might change the contents)
+        -> Term -- ^ current term
+        -> ( String -> IO () ) -- ^ sink for messages (show current term)
+        -> Sequencer SndSeq.OutputMode -- ^ for playing MIDI events
+        -> IO ()
+execute program t output sq = do
     -- hPutStrLn stderr "execute"
-    p :: Program <- readMVar program -- this happens anew at each click
+    pa <- readMVar program -- this happens anew at each click
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
+    let p = Program { rules = concat $ map rules $ M.elems pa }
     let s = force_head p t
     output $ show s
     case s of
@@ -88,10 +91,17 @@ execute ( program :: MVar Program ) t output sq = do
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
-gui :: Chan String -> Chan String -> String -> IO ()
-gui input output sinit = WX.start $ do
+gui :: Chan (FilePath, String) -- ^  the gui writes here 
+      -- (if the program text changes due to an edit action)
+    -> Chan String -- ^ the machine writes here
+      -- (a textual representation of "current expression")
+    -> M.Map FilePath String -- ^ initial texts for modules
+    -> IO ()
+gui input output pack = WX.start $ do
     putStrLn "frame"
-    f <- WX.frame [ text := "live-sequencer" ]
+    f <- WX.frame 
+        [ text := "live-sequencer", visible := False 
+        ]
 
     out <- varCreate "output"
 
@@ -101,26 +111,39 @@ gui input output sinit = WX.start $ do
         ev <- createMyEvent
         evtHandlerAddPendingEvent f ev
 
-    putStrLn "panel"
     p <- WX.panel f [ ]
+    nb <- WX.notebook p [ ]
+
+    -- TODO: control the sequencer:
     -- continue <- WX.button p [ text := "continue" ]
     -- pause <- WX.button p [ text := "pause" ]
     -- reset <- WX.button p [ text := "reset" ]
-    editor <- textCtrl p [ text := sinit ]
-    set editor [ on enterKey :=
-                      writeChan input =<< get editor text ]
+
+    panels <- forM (M.toList pack) $ \ (f, s) -> do
+        psub <- panel nb []
+        editor <- textCtrl psub [ text := s ]
+        -- TODO: show status (modified in editor, sent to machine, saved to file)
+        -- TODO: load/save actions
+        set editor [ text := s
+                   , on enterKey := do
+                       s <- get editor text 
+                       writeChan input (f, s)
+                   ]
+        return $ tab f  $ container psub $ WX.fill $ widget editor
 
     tracer <- staticText p [ ]
+
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
         s <- varGet out
         set tracer [ text := s ]
 
-    set f [ layout := minsize (sz 500 300) $ container p $ margin 10
+    set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill
-            [ widget editor
-            -- , widget continue, widget pause, widget reset
+            [ tabs nb panels
             , widget tracer
             ]
+            , visible := True
+            , clientSize := sz 500 300
           ]
 
