@@ -84,9 +84,9 @@ execute program t output sq = do
     let s = force_head p t
     output $ show s
     case s of
-        Node (Identifier "Nil") [] -> do
+        Node i [] | name i == "Nil" -> do
             hPutStrLn stderr "finished."
-        Node (Identifier "Cons") [x, xs] -> do
+        Node i [x, xs] | name i == "Cons" -> do
             play_event x sq
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s

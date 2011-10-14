@@ -13,17 +13,17 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import Control.Concurrent ( threadDelay )
 
 play_event x sq = case x of    
-            Node (Identifier "Wait") [Number n] ->
+            Node i [Number n] | name i == "Wait" ->
                 threadDelay (fromIntegral n * 10^3)
-            Node (Identifier "On") [Number c, Number p, Number v] ->
+            Node i [Number c, Number p, Number v] | name i == "On" ->
                 sendNote sq Event.NoteOn (ChannelMsg.toChannel $ fromIntegral c) 
                           (ChannelMsg.toPitch $ fromIntegral p)
                                        (ChannelMsg.toVelocity $ fromIntegral v)
-            Node (Identifier "Off") [Number c, Number p, Number v] ->
+            Node i [Number c, Number p, Number v] | name i == "Off" ->
                 sendNote sq Event.NoteOff (ChannelMsg.toChannel $ fromIntegral c) 
                                        (ChannelMsg.toPitch $ fromIntegral p)
                                           (ChannelMsg.toVelocity $ fromIntegral v)
-            Node (Identifier "PgmChange") [Number c, Number p, Number v] ->
+            Node i [Number c, Number p, Number v] | name i == "PgmChange" ->
                 sendEvent sq $ Event.CtrlEv Event.PgmChange $ Event.Ctrl
                                (fromIntegral c) (fromIntegral p) (fromIntegral v)
             _ -> error $ "Event.play_event: missing case for: " ++ show x

@@ -12,10 +12,10 @@ import qualified Data.Map as M
 -- then evaluate first argument of Cons fully.
 force_head :: Program -> Term -> Term
 force_head p t = case top p t of
-    Node ( Identifier "Cons") [ x, xs ] -> 
-      Node ( Identifier "Cons" ) [ full p x, xs ]
-    Node ( Identifier "Nil" ) [] ->
-      Node ( Identifier "Nil" ) []
+    Node i [ x, xs ] | name i == "Cons"-> 
+      Node i [ full p x, xs ]
+    Node i [] | name i == "Nil" ->
+      Node i []
     _ -> error $ "force_head: missing case for " ++ show t
 
 -- | force full evaluation 
@@ -35,12 +35,15 @@ top p t = case t of
       if isConstructor f then t 
       else top p $ eval p (rules p) t
         
-eval p _ t @ ( Node (Identifier op) xs ) 
-  | op `elem` [ "compare", "less", "minus", "plus", "times" ] = 
+eval p _ t @ ( Node i xs ) 
+  | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = 
       let ys = map ( full p ) xs
-      in  case ( op, ys ) of    
-           ( "less", [ Number a, Number b] ) -> Node ( Identifier $ show (a < b) ) []
-           ( "compare", [ Number a, Number b] ) -> Node ( Identifier $ show (compare a b) ) []
+      in  case ( name i, ys ) of    
+           -- FIXME: handling of positions is dubious
+           ( "less", [ Number a, Number b] ) -> 
+               Node ( Identifier { name = show (a < b), position = position i } ) []
+           ( "compare", [ Number a, Number b] ) -> 
+               Node ( Identifier { name = show (compare a b), position = position i } ) []
            ( "minus", [ Number a, Number b] ) -> Number $ a - b
            ( "plus", [ Number a, Number b] ) -> Number $ a + b
            ( "times", [ Number a, Number b] ) -> Number $ a * b
