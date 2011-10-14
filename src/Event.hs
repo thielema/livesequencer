@@ -27,9 +27,9 @@ play_event x sq = case x of
                 sendNote sq Event.NoteOff (ChannelMsg.toChannel $ fromIntegral c)
                                        (ChannelMsg.toPitch $ fromIntegral p)
                                           (ChannelMsg.toVelocity $ fromIntegral v)
-            Node i [Number c, Number p, Number v] | name i == "PgmChange" ->
+            Node i [Number c, Number p] | name i == "PgmChange" ->
                 sendEvent sq $ Event.CtrlEv Event.PgmChange $ Event.Ctrl
-                               (fromIntegral c) (fromIntegral p) (fromIntegral v)
+                               (fromIntegral c) 0 (fromIntegral p)
             _ -> error $ "Event.play_event: missing case for: " ++ show x
 
 sendNote :: Sequencer SndSeq.OutputMode
