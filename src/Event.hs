@@ -3,7 +3,6 @@ module Event where
 import Term
 import Common (sendEvent, Sequencer )
 
-import qualified Sound.MIDI.Message.Channel.Mode as Mode
 import qualified Sound.MIDI.Message.Channel as ChannelMsg
 import qualified Sound.MIDI.ALSA as MidiAlsa
 
