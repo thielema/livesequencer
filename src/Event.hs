@@ -18,7 +18,7 @@ play_event ::
     IO ()
 play_event x sq = case x of
             Node i [Number n] | name i == "Wait" ->
-                threadDelay (fromIntegral n * 10^3)
+                threadDelay (fromIntegral n * 1000)
             Node i [Number c, Number p, Number v] | name i == "On" ->
                 sendNote sq Event.NoteOn (ChannelMsg.toChannel $ fromIntegral c) 
                           (ChannelMsg.toPitch $ fromIntegral p)
