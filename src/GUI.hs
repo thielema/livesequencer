@@ -10,6 +10,7 @@ import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 
+import qualified Graphics.UI.WXCore as WXCore
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 import Graphics.UI.WXCore.WxcClassesMZ ( wxEVT_COMMAND_MENU_SELECTED )
 import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
@@ -63,12 +64,17 @@ machine input output pack sq = do
                 hPutStrLn stderr "modified OK"
     execute package ( read "main" ) ( writeChan output ) sq
 
+
 -- | following code taken from http://snipplr.com/view/17538/
+myEventId :: Int
 myEventId = wxID_HIGHEST+1 -- the custom event ID
+
 -- | the custom event is registered as a menu event
+createMyEvent :: IO (WXCore.CommandEvent ())
 createMyEvent = commandEventCreate wxEVT_COMMAND_MENU_SELECTED myEventId
+
+registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
- 
 
 execute :: MVar ( M.Map FilePath Program ) 
                   -- ^ current program (GUI might change the contents)

@@ -12,7 +12,12 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Control.Concurrent ( threadDelay )
 
-play_event x sq = case x of    
+
+play_event ::
+    Term ->
+    Sequencer SndSeq.OutputMode ->
+    IO ()
+play_event x sq = case x of
             Node i [Number n] | name i == "Wait" ->
                 threadDelay (fromIntegral n * 10^3)
             Node i [Number c, Number p, Number v] | name i == "On" ->

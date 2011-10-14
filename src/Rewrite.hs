@@ -81,10 +81,10 @@ eval p (r : rs) t = do
                    return $ apply sub ( rhs r )
       else eval p rs t  
             
--- | check whether term matches pattern.        
--- do some reductions if they are necessary to decide about the match.        
--- return the reduced term in the second result component.        
-match_expand :: Program -> Term -> Term 
+-- | check whether term matches pattern.
+-- do some reductions if they are necessary to decide about the match.
+-- return the reduced term in the second result component.
+match_expand :: Program -> Term -> Term
              -> Writer [ Message ] ( Maybe (M.Map Identifier Term) , Term )
 match_expand p pat t = case pat of
   Node f [] | isVariable f -> do
@@ -102,7 +102,13 @@ match_expand p pat t = case pat of
                ( m, ys' ) <- match_expand_list p xs ys
                return ( m, Node f ys' )
 
-match_expand_list p [] [] = return ( return $ M.empty, [] )
+
+match_expand_list ::
+    Program ->
+    [Term] ->
+    [Term] ->
+    Writer [Message] (Maybe (M.Map Identifier Term), [Term])
+match_expand_list _p [] [] = return ( return $ M.empty, [] )
 match_expand_list p (x:xs) (y:ys) = do
     (m, y') <- match_expand p x y
     case m of

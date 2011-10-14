@@ -98,7 +98,8 @@ instance Output Term where
   output t = case t of
      Number n -> text $ show n
      Node f args -> output f <+> fsep ( map protected args )
-     
+
+protected :: Term -> Doc
 protected t = case t of
   Node f args | not ( null args ) -> parens $ output t
   _ -> output t

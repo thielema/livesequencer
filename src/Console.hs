@@ -2,11 +2,13 @@
 
 import IO
 import Term
-import Program
 import Rewrite
 import Event
+import Program ( Program )
 
 import Common
+
+import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Text.Parsec
 import System.Environment
@@ -14,6 +16,7 @@ import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad ( forM, forM_ )
 
 -- | read rules files, start expansion of "main"
+main :: IO ()
 main = do
     fs <- getArgs
     ss <- forM fs readFile 
@@ -22,6 +25,12 @@ main = do
         Left err -> print err
         Right p -> withSequencer "Rewrite-Sequencer" $ execute p ( read "main" )
 
+
+execute ::
+    Program ->
+    Term ->
+    Sequencer SndSeq.OutputMode ->
+    IO ()
 execute p t sq = do
     let (s, log) = runWriter $ force_head p t
     forM_ log print
