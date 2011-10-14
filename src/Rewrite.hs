@@ -9,7 +9,9 @@ import Control.Monad.Writer
 import qualified Data.Map as M
 import Text.Parsec.Pos ( SourcePos )
 
-data Message = Use_Position SourcePos
+data Message = Step { target_position :: SourcePos
+                    , rule_position :: Maybe SourcePos -- ^ Nothing for builtins
+                    } 
     deriving Show
 
 -- | force head of stream:
@@ -52,8 +54,9 @@ top p t = case t of
 
 eval :: Program -> [ Rule ] -> Term -> Writer [ Message ] Term      
 eval p _ t @ ( Node i xs ) 
-  | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do
-      ys <- forM xs $ full p
+  | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do      
+      ys <- forM xs $ full p -- these operations are strict
+      tell $ [ Step { target_position = position i, rule_position = Nothing } ]
       return $ case ( name i, ys ) of    
            -- FIXME: handling of positions is dubious
            ( "less", [ Number a, Number b] ) -> 
@@ -72,7 +75,10 @@ eval p (r : rs) t = do
         let t' = Node g ys'
         case m of
                Nothing -> eval p rs t'
-               Just sub -> return $ apply sub ( rhs r )
+               Just sub -> do
+                   tell [ Step { target_position = position g
+                                 , rule_position = Just $ position f } ]
+                   return $ apply sub ( rhs r )
       else eval p rs t  
             
 -- | check whether term matches pattern.        

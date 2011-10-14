@@ -83,7 +83,7 @@ execute program t output sq = do
     -- hPutStrLn stderr "got program from MVar"
     let p = Program { rules = concat $ map rules $ M.elems pa }
     let ( s, log ) = runWriter $ force_head p t
-    output $ unlines [ show log, show s ]
+    output $ unlines $ map show log ++ [ "--", show s  ]
     case s of
         Node i [] | name i == "Nil" -> do
             hPutStrLn stderr "finished."
