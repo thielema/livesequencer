@@ -46,15 +46,15 @@ top :: Program -> Term -> Writer [ Message ] Term
 top p t = case t of
     Number {} -> 
         return t
-    Node f xs -> 
-        if isConstructor f then return t 
+    Node f _xs ->
+        if isConstructor f then return t
         else do
             e <- eval p (rules p) t  
             top p e
 
-eval :: Program -> [ Rule ] -> Term -> Writer [ Message ] Term      
-eval p _ t @ ( Node i xs ) 
-  | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do      
+eval :: Program -> [ Rule ] -> Term -> Writer [ Message ] Term
+eval p _ _t @ ( Node i xs )
+  | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do
       ys <- forM xs $ full p -- these operations are strict
       tell $ [ Step { target_position = position i, rule_position = Nothing } ]
       return $ case ( name i, ys ) of    
@@ -66,8 +66,8 @@ eval p _ t @ ( Node i xs )
            ( "minus", [ Number a, Number b] ) -> Number $ a - b
            ( "plus", [ Number a, Number b] ) -> Number $ a + b
            ( "times", [ Number a, Number b] ) -> Number $ a * b
-           
-eval p [] t = error $ unwords [ "eval", show t ]
+
+eval _p [] t = error $ unwords [ "eval", show t ]
 eval p (r : rs) t = do
   let Node f xs = lhs r ; Node g ys = t
   if f == g then do

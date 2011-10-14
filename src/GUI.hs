@@ -29,6 +29,9 @@ import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
 import qualified Data.Map as M
 
+import Prelude hiding ( log )
+
+
 -- | read rules files, should contain definition for "main"
 main :: IO ()
 main = do
@@ -60,7 +63,7 @@ machine input output pack sq = do
             Left err -> print err
             Right ( p :: Program ) -> do
                 hPutStrLn stderr "parser OK"
-                modifyMVar_ package $ \ pack -> return $ M.insert f p pack
+                modifyMVar_ package $ return . M.insert f p
                 hPutStrLn stderr "modified OK"
     execute package ( read "main" ) ( writeChan output ) sq
 
@@ -126,17 +129,17 @@ gui input output pack = WX.start $ do
     -- pause <- WX.button p [ text := "pause" ]
     -- reset <- WX.button p [ text := "reset" ]
 
-    panels <- forM (M.toList pack) $ \ (f, s) -> do
+    panels <- forM (M.toList pack) $ \ (path,modname) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
-        set editor [ text := s
+        set editor [ text := modname
                    , on enterKey := do
-                       s <- get editor text 
-                       writeChan input (f, s)
+                       s <- get editor text
+                       writeChan input (path,s)
                    ]
-        return $ tab f  $ container psub $ WX.fill $ widget editor
+        return $ tab path  $ container psub $ WX.fill $ widget editor
 
     tracer <- staticText p [ font := fontFixed ]
 

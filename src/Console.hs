@@ -15,6 +15,9 @@ import System.Environment
 import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad ( forM, forM_ )
 
+import Prelude hiding ( log )
+
+
 -- | read rules files, start expansion of "main"
 main :: IO ()
 main = do

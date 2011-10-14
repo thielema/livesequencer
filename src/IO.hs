@@ -11,5 +11,5 @@ parsec_reader ::
     t -> String -> [(a, String)]
 parsec_reader _p s =
     case parse ( do x <- input ; t <- getInput ; return (x,t) ) "" s of
-      Left err -> []
+      Left _err -> []
       Right (x,t) -> [(x,t)]

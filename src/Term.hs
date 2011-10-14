@@ -101,7 +101,7 @@ instance Output Term where
 
 protected :: Term -> Doc
 protected t = case t of
-  Node f args | not ( null args ) -> parens $ output t
+  Node _f (_:_) -> parens $ output t
   _ -> output t
 
 
@@ -109,25 +109,25 @@ type Position = [ Int ]
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of
-    Node f xs -> do 
+    Node _f xs -> do
         (k, x) <- zip [ 0.. ] xs
-        (p, s) <- subterms x            
+        (p, s) <- subterms x
         return (k : p, s)
-    _ -> []    
-    
+    _ -> []
+
 signature :: Term -> S.Set Identifier
-signature t = S.fromList $ do 
-    (p, Node f xs) <- subterms t
+signature t = S.fromList $ do
+    (_p, Node f _xs) <- subterms t
     return f
 
 peek :: Term -> Position -> Maybe Term
 peek t [] = return t
-peek (Node f xs) (k : ks) | k < length xs =
+peek (Node _f xs) (k : ks) | k < length xs =
     peek (xs !! k) ks
-peek _ _  = mzero    
-  
-poke :: Term -> Position -> Term -> Maybe Term    
-poke t [] s = return s
+peek _ _  = mzero
+
+poke :: Term -> Position -> Term -> Maybe Term
+poke _t [] s = return s
 poke (Node f xs) (k : ks) s | k < length xs = do
     let (pre, x : post) = splitAt k xs
     y <- poke x ks s
