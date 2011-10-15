@@ -54,7 +54,7 @@ main = do
 
 
 machine :: Chan (FilePath, String) -- ^ machine reads program text from here
-        -> Chan String -- ^ and writes output to here
+        -> Chan ([Message], String) -- ^ and writes output to here
         -> ( M.Map FilePath Program ) -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
         -> IO ()
@@ -90,7 +90,7 @@ registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 execute :: MVar ( M.Map FilePath Program )
                   -- ^ current program (GUI might change the contents)
         -> Term -- ^ current term
-        -> ( String -> IO () ) -- ^ sink for messages (show current term)
+        -> ( ([Message], String) -> IO () ) -- ^ sink for messages (show current term)
         -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program t output sq = do
@@ -101,7 +101,7 @@ execute program t output sq = do
     -- hPutStrLn stderr "got program from MVar"
     let p = Program { rules = concat $ map rules $ M.elems pa }
     let ( s, log ) = runWriter $ force_head p t
-    liftIO $ output $ unlines $ map show log ++ [ "--", show s  ]
+    liftIO $ output $ ( log, show s )
     case s of
         Node i [] | name i == "Nil" -> do
             liftIO $ hPutStrLn stderr "finished."
@@ -112,7 +112,7 @@ execute program t output sq = do
 
 gui :: Chan (FilePath, String) -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan String -- ^ the machine writes here
+    -> Chan ([Message], String) -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> M.Map FilePath String -- ^ initial texts for modules
     -> IO ()
@@ -121,7 +121,7 @@ gui input output pack = WX.start $ do
         [ text := "live-sequencer", visible := False
         ]
 
-    out <- varCreate "output"
+    out <- varCreate ([], "reduction")
 
     void $ forkIO $ forever $ do
         s <- readChan output
@@ -149,17 +149,20 @@ gui input output pack = WX.start $ do
                    ]
         return $ tab path  $ container psub $ WX.fill $ widget editor
 
-    tracer <- staticText p [ font := fontFixed ]
+    highlighter <- staticText p [ ]
+    reducer <- staticText p [ font := fontFixed ]
 
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
-        s <- varGet out
-        set tracer [ text := s ]
+        (sh,sr) <- varGet out
+        set highlighter [ text := unlines ( map show sh ) ]
+        set reducer [ text := sr ]
 
     set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill
             [ tabs nb panels
-            , widget tracer
+            , widget highlighter
+            , widget reducer
             ]
             , visible := True
             , clientSize := sz 500 300
