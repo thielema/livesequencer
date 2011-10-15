@@ -7,7 +7,13 @@ import Program
 import Control.Monad ( forM )
 import Control.Monad.Trans.Writer ( Writer, tell )
 import qualified Data.Map as M
+import qualified Data.Set as S
+import qualified Text.Parsec.Pos as Pos
 import Text.Parsec.Pos ( SourcePos )
+
+import qualified Data.List as List
+import qualified Data.Char as Char
+
 
 data Message = Step { target_position :: SourcePos
                     , rule_position :: Maybe SourcePos -- ^ Nothing for builtins
@@ -127,3 +133,44 @@ apply m t = case t of
       Just t' -> t'
   _ -> t
 
+
+sourcePosFromMessages ::
+    [Message] -> M.Map FilePath (S.Set (Pos.Line,Pos.Column))
+sourcePosFromMessages =
+    M.fromListWith S.union .
+    map ((\pos -> (Pos.sourceName pos,
+                   S.singleton (Pos.sourceLine pos, Pos.sourceColumn pos)))
+         . target_position)
+
+highlight ::
+    (S.Set (Pos.Line,Pos.Column)) -> String -> String
+highlight poss =
+    let countBase = 1
+        diffs xs = zipWith (-) xs (countBase:xs)
+        swap (x,y) = (y,x)
+        linePoss =
+            fmap (diffs . S.toAscList) $
+            M.fromListWith S.union $ map (\(l,c) -> (l, S.singleton c)) $ S.toList poss
+    in  unlines .
+        zipWith (\ln str ->
+            case M.lookup ln linePoss of
+                Nothing -> str
+                Just ds ->
+                    (\css -> case css of
+                        [] -> error "highlight: chunk list is always non-empty"
+                        c:cs -> concat $ c : map highlightTokenHash cs) $
+                    (\(rest, chunks) -> chunks++[rest]) $
+                    List.mapAccumL
+                        (\suffix d -> swap $ splitAt d suffix) str ds)
+            [countBase ..] .
+        lines
+
+highlightTokenHash, highlightTokenCaps, highlightTokenBraces ::
+    String -> String
+highlightTokenHash = ('#':)
+highlightTokenCaps =
+    (\(ident,suffix) -> map Char.toUpper ident ++ suffix) .
+    break Char.isSpace
+highlightTokenBraces =
+    (\(ident,suffix) -> '{' : ident ++ '}' : suffix) .
+    break Char.isSpace

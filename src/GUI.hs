@@ -159,14 +159,16 @@ gui input output pack = WX.start $ do
 
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
-        (contents,sh,sr) <- varGet out
+        (contents,log,sr) <- varGet out
+        let poss = sourcePosFromMessages log
         forM_ (M.toList contents) $ \(path,content) ->
             case M.lookup path highlighters of
                 Nothing -> return ()
                 Just highlighter ->
-                    set highlighter [ text := content ]
-        mapM_ print sh
---        set highlighter [ text := unlines ( map show sh ) ]
+                    set highlighter [ text :=
+                        case M.lookup path poss of
+                            Nothing -> content
+                            Just ps -> highlight ps content ]
         set reducer [ text := sr ]
 
     set f [ layout := container p $ margin 5
