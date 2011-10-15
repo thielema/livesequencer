@@ -23,8 +23,10 @@ import Common
 
 import qualified Sound.ALSA.Sequencer as SndSeq
 
-import Control.Monad ( forever, forM )
+import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
+import Control.Monad.IO.Class ( liftIO )
+import Control.Monad ( forever, forM )
 import Text.Parsec ( parse )
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
@@ -54,7 +56,7 @@ main = do
 machine :: Chan (FilePath, String) -- ^ machine reads program text from here
         -> Chan String -- ^ and writes output to here
         -> ( M.Map FilePath Program ) -- ^ initial program
-        -> Sequencer SndSeq.OutputMode
+        -> Sequencer SndSeq.DuplexMode
         -> IO ()
 machine input output pack sq = do
     package <- newMVar pack
@@ -67,7 +69,10 @@ machine input output pack sq = do
                 hPutStrLn stderr "parser OK"
                 modifyMVar_ package $ return . M.insert f p
                 hPutStrLn stderr "modified OK"
-    execute package ( read "main" ) ( writeChan output ) sq
+
+    startQueue sq
+    MS.evalStateT
+       ( execute package ( read "main" ) ( writeChan output ) sq ) 0
 
 
 -- | following code taken from http://snipplr.com/view/17538/
@@ -86,19 +91,20 @@ execute :: MVar ( M.Map FilePath Program )
                   -- ^ current program (GUI might change the contents)
         -> Term -- ^ current term
         -> ( String -> IO () ) -- ^ sink for messages (show current term)
-        -> Sequencer SndSeq.OutputMode -- ^ for playing MIDI events
-        -> IO ()
+        -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
+        -> MS.StateT Time IO ()
 execute program t output sq = do
     -- hPutStrLn stderr "execute"
-    pa <- readMVar program -- this happens anew at each click
+    pa <- liftIO $ readMVar program
+                          -- this happens anew at each click
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
     let p = Program { rules = concat $ map rules $ M.elems pa }
     let ( s, log ) = runWriter $ force_head p t
-    output $ unlines $ map show log ++ [ "--", show s  ]
+    liftIO $ output $ unlines $ map show log ++ [ "--", show s  ]
     case s of
         Node i [] | name i == "Nil" -> do
-            hPutStrLn stderr "finished."
+            liftIO $ hPutStrLn stderr "finished."
         Node i [x, xs] | name i == "Cons" -> do
             play_event x sq
             execute program xs output sq
@@ -158,4 +164,3 @@ gui input output pack = WX.start $ do
             , visible := True
             , clientSize := sz 500 300
           ]
-

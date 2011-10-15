@@ -12,7 +12,10 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Text.Parsec
 import System.Environment
+
+import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
+import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forM, forM_ )
 
 import Prelude hiding ( log )
@@ -26,18 +29,21 @@ main = do
     let s = concat ss
     case parse input "fs" s of
         Left err -> print err
-        Right p -> withSequencer "Rewrite-Sequencer" $ execute p ( read "main" )
+        Right p ->
+            withSequencer "Rewrite-Sequencer" $ \sq -> do
+                startQueue sq
+                MS.evalStateT ( execute p ( read "main" ) sq ) 0
 
 
 execute ::
     Program ->
     Term ->
-    Sequencer SndSeq.OutputMode ->
-    IO ()
+    Sequencer SndSeq.DuplexMode ->
+    MS.StateT Time IO ()
 execute p t sq = do
     let (s, log) = runWriter $ force_head p t
-    forM_ log print
-    print s
+    liftIO $ forM_ log print
+    liftIO $ print s
     case s of
         Node i [] | name i == "Nil" -> return ()
         Node i [x, xs] | name i == "Cons" -> do
