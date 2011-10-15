@@ -26,7 +26,7 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
-import Control.Monad ( forever, forM )
+import Control.Monad ( forever, forM, forM_ )
 import Text.Parsec ( parse )
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
@@ -45,7 +45,7 @@ main = do
     let pack = M.fromList $ zip fs ss
     let parsed_pack = flip M.mapWithKey pack $ \ f s -> case parse IO.input f s of
             Left err -> error $ show err
-            Right p  -> p
+            Right p  -> (s,p)
     input <- newChan
     output <- newChan
     void $ forkIO $
@@ -54,8 +54,8 @@ main = do
 
 
 machine :: Chan (FilePath, String) -- ^ machine reads program text from here
-        -> Chan ([Message], String) -- ^ and writes output to here
-        -> ( M.Map FilePath Program ) -- ^ initial program
+        -> Chan (M.Map FilePath String, [Message], String) -- ^ and writes output to here
+        -> ( M.Map FilePath (String, Program) ) -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
         -> IO ()
 machine input output pack sq = do
@@ -67,7 +67,7 @@ machine input output pack sq = do
             Left err -> print err
             Right ( p :: Program ) -> do
                 hPutStrLn stderr "parser OK"
-                modifyMVar_ package $ return . M.insert f p
+                modifyMVar_ package $ return . M.insert f (s,p)
                 hPutStrLn stderr "modified OK"
 
     startQueue sq
@@ -87,10 +87,10 @@ registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
 
-execute :: MVar ( M.Map FilePath Program )
+execute :: MVar ( M.Map FilePath (String,Program) )
                   -- ^ current program (GUI might change the contents)
         -> Term -- ^ current term
-        -> ( ([Message], String) -> IO () ) -- ^ sink for messages (show current term)
+        -> ( (M.Map FilePath String, [Message], String) -> IO () ) -- ^ sink for messages (show current term)
         -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program t output sq = do
@@ -99,9 +99,9 @@ execute program t output sq = do
                           -- this happens anew at each click
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
-    let p = Program { rules = concat $ map rules $ M.elems pa }
+    let p = Program { rules = concat $ map (rules.snd) $ M.elems pa }
     let ( s, log ) = runWriter $ force_head p t
-    liftIO $ output $ ( log, show s )
+    liftIO $ output $ ( fmap fst pa, log, show s )
     case s of
         Node i [] | name i == "Nil" -> do
             liftIO $ hPutStrLn stderr "finished."
@@ -112,7 +112,7 @@ execute program t output sq = do
 
 gui :: Chan (FilePath, String) -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan ([Message], String) -- ^ the machine writes here
+    -> Chan (M.Map FilePath String, [Message], String) -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> M.Map FilePath String -- ^ initial texts for modules
     -> IO ()
@@ -121,7 +121,7 @@ gui input output pack = WX.start $ do
         [ text := "live-sequencer", visible := False
         ]
 
-    out <- varCreate ([], "reduction")
+    out <- varCreate (M.empty, [], "reduction")
 
     void $ forkIO $ forever $ do
         s <- readChan output
@@ -137,31 +137,41 @@ gui input output pack = WX.start $ do
     -- pause <- WX.button p [ text := "pause" ]
     -- reset <- WX.button p [ text := "reset" ]
 
-    panels <- forM (M.toList pack) $ \ (path,modname) -> do
+    panelsHls <- forM (M.toList pack) $ \ (path,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed ]
+        highlighter <- textCtrl psub [ ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
-        set editor [ text := modname
+        set editor [ text := content
                    , on enterKey := do
                        s <- get editor text
                        writeChan input (path,s)
                    ]
-        return $ tab path  $ container psub $ WX.fill $ widget editor
+        return
+           (tab path $ container psub $ column 5 $
+               map WX.fill $ [widget editor, widget highlighter],
+            (path,highlighter))
+    let panels = map fst panelsHls
+        highlighters = M.fromList $ map snd panelsHls
 
-    highlighter <- staticText p [ ]
-    reducer <- staticText p [ font := fontFixed ]
+    reducer <- textCtrl p [ font := fontFixed ]
 
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
-        (sh,sr) <- varGet out
-        set highlighter [ text := unlines ( map show sh ) ]
+        (contents,sh,sr) <- varGet out
+        forM_ (M.toList contents) $ \(path,content) ->
+            case M.lookup path highlighters of
+                Nothing -> return ()
+                Just highlighter ->
+                    set highlighter [ text := content ]
+        mapM_ print sh
+--        set highlighter [ text := unlines ( map show sh ) ]
         set reducer [ text := sr ]
 
     set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill
             [ tabs nb panels
-            , widget highlighter
             , widget reducer
             ]
             , visible := True
