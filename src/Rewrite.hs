@@ -13,7 +13,7 @@ import Text.Parsec.Pos ( SourcePos )
 
 import qualified Data.List as List
 import qualified Data.Char as Char
-
+import Data.Maybe ( maybeToList )
 
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
@@ -139,11 +139,11 @@ apply m t = case t of
 
 sourcePosFromMessages ::
     [Message] -> M.Map FilePath (S.Set (Pos.Line,Pos.Column))
-sourcePosFromMessages =
-    M.fromListWith S.union .
-    map ((\pos -> (Pos.sourceName pos,
-                   S.singleton (Pos.sourceLine pos, Pos.sourceColumn pos)))
-         . target_position)
+sourcePosFromMessages ms = M.fromListWith S.union $ do
+    m <- ms
+    pos <- [ target_position m ] ++ maybeToList ( rule_position m )
+    return (Pos.sourceName pos,
+                   S.singleton (Pos.sourceLine pos, Pos.sourceColumn pos))
 
 highlight ::
     (S.Set (Pos.Line,Pos.Column)) -> String -> String
