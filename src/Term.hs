@@ -14,6 +14,7 @@ import Control.Monad ( mzero )
 import Data.Char (isUpper, isLower)
 
 data Identifier =  Identifier { name :: String , position :: SourcePos }
+    deriving Show
 
 instance Eq Identifier where
 -- | FIXME: this is ignoring the module.

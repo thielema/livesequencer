@@ -15,10 +15,13 @@ import qualified Data.List as List
 import qualified Data.Char as Char
 
 
-data Message = Step { target_position :: SourcePos
-                    , rule_position :: Maybe SourcePos -- ^ Nothing for builtins
+data Message = Step { target :: Identifier
+                    , rule :: Maybe Identifier -- ^ Nothing for builtins
                     }
     deriving Show
+             
+target_position = position . target             
+rule_position = fmap position . rule
 
 -- | force head of stream:
 -- evaluate until we have Cons or Nil at root,
@@ -62,7 +65,7 @@ eval :: Program -> [ Rule ] -> Term -> Writer [ Message ] Term
 eval p _ _t @ ( Node i xs )
   | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do
       ys <- forM xs $ full p -- these operations are strict
-      tell $ [ Step { target_position = position i, rule_position = Nothing } ]
+      tell $ [ Step { target = i, rule = Nothing } ]
       return $ case ( name i, ys ) of
            -- FIXME: handling of positions is dubious
            ( "less", [ Number a, Number b] ) ->
@@ -82,8 +85,8 @@ eval p (r : rs) t = do
         case m of
                Nothing -> eval p rs t'
                Just sub -> do
-                   tell [ Step { target_position = position g
-                                 , rule_position = Just $ position f } ]
+                   tell [ Step { target =  g
+                                 , rule = Just $ f } ]
                    return $ apply sub ( rhs r )
       else eval p rs t
 
