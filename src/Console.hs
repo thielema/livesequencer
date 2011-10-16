@@ -4,7 +4,7 @@ import IO
 import Term
 import Rewrite
 import Event
-import Program ( Program )
+import Program ( Program (..) )
 
 import Common
 
@@ -25,12 +25,13 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     fs <- getArgs
-    ss <- forM fs readFile
-    let s = concat ss
-    case parse input "fs" s of
-        Left err -> print err
-        Right p ->
-            withSequencer "Rewrite-Sequencer" $ \sq -> do
+    ps <- forM fs $ \ f -> do 
+          s <- readFile f
+          case parse input f s of
+              Left err -> error $ show err
+              Right p -> return p
+    let p = Program { rules = concat $ map rules ps } 
+    withSequencer "Rewrite-Sequencer" $ \sq -> do
                 startQueue sq
                 MS.evalStateT ( execute p ( read "main" ) sq ) 0
 
