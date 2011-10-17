@@ -20,8 +20,6 @@ data Message = Step { target :: Identifier
                     }
     deriving Show
              
-target_position = position . target             
-rule_position = fmap position . rule
 
 -- | force head of stream:
 -- evaluate until we have Cons or Nil at root,
@@ -69,9 +67,11 @@ eval p _ _t @ ( Node i xs )
       return $ case ( name i, ys ) of
            -- FIXME: handling of positions is dubious
            ( "less", [ Number a, Number b] ) ->
-               Node ( Identifier { name = show (a < b), position = position i } ) []
+               Node ( Identifier { name = show (a < b)
+                    , start = start i, end = end i } ) []
            ( "compare", [ Number a, Number b] ) ->
-               Node ( Identifier { name = show (compare a b), position = position i } ) []
+               Node ( Identifier { name = show (compare a b)
+                    , start = start i, end = end i } ) []
            ( "minus", [ Number a, Number b] ) -> Number $ a - b
            ( "plus", [ Number a, Number b] ) -> Number $ a + b
            ( "times", [ Number a, Number b] ) -> Number $ a * b
@@ -137,43 +137,15 @@ apply m t = case t of
   _ -> t
 
 
-sourcePosFromMessages ::
-    [Message] -> M.Map FilePath (S.Set (Pos.Line,Pos.Column))
-sourcePosFromMessages ms = M.fromListWith S.union $ do
+--------------------------------------------------------------------------
+
+
+-- | NOTE: return type uses List, not Set,
+-- since Ord instance for Identifier would remove duplicates.
+-- But we want them (highlight several occurences of one symbol)
+to_be_highlighted ::
+    [Message] -> M.Map FilePath [Identifier]
+to_be_highlighted ms = M.fromListWith (++) $ do
     m <- ms
-    pos <- [ target_position m ] ++ maybeToList ( rule_position m )
-    return (Pos.sourceName pos,
-                   S.singleton (Pos.sourceLine pos, Pos.sourceColumn pos))
-
-highlight ::
-    (S.Set (Pos.Line,Pos.Column)) -> String -> String
-highlight poss =
-    let countBase = 1
-        diffs xs = zipWith (-) xs (countBase:xs)
-        swap (x,y) = (y,x)
-        linePoss =
-            fmap (diffs . S.toAscList) $
-            M.fromListWith S.union $ map (\(l,c) -> (l, S.singleton c)) $ S.toList poss
-    in  unlines .
-        zipWith (\ln str ->
-            case M.lookup ln linePoss of
-                Nothing -> str
-                Just ds ->
-                    (\css -> case css of
-                        [] -> error "highlight: chunk list is always non-empty"
-                        c:cs -> concat $ c : map highlightTokenHash cs) $
-                    (\(rest, chunks) -> chunks++[rest]) $
-                    List.mapAccumL
-                        (\suffix d -> swap $ splitAt d suffix) str ds)
-            [countBase ..] .
-        lines
-
-highlightTokenHash, highlightTokenCaps, highlightTokenBraces ::
-    String -> String
-highlightTokenHash = ('#':)
-highlightTokenCaps =
-    (\(ident,suffix) -> map Char.toUpper ident ++ suffix) .
-    break Char.isSpace
-highlightTokenBraces =
-    (\(ident,suffix) -> '{' : ident ++ '}' : suffix) .
-    break Char.isSpace
+    i <- [ target m ] ++ maybeToList ( rule m )
+    return ( Pos.sourceName $ start i , [ i ] )

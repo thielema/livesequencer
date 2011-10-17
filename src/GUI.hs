@@ -14,7 +14,12 @@ import Control.Concurrent.MVar
 
 import qualified Graphics.UI.WXCore as WXCore
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
-import Graphics.UI.WXCore.WxcClassesMZ ( wxEVT_COMMAND_MENU_SELECTED )
+import Graphics.UI.WXCore.WxcClassesMZ 
+    ( wxEVT_COMMAND_MENU_SELECTED 
+    , textCtrlGetDefaultStyle, textAttrSetTextColour, textCtrlSetStyle
+    , textAttrGetTextColour, textCtrlXYToPosition, textAttrSetBackgroundColour
+    , textCtrlSetDefaultStyle, textCtrlSetSelection
+    )
 import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
 
 import Graphics.UI.WXCore.Events
@@ -28,10 +33,12 @@ import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
 import Text.Parsec ( parse )
+import qualified Text.Parsec as Pos
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
 import qualified Data.Map as M
+import qualified Data.Set as S
 
 import Prelude hiding ( log )
 
@@ -140,7 +147,7 @@ gui input output pack = WX.start $ do
     panelsHls <- forM (M.toList pack) $ \ (path,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed ]
-        highlighter <- textCtrl psub [ ]
+        highlighter <- textCtrlRich psub [ font := fontFixed  ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
         set editor [ text := content
@@ -148,27 +155,31 @@ gui input output pack = WX.start $ do
                        s <- get editor text
                        writeChan input (path,s)
                    ]
+        set highlighter [ text := content ]
         return
            (tab path $ container psub $ column 5 $
                map WX.fill $ [widget editor, widget highlighter],
-            (path,highlighter))
+            (path,editor, highlighter))
     let panels = map fst panelsHls
-        highlighters = M.fromList $ map snd panelsHls
+        highlighters = M.fromList $ map ( \ (_,(p,e,h)) -> (p, h) )  panelsHls
+        editors      = M.fromList $ map ( \ (_,(p,e,h)) -> (p, e) )  panelsHls
 
     reducer <- textCtrl p [ font := fontFixed ]
 
+
+    previous_highlights <- varCreate M.empty
+
     registerMyEvent f $ do
         -- putStrLn "The custom event is fired!!"
+
         (contents,log,sr) <- varGet out
-        let poss = sourcePosFromMessages log
-        forM_ (M.toList contents) $ \(path,content) ->
-            case M.lookup path highlighters of
-                Nothing -> return ()
-                Just highlighter ->
-                    set highlighter [ text :=
-                        case M.lookup path poss of
-                            Nothing -> content
-                            Just ps -> highlight ps content ]
+        let current = to_be_highlighted log
+
+        previous <- varSwap previous_highlights current
+
+        set_color contents highlighters previous ( rgb 255 255 255 ) 
+        set_color contents highlighters current ( rgb 0 200 200 )
+
         set reducer [ text := sr ]
 
     set f [ layout := container p $ margin 5
@@ -179,3 +190,29 @@ gui input output pack = WX.start $ do
             , visible := True
             , clientSize := sz 500 300
           ]
+
+
+set_color contents highlighters positions color = void $
+        forM ( M.toList positions  ) $ \ ( path, ids ) -> do
+            case (M.lookup path contents, M.lookup path highlighters) of
+                (Just editor, Just highlighter) -> do
+                    -- TODO: only act if  editor/highlighter is visible
+                    when True $ do
+                        set highlighter [ visible := False ]
+
+                        forM_ ids $ \ id -> do
+                            let mkpos p = 
+                                   textCtrlXYToPosition highlighter 
+                                      $ Point (Pos.sourceColumn p - 1) 
+                                              (Pos.sourceLine   p - 1)
+                            from <- mkpos $ Term.start id
+                            to   <- mkpos $ Term.end id
+                            attr <- textCtrlGetDefaultStyle highlighter
+                            oldColor <- textAttrGetTextColour attr
+                            -- textAttrSetTextColour attr color
+                            textAttrSetBackgroundColour attr color
+                            textCtrlSetStyle highlighter from to attr
+                            textAttrSetTextColour attr oldColor
+
+                        set highlighter [ visible := True ]
+                _ -> return ()

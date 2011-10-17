@@ -9,10 +9,10 @@ ga = times 2 ha ;
 chords =
     channel 0 ( concat
                 [ quad ( dur qu c 64 )
-       	 	, quad ( moll qu a 64 )
-       	 	, quad ( dur qu f 64 )
-		, quad ( dur7 qu g 64 )
-		] ) ;
+                , quad ( moll qu a 64 )
+                , quad ( dur qu f 64 )
+                , quad ( dur7 qu g 64 )
+                ] ) ;
 
 drums =
     channel 9 ( concat

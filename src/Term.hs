@@ -13,7 +13,10 @@ import qualified Data.Set as S
 import Control.Monad ( mzero )
 import Data.Char (isUpper, isLower)
 
-data Identifier =  Identifier { name :: String , position :: SourcePos }
+data Identifier =  
+     Identifier { name :: String 
+                , start :: SourcePos , end :: SourcePos
+                }
     deriving Show
 
 instance Eq Identifier where
@@ -56,7 +59,8 @@ instance Input Identifier where
   input = do
       p <- getPosition
       x <- identifier
-      return $ Identifier { name = x , position = p }
+      q <- getPosition
+      return $ Identifier { name = x , start = p, end = q }
 
 instance Output Identifier where
   output i = text $ name i
@@ -80,20 +84,20 @@ instance Input Term where
 
 bracketed_list :: Parser Term
 bracketed_list = do
-    start <- getPosition ; symbol "["
-    inside_bracketed_list start
+    q <- getPosition ; symbol "[" ; r <- getPosition
+    inside_bracketed_list q r
 
-inside_bracketed_list :: SourcePos -> Parser Term
-inside_bracketed_list p =
-        do q <- getPosition ; symbol "]"
-           return $ Node ( Identifier { name = "Nil", position = q } ) []
+inside_bracketed_list :: SourcePos -> SourcePos -> Parser Term
+inside_bracketed_list p p' =
+        do q <- getPosition ; symbol "]" ; r <- getPosition
+           return $ Node ( Identifier { name = "Nil", start = q, end = r } ) []
     <|> do x <- input
            q <- getPosition
-           xs <-   do symbol "]"
-                      return $ Node ( Identifier { name = "Nil", position = q } ) []
-               <|> do symbol ","
-                      inside_bracketed_list q
-           return $ Node ( Identifier { name = "Cons", position = p } ) [ x, xs ]
+           xs <-   do symbol "]" ; r <- getPosition
+                      return $ Node ( Identifier { name = "Nil", start = q, end = r } ) []
+               <|> do symbol "," ; r <- getPosition
+                      inside_bracketed_list q r
+           return $ Node ( Identifier { name = "Cons", start = p, end = p' } ) [ x, xs ]
 
 instance Output Term where
   output t = case t of
