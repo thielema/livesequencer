@@ -39,6 +39,7 @@ import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
 import qualified Data.Map as M
 import qualified Data.Set as S
+import Data.Maybe ( maybeToList )
 
 import Prelude hiding ( log )
 
@@ -114,6 +115,11 @@ execute program t output sq = do
             liftIO $ hPutStrLn stderr "finished."
         Node i [x, xs] | name i == "Cons" -> do
             play_event x sq
+            case x of 
+                Node j _ | name j == "Wait" -> do
+                    pa <- liftIO $ readMVar program
+                    liftIO $ output ( fmap fst pa, [ Reset_Display ], "Reset_Display" )
+                _ -> return ()
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
@@ -128,11 +134,12 @@ gui input output pack = WX.start $ do
         [ text := "live-sequencer", visible := False
         ]
 
-    out <- varCreate (M.empty, [], "reduction")
+    out <- newChan
+    have_fresh_output <- varCreate False
 
     void $ forkIO $ forever $ do
         s <- readChan output
-        varSet out s
+        writeChan out s
         ev <- createMyEvent
         evtHandlerAddPendingEvent f ev
 
@@ -167,20 +174,35 @@ gui input output pack = WX.start $ do
     reducer <- textCtrl p [ font := fontFixed ]
 
 
-    previous_highlights <- varCreate M.empty
+    highlights <- varCreate M.empty
 
     registerMyEvent f $ do
-        -- putStrLn "The custom event is fired!!"
+        (contents,log,sr) <- readChan out
+        void $ forM log $ \ msg -> do
+          case msg of
+            Step { } -> do
+                set reducer [ text := sr ]
 
-        (contents,log,sr) <- varGet out
-        let current = to_be_highlighted log
+                let ts = target msg : maybeToList ( Rewrite.rule msg )
+                let m = M.fromList $ do
+                      t <- ts
+                      return (Pos.sourceName $ Term.start t , [t]) 
+                varUpdate highlights $ M.unionWith (++) m
+                set_color contents highlighters m ( rgb 0 200 200 )
+                
+            Data { } -> do
+                set reducer [ text := sr ]
 
-        previous <- varSwap previous_highlights current
-
-        set_color contents highlighters previous ( rgb 255 255 255 ) 
-        set_color contents highlighters current ( rgb 0 200 200 )
-
-        set reducer [ text := sr ]
+                let ts = [ origin msg ]
+                let m = M.fromList $ do
+                      t <- ts
+                      return (Pos.sourceName $ Term.start t , [t]) 
+                varUpdate highlights $ M.unionWith (++) m
+                set_color contents highlighters m ( rgb 200 200 0 )
+                
+            Reset_Display -> do
+                previous <- varSwap highlights M.empty
+                set_color contents highlighters previous ( rgb 255 255 255 ) 
 
     set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill

@@ -18,6 +18,8 @@ import Data.Maybe ( maybeToList )
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
                     }
+             | Data { origin :: Identifier }
+             | Reset_Display
     deriving Show
              
 
@@ -28,7 +30,7 @@ force_head :: Program -> Term -> Writer [ Message ] Term
 force_head p t = do
     t' <- top p t
     case t' of
-      Node i [ x, xs ] | name i == "Cons"-> do
+      Node i [ x, xs ] | name i == "Cons" -> do
         y <- full p x
         return $ Node i [ y, xs ]
       Node i [] | name i == "Nil" ->
@@ -48,7 +50,6 @@ full p x = do
             return $ Number n
 
 -- | evaluate until root symbol is constructor.
--- TODO: need to add tracing here
 top :: Program -> Term -> Writer [ Message ] Term
 top p t = case t of
     Number {} ->
@@ -59,10 +60,11 @@ top p t = case t of
             e <- eval p (rules p) t
             top p e
 
+-- | to one reduction step at the root
 eval :: Program -> [ Rule ] -> Term -> Writer [ Message ] Term
 eval p _ _t @ ( Node i xs )
   | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do
-      ys <- forM xs $ full p -- these operations are strict
+      ys <- forM xs $ top p
       tell $ [ Step { target = i, rule = Nothing } ]
       return $ case ( name i, ys ) of
            -- FIXME: handling of positions is dubious
@@ -79,7 +81,8 @@ eval p _ _t @ ( Node i xs )
 eval _p [] t = error $ unwords [ "eval", show t ]
 eval p (r : rs) t = do
   let Node f xs = lhs r ; Node g ys = t
-  if f == g then do
+  if f == g 
+      then do
         (m, ys') <- match_expand_list p xs ys
         let t' = Node g ys'
         case m of
@@ -137,15 +140,3 @@ apply m t = case t of
   _ -> t
 
 
---------------------------------------------------------------------------
-
-
--- | NOTE: return type uses List, not Set,
--- since Ord instance for Identifier would remove duplicates.
--- But we want them (highlight several occurences of one symbol)
-to_be_highlighted ::
-    [Message] -> M.Map FilePath [Identifier]
-to_be_highlighted ms = M.fromListWith (++) $ do
-    m <- ms
-    i <- [ target m ] ++ maybeToList ( rule m )
-    return ( Pos.sourceName $ start i , [ i ] )
