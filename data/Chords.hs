@@ -1,6 +1,7 @@
-module chords where
+module Chords where
 
-import prelude
+import Midi
+import List
 
 c = 60 ; d = 62 ; e = 64 ; f = 65 ; g = 67 ; a = 69 ; h = 71 ;
 

@@ -1,3 +1,7 @@
+module Simplesong where
+
+import Midi
+
 main = repeat ( merge voice1 voice2 ) ;
 
 qu = 600 ;

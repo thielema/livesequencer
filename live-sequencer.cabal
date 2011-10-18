@@ -21,12 +21,12 @@ Executable live-sequencer
   hs-source-dirs: src
   Main-is: Console.hs
   GHC-Options: -Wall -threaded
-  Build-Depends: base, transformers, parsec, pretty, containers, 
+  Build-Depends: base, transformers, parsec, pretty, containers, directory,
     midi-alsa, midi, alsa-seq, alsa-core
 
 Executable live-sequencer-gui
   hs-source-dirs: src
   Main-is: GUI.hs
   GHC-Options: -Wall -threaded
-  Build-Depends: base, transformers, parsec, pretty, containers, 
+  Build-Depends: base, transformers, parsec, pretty, containers, directory,
     wx, wxcore, midi-alsa, midi, alsa-seq, alsa-core

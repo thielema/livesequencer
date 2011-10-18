@@ -1,25 +1,10 @@
-note duration pitch velocity =
-  [ Event (On pitch velocity)
-  , Wait duration
-  , Event (Off pitch velocity)
-  ] ;
-
-program n =
-  [ Event ( PgmChange n ) ] ;
+module List where
 
 replicate 0 x = Nil ;
 replicate n x =
   Cons x ( replicate ( minus n 1 ) x ) ;
 
 repeat s = append s (repeat s) ;
-
--- this is just (map (channelEvent chan))
-channel chan Nil = Nil ;
-channel chan (Cons x xs) =
-   Cons (channelEvent chan x) (channel chan xs) ;
-
-channelEvent chan (Event event) = Event (Channel chan event) ;
-channelEvent chan (Wait duration) = Wait duration ;
 
 append Nil ys = ys ;
 append (Cons x xs) ys = Cons x (append xs ys) ;

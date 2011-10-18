@@ -4,6 +4,7 @@
 
 import qualified IO
 import Term
+import Module ( Module, source_location, source_text )
 import Program
 import Rewrite
 
@@ -31,7 +32,7 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
-import Control.Monad ( forever, forM, forM_ )
+import Control.Monad ( forever, forM, forM_, guard )
 import Text.Parsec ( parse )
 import qualified Text.Parsec as Pos
 import System.Environment ( getArgs )
@@ -48,34 +49,41 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     hSetBuffering stderr LineBuffering
-    fs <- getArgs
-    ss <- forM fs readFile
-    let pack = M.fromList $ zip fs ss
-    let parsed_pack = flip M.mapWithKey pack $ \ f s -> case parse IO.input f s of
-            Left err -> error $ show err
-            Right p  -> (s,p)
+    [ f ] <- getArgs
+    p <- Program.chase [ ".", "data" ] $ read f
+
     input <- newChan
     output <- newChan
     void $ forkIO $
-        withSequencer "Rewrite-Sequencer" $ machine input output $ parsed_pack
-    gui input output pack
+        withSequencer "Rewrite-Sequencer" $ machine input output $ p
+    gui input output p
 
 
-machine :: Chan (FilePath, String) -- ^ machine reads program text from here
-        -> Chan (M.Map FilePath String, [Message], String) -- ^ and writes output to here
-        -> ( M.Map FilePath (String, Program) ) -- ^ initial program
+machine :: Chan (Identifier, String) -- ^ machine reads program text from here
+                   -- (module name, module contents)
+        -> Chan ( [Message], String) -- ^ and writes output to here
+                   -- (log message (for highlighting), current term)
+        -> Program -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
         -> IO ()
 machine input output pack sq = do
     package <- newMVar pack
     void $ forkIO $ forever $ do
         (f, s) <- readChan input
-        hPutStrLn stderr $ "module " ++ f ++ " has new input\n" ++ s
-        case parse IO.input f s of
+        hPutStrLn stderr $ "module " ++ show f ++ " has new input\n" ++ s
+        case parse IO.input ( show f ) s of
             Left err -> print err
-            Right ( p :: Program ) -> do
+            Right ( m0 :: Module ) -> do
+                -- TODO: handle the case that the module changed its name
+                -- (might happen if user changes the text in the editor)
+                p <- readMVar package
+                let Just previous = M.lookup f $ modules p
+                let m = m0 { source_location = source_location previous
+                           , source_text = s 
+                           }
                 hPutStrLn stderr "parser OK"
-                modifyMVar_ package $ return . M.insert f (s,p)
+                modifyMVar_ package $ \ p -> 
+                    return $ p { modules =  M.insert f m $ modules p }
                 hPutStrLn stderr "modified OK"
 
     startQueue sq
@@ -95,21 +103,20 @@ registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
 
-execute :: MVar ( M.Map FilePath (String,Program) )
+execute :: MVar Program
                   -- ^ current program (GUI might change the contents)
         -> Term -- ^ current term
-        -> ( (M.Map FilePath String, [Message], String) -> IO () ) -- ^ sink for messages (show current term)
+        -> ( ( [Message], String) -> IO () ) -- ^ sink for messages (show current term)
         -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program t output sq = do
     -- hPutStrLn stderr "execute"
-    pa <- liftIO $ readMVar program
+    p <- liftIO $ readMVar program
                           -- this happens anew at each click
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
-    let p = Program { rules = concat $ map (rules.snd) $ M.elems pa }
     let ( s, log ) = runWriter $ force_head p t
-    liftIO $ output $ ( fmap fst pa, log, show s )
+    liftIO $ output $ ( log, show s )
     case s of
         Node i [] | name i == "Nil" -> do
             liftIO $ hPutStrLn stderr "finished."
@@ -118,16 +125,16 @@ execute program t output sq = do
             case x of 
                 Node j _ | name j == "Wait" -> do
                     pa <- liftIO $ readMVar program
-                    liftIO $ output ( fmap fst pa, [ Reset_Display ], "Reset_Display" )
+                    liftIO $ output ( [ Reset_Display ], "Reset_Display" )
                 _ -> return ()
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
-gui :: Chan (FilePath, String) -- ^  the gui writes here
+gui :: Chan (Identifier, String) -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan (M.Map FilePath String, [Message], String) -- ^ the machine writes here
+    -> Chan ([Message], String) -- ^ the machine writes here
       -- (a textual representation of "current expression")
-    -> M.Map FilePath String -- ^ initial texts for modules
+    -> Program -- ^ initial texts for modules
     -> IO ()
 gui input output pack = WX.start $ do
     f <- WX.frame
@@ -151,22 +158,23 @@ gui input output pack = WX.start $ do
     -- pause <- WX.button p [ text := "pause" ]
     -- reset <- WX.button p [ text := "reset" ]
 
-    panelsHls <- forM (M.toList pack) $ \ (path,content) -> do
+    panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed ]
         highlighter <- textCtrlRich psub [ font := fontFixed  ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
-        set editor [ text := content
+        set editor [ text := source_text content
                    , on enterKey := do
                        s <- get editor text
                        writeChan input (path,s)
                    ]
-        set highlighter [ text := content ]
+        set highlighter [ text := source_text content ]
         return
-           (tab path $ container psub $ column 5 $
+           (tab ( show path ) $ container psub $ column 5 $
                map WX.fill $ [widget editor, widget highlighter],
             (path,editor, highlighter))
+
     let panels = map fst panelsHls
         highlighters = M.fromList $ map ( \ (_,(p,e,h)) -> (p, h) )  panelsHls
         editors      = M.fromList $ map ( \ (_,(p,e,h)) -> (p, e) )  panelsHls
@@ -177,7 +185,7 @@ gui input output pack = WX.start $ do
     highlights <- varCreate M.empty
 
     registerMyEvent f $ do
-        (contents,log,sr) <- readChan out
+        (log,sr) <- readChan out
         void $ forM log $ \ msg -> do
           case msg of
             Step { } -> do
@@ -186,9 +194,11 @@ gui input output pack = WX.start $ do
                 let ts = target msg : maybeToList ( Rewrite.rule msg )
                 let m = M.fromList $ do
                       t <- ts
-                      return (Pos.sourceName $ Term.start t , [t]) 
+                      let s = Pos.sourceName $ Term.start t 
+                      (m :: Identifier ,_) <- reads s 
+                      return (m , [t]) 
                 varUpdate highlights $ M.unionWith (++) m
-                set_color contents highlighters m ( rgb 0 200 200 )
+                set_color highlighters m ( rgb 0 200 200 )
                 
             Data { } -> do
                 set reducer [ text := sr ]
@@ -196,13 +206,15 @@ gui input output pack = WX.start $ do
                 let ts = [ origin msg ]
                 let m = M.fromList $ do
                       t <- ts
-                      return (Pos.sourceName $ Term.start t , [t]) 
+                      let s = Pos.sourceName $ Term.start t 
+                      (m :: Identifier ,_) <- reads s 
+                      return (m , [t]) 
                 varUpdate highlights $ M.unionWith (++) m
-                set_color contents highlighters m ( rgb 200 200 0 )
+                set_color highlighters m ( rgb 200 200 0 )
                 
             Reset_Display -> do
                 previous <- varSwap highlights M.empty
-                set_color contents highlighters previous ( rgb 255 255 255 ) 
+                set_color highlighters previous ( rgb 255 255 255 ) 
 
     set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill
@@ -214,10 +226,10 @@ gui input output pack = WX.start $ do
           ]
 
 
-set_color contents highlighters positions color = void $
+set_color highlighters positions color = void $
         forM ( M.toList positions  ) $ \ ( path, ids ) -> do
-            case (M.lookup path contents, M.lookup path highlighters) of
-                (Just editor, Just highlighter) -> do
+            case M.lookup path highlighters of
+                Just highlighter -> do
                     -- TODO: only act if  editor/highlighter is visible
                     when True $ do
                         set highlighter [ visible := False ]

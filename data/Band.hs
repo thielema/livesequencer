@@ -1,7 +1,8 @@
-module band where
+module Band where
 
-import chords
-import prelude
+import Chords
+import Midi
+import List
 
 main =  merge
         ( repeat chords ) ( repeat drums ) ;

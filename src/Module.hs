@@ -7,10 +7,6 @@ import Rule
 import Text.Parsec
 import Text.Parsec.Token
 import Text.PrettyPrint.HughesPJ
-{-
-import qualified Data.Set as S
-import Control.Monad ( guard )
--}
 
 data Import = Import { qualified :: Bool
                      , source :: Identifier  
@@ -34,16 +30,26 @@ instance Output Import where
                         Just r  -> text "as" <+> output r
                     ]    
 
+
+-- | on module parsing:
+-- identifiers contain information on their source location.
+-- their sourceName (as used by Parsec) is the "show" 
+-- of the module name (which is an identifier).
+-- So, sourceName is NOT the actual file name.
+-- instead, this the actual file name is kept in source_location (defined here)
+
 data Module = Module
-               { name :: Maybe Identifier
+               { name :: Identifier
                , imports :: [ Import ]
                , rules :: [ Rule ]
+               , source_text :: String
+               , source_location :: FilePath
                }
 
 
 instance Input Module where
   input = do
-    m <- optionMaybe $ do
+    m <- option ( read "Main" ) $ do
         reserved lexer "module" 
         m <- input
         reserved lexer "where"
@@ -54,9 +60,7 @@ instance Input Module where
 
 instance Output Module where
   output p = vcat 
-    [ case name p of
-       Nothing -> empty
-       Just m  -> hsep [ text "module", output m, text "where" ]
+    [ hsep [ text "module", output $ name p, text "where" ]
     , vcat $ map output $ imports p
     , vcat $ map output $ rules p
     ]  

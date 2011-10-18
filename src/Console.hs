@@ -25,7 +25,7 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     [ f ] <- getArgs
-    p <- Program.chase $ read f
+    p <- Program.chase [ ".", "data" ] $ read f
     withSequencer "Rewrite-Sequencer" $ \sq -> do
                 startQueue sq
                 MS.evalStateT ( execute p ( read "main" ) sq ) 0
