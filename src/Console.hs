@@ -4,7 +4,7 @@ import IO
 import Term
 import Rewrite
 import Event
-import Program ( Program (..) )
+import Program ( Program (..), chase )
 
 import Common
 
@@ -24,13 +24,8 @@ import Prelude hiding ( log )
 -- | read rules files, start expansion of "main"
 main :: IO ()
 main = do
-    fs <- getArgs
-    ps <- forM fs $ \ f -> do 
-          s <- readFile f
-          case parse input f s of
-              Left err -> error $ show err
-              Right p -> return p
-    let p = Program { rules = concat $ map rules ps } 
+    [ f ] <- getArgs
+    p <- Program.chase $ read f
     withSequencer "Rewrite-Sequencer" $ \sq -> do
                 startQueue sq
                 MS.evalStateT ( execute p ( read "main" ) sq ) 0

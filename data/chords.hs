@@ -1,3 +1,7 @@
+module chords where
+
+import prelude
+
 c = 60 ; d = 62 ; e = 64 ; f = 65 ; g = 67 ; a = 69 ; h = 71 ;
 
 dur delta base vel =

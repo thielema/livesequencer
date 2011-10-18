@@ -1,40 +1,38 @@
 module Program where
 
 import IO
--- import Term
+import Term ( Identifier (..) )
 import Rule
+import Module
 
 import Text.Parsec
+import Text.Parsec.Token
 import Text.PrettyPrint.HughesPJ
-{-
-import qualified Data.Set as S
-import Control.Monad ( guard )
--}
 
-data Program = Program
-               { rules :: [ Rule ]
-               -- , functions :: S.Set Identifier
-               -- , constructors :: S.Set Identifier
-               }
+import qualified Data.Map as M
+import Control.Monad ( foldM )
 
-instance Input Program where
-  input = do
-    rs <- many input
-{-
-    let fs = S.fromList $ do
-          r <- rs
-          let Node f _xs = lhs r
-          return f
-        cs = S.fromList $ do
-          r <- rs
-          (_p, Node f _xs) <- subterms ( rhs r )
-          guard $ isConstructor f
-          return f
-    return $ Program { rules = rs, functions = fs, constructors = cs }
--}
-    return $ Program { rules = rs }
-instance Output Program where
-  output p = vcat $ map output $ rules p
+data Program = Program { modules :: M.Map Identifier Module }
 
-instance Show Program where show = render . output
-instance Read Program where readsPrec = parsec_reader
+rules :: Program -> [ Rule ]
+rules p = concat $ map Module.rules $ M.elems $ modules p
+
+-- | load from disk, with import chasing
+chase :: Identifier -> IO Program
+chase n = chaser ( Program { modules = M.empty } ) n
+
+chaser :: Program -> Identifier -> IO Program
+chaser p n = 
+    case M.lookup n ( modules p ) of
+        Just m -> do
+            -- already loaded
+            return p
+        Nothing -> do    
+            let f = map ( \ c -> if c == '.' then '/' else c ) ( Term.name n )
+                  ++ ".hs"  
+            s <- readFile f    
+            case parse input f s of 
+                Left err -> error $ show err
+                Right m  -> do
+                    foldM chaser ( p { modules = M.insert n m $ modules p } ) 
+                          $ map source $ imports m

@@ -17,7 +17,6 @@ data Identifier =
      Identifier { name :: String 
                 , start :: SourcePos , end :: SourcePos
                 }
-    deriving Show
 
 instance Eq Identifier where
 -- | FIXME: this is ignoring the module.
@@ -64,6 +63,10 @@ instance Input Identifier where
 
 instance Output Identifier where
   output i = text $ name i
+
+instance Show Identifier where show = render . output
+instance Read Identifier where readsPrec = parsec_reader
+
 
 data Term = Node Identifier [ Term ]
           | Number Integer  -- ^ FIXME: Number is missing source information

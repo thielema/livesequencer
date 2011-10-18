@@ -1,3 +1,8 @@
+module band where
+
+import chords
+import prelude
+
 main =  merge
         ( repeat chords ) ( repeat drums ) ;
 
