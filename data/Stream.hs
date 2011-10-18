@@ -1,3 +1,8 @@
+module Stream where
+
+import Midi
+import List
+
 main = channel 0 ( transform morse ) ;
 
 transform ( Cons A xs ) = append hi ( transform xs ) ;
