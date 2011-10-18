@@ -42,8 +42,10 @@ lexer =
       L.commentLine = "--",
       L.nestedComments = True,
       L.identStart = letter <|> Parsec.char '_',
-      L.identLetter = alphaNum <|> Parsec.char '_',
-      L.caseSensitive = True
+      -- FIXME: check the distinction between '.' in qualified names, and as operator
+      L.identLetter = alphaNum <|> Parsec.char '_' <|> Parsec.char '.' ,
+      L.caseSensitive = True ,
+      L.reservedNames = [ "module", "where", "import", "qualified", "as", "data" ]
    }
 
 

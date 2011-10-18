@@ -2,6 +2,15 @@ module Midi where
 
 import List
 
+data Event a = Wait Integer | Event a ;
+
+data Channel a = Channel Integer a ;
+
+data Message =
+     PgmChange Integer
+   | On Integer Integer
+   | Off Integer Integer ;
+
 note duration pitch velocity =
   [ Event (On pitch velocity)
   , Wait duration

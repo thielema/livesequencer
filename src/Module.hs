@@ -1,8 +1,8 @@
 module Module where
 
 import IO
-import Term ( Identifier, lexer )
-import Rule
+import Term ( Term, Identifier, lexer )
+import Rule ( Rule )
 
 import Text.Parsec
 import Text.Parsec.Token
@@ -30,6 +30,37 @@ instance Output Import where
                         Just r  -> text "as" <+> output r
                     ]    
 
+data Data = Data { lhs :: Term 
+                 , rhs :: [ Term ]  
+                 }  
+
+instance Input Data where            
+    input = do
+        reserved lexer "data"
+        l <- input  
+        reservedOp lexer "="
+        rs <- sepBy input ( reservedOp lexer "|" ) 
+        Text.Parsec.Token.semi lexer
+        return $ Data { lhs = l, rhs = rs }
+
+instance Output Data where        
+    output d = text "data" <+> output ( lhs d ) <+> text "="
+        $$ hsep ( punctuate ( text "|") $ map output ( rhs d ) ) <+> text ";"
+
+data Type 
+
+data Declaration = Rule_Declaration Rule
+                 | Type_Declaration Type  
+                 | Data_Declaration Data  
+
+instance Input Declaration where
+    input = do d <- input ; return $ Data_Declaration d
+        <|> do r <- input ; return $ Rule_Declaration r        
+
+instance Output Declaration where
+    output d = case d of
+        Data_Declaration d -> output d
+        Rule_Declaration d -> output d
 
 -- | on module parsing:
 -- identifiers contain information on their source location.
@@ -41,11 +72,14 @@ instance Output Import where
 data Module = Module
                { name :: Identifier
                , imports :: [ Import ]
-               , rules :: [ Rule ]
+               , declarations :: [ Declaration ]
                , source_text :: String
                , source_location :: FilePath
                }
 
+rules m = do
+    Rule_Declaration r <- declarations m
+    return r
 
 instance Input Module where
   input = do
@@ -55,14 +89,14 @@ instance Input Module where
         reserved lexer "where"
         return m
     is <- many input
-    rs <- many input
-    return $ Module { name = m , imports = is , rules = rs }
+    ds <- many input
+    return $ Module { name = m , imports = is , declarations = ds }
 
 instance Output Module where
   output p = vcat 
     [ hsep [ text "module", output $ name p, text "where" ]
     , vcat $ map output $ imports p
-    , vcat $ map output $ rules p
+    , vcat $ map output $ declarations p
     ]  
 
 instance Show Module where show = render . output

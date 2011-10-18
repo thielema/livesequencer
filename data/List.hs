@@ -1,5 +1,7 @@
 module List where
 
+data List a = Nil | Cons a (List a) ;
+
 replicate 0 x = Nil ;
 replicate n x =
   Cons x ( replicate ( minus n 1 ) x ) ;

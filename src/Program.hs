@@ -41,6 +41,7 @@ chaser dirs p n = do
                 Left err -> error $ show err
                 Right m0  -> do
                     let m = m0 { source_location = ff, source_text = s }
+                    hPutStrLn stderr $ show m
                     foldM ( chaser dirs ) 
                           ( p { modules = M.insert n m $ modules p } ) 
                           $ map source $ imports m
