@@ -142,7 +142,6 @@ gui input output pack = WX.start $ do
         ]
 
     out <- newChan
-    have_fresh_output <- varCreate False
 
     void $ forkIO $ forever $ do
         s <- readChan output
