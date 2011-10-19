@@ -7,6 +7,8 @@ import qualified Text.ParserCombinators.Parsec.Token as T
 import qualified Text.ParserCombinators.Parsec.Language as L
 import Text.ParserCombinators.Parsec ( Parser )
 import Text.Parsec as Parsec
+import Text.Parsec.Expr
+import Text.Parsec.Token ( reservedOp )
 import Text.PrettyPrint.HughesPJ
 
 import qualified Data.Set as S
@@ -44,10 +46,49 @@ lexer =
       L.identStart = letter <|> Parsec.char '_',
       -- FIXME: check the distinction between '.' in qualified names, and as operator
       L.identLetter = alphaNum <|> Parsec.char '_' <|> Parsec.char '.' ,
+      L.opStart = oneOf ":!#$%&*+./<=>?@\\^|-~" ,
+      L.opLetter = oneOf ":!#$%&*+./<=>?@\\^|-~" ,
       L.caseSensitive = True ,
-      L.reservedNames = [ "module", "where", "import", "qualified", "as", "data" ]
-   }
+      L.reservedNames = [ "module", "where", "import", "qualified"
+                        , "as", "data", "class", "instance", "case", "of" ] ,
+      L.reservedOpNames = [ "=", "::", "|" ]
+      }
 
+
+-- FIXME: this should be read from a file (Prelude.hs).
+-- but then we need a parser that correctly handles fixity information
+-- on-the-fly. 
+-- For now, we hard-code Prelude's fixities:
+{-
+
+
+infixr 9  .
+infixr 8  ^, ^^, **
+infixl 7  *, /, `quot`, `rem`, `div`, `mod`
+infixl 6  +, -
+
+-- The (:) operator is built-in syntax, and cannot legally be given
+-- a fixity declaration; but its fixity is given by:
+--   infixr 5  :
+
+infix  4  ==, /=, <, <=, >=, >
+infixr 3  &&
+infixr 2  ||
+infixl 1  >>, >>=
+infixr 1  =<<
+infixr 0  $, $!, `seq`
+-}
+
+operators = 
+  [ [ ( ".", AssocRight ) ]
+  , [ ( "^", AssocRight) ]
+  , [ ( "*", AssocLeft), ("/", AssocLeft) ]  
+  , [ ( "+", AssocLeft), ("-", AssocLeft) ] 
+  , [ ( ":", AssocRight ) ]
+  , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ] 
+  , [ ( "&&", AssocRight ) ]  
+  , [ ( "||", AssocRight ) ]    
+  ]
 
 identifier :: Parser String
 identifier = T.identifier lexer
@@ -60,6 +101,8 @@ instance Input Identifier where
   input = do
       p <- getPosition
       x <- identifier
+      -- FIXME: the identifier parser will also eat trailing whitespace
+      -- so we get the wrong end position here:
       q <- getPosition
       return $ Identifier { name = x , start = p, end = q }
 
@@ -80,12 +123,20 @@ instance Read Term where readsPrec = parsec_reader
 
 instance Input Term where
   input = let p atomic =
-                     fmap Number (T.integer lexer)
+                     fmap Number (T.natural lexer)
                  <|> T.parens lexer input
                  <|> bracketed_list
                  <|> do f <- input ; args <- if atomic then return [] else many ( p True )
                         return $ Node f args
-          in  p False
+          in  buildExpressionParser table ( p False )
+
+table = map ( map binary ) operators
+binary (s, assoc) = flip Infix assoc $ do
+  p <- getPosition
+  reservedOp lexer s  
+  q <- getPosition
+  return $ \ l r -> Node ( Identifier { name = s, start = p, end = q } ) [ l, r ]
+
 
 bracketed_list :: Parser Term
 bracketed_list = do

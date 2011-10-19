@@ -4,7 +4,7 @@ data List a = Nil | Cons a (List a) ;
 
 replicate 0 x = Nil ;
 replicate n x =
-  Cons x ( replicate ( minus n 1 ) x ) ;
+  Cons x ( replicate ( n - 1 ) x ) ;
 
 repeat s = append s (repeat s) ;
 
@@ -24,8 +24,8 @@ merge (Cons x xs) ys = Cons x (merge xs ys) ;
 merge Nil ys = ys ;
 
 mergehelper LT  a xs b ys =
-  Cons (Wait a) (merge xs (Cons (Wait (minus b a)) ys)) ;
+  Cons (Wait a) (merge xs (Cons (Wait (b - a)) ys)) ;
 mergehelper EQ  a xs b ys =
   Cons (Wait a) (merge xs ys) ;
 mergehelper GT a xs b ys =
-  Cons (Wait b) (merge (Cons (Wait (minus a b)) xs) ys) ;
+  Cons (Wait b) (merge (Cons (Wait (a - b)) xs) ys) ;

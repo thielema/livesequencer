@@ -63,20 +63,20 @@ top p t = case t of
 -- | to one reduction step at the root
 eval :: Program -> [ Rule ] -> Term -> Writer [ Message ] Term
 eval p _ _t @ ( Node i xs )
-  | name i `elem` [ "compare", "less", "minus", "plus", "times" ] = do
+  | name i `elem` [ "compare", "<", "-", "+", "*" ] = do
       ys <- forM xs $ top p
       tell $ [ Step { target = i, rule = Nothing } ]
       return $ case ( name i, ys ) of
            -- FIXME: handling of positions is dubious
-           ( "less", [ Number a, Number b] ) ->
+           ( "<", [ Number a, Number b] ) ->
                Node ( Identifier { name = show (a < b)
                     , start = start i, end = end i } ) []
            ( "compare", [ Number a, Number b] ) ->
                Node ( Identifier { name = show (compare a b)
                     , start = start i, end = end i } ) []
-           ( "minus", [ Number a, Number b] ) -> Number $ a - b
-           ( "plus", [ Number a, Number b] ) -> Number $ a + b
-           ( "times", [ Number a, Number b] ) -> Number $ a * b
+           ( "-", [ Number a, Number b] ) -> Number $ a - b
+           ( "+", [ Number a, Number b] ) -> Number $ a + b
+           ( "*", [ Number a, Number b] ) -> Number $ a * b
 
 eval _p [] t = error $ unwords [ "eval", show t ]
 eval p (r : rs) t = do
