@@ -30,10 +30,10 @@ force_head :: Program -> Term -> Writer [ Message ] Term
 force_head p t = do
     t' <- top p t
     case t' of
-      Node i [ x, xs ] | name i == "Cons" -> do
+      Node i [ x, xs ] | name i == ":" -> do
         y <- full p x
         return $ Node i [ y, xs ]
-      Node i [] | name i == "Nil" ->
+      Node i [] | name i == "[]" ->
         return $ Node i []
       _ -> error $ "force_head: missing case for " ++ show t
 

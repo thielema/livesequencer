@@ -1,31 +1,28 @@
 module List where
 
-data List a = Nil | Cons a (List a) ;
-
-replicate 0 x = Nil ;
-replicate n x =
-  Cons x ( replicate ( n - 1 ) x ) ;
+replicate 0 x = [] ;
+replicate n x = x : replicate ( n - 1 ) x  ;
 
 repeat s = append s (repeat s) ;
 
-append Nil ys = ys ;
-append (Cons x xs) ys = Cons x (append xs ys) ;
+append [] ys = ys ;
+append (x : xs) ys = x : append xs ys ;
 
-concat Nil = Nil ;
-concat (Cons x xs) = append x (concat xs) ;
+concat [] = [] ;
+concat (x : xs) = append x (concat xs) ;
 
-merge (Cons (Wait a) xs) (Cons (Wait b) ys) =
+merge (Wait a : xs) (Wait b : ys) =
   mergehelper (compare a b) a xs b ys ;
-merge (Cons (Wait a) xs) (Cons y ys) =
-  Cons y (merge (Cons (Wait a) xs) ys) ;
-merge (Cons x xs) (Cons (Wait b) ys) =
-  Cons x (merge xs (Cons (Wait b) ys)) ;
-merge (Cons x xs) ys = Cons x (merge xs ys) ;
-merge Nil ys = ys ;
+merge (Wait a : xs) (y : ys) =
+  y : merge (Wait a : xs) ys ;
+merge (x : xs) (Wait b : ys) =
+  x : merge xs (Wait b : ys) ;
+merge (x : xs) ys = x : merge xs ys ;
+merge [] ys = ys ;
 
 mergehelper LT  a xs b ys =
-  Cons (Wait a) (merge xs (Cons (Wait (b - a)) ys)) ;
+  Wait a : merge xs (Wait (b - a) : ys) ;
 mergehelper EQ  a xs b ys =
-  Cons (Wait a) (merge xs ys) ;
+  Wait a : merge xs ys ;
 mergehelper GT a xs b ys =
-  Cons (Wait b) (merge (Cons (Wait (a - b)) xs) ys) ;
+  Wait b : merge (Wait (a - b) : xs) ys ;

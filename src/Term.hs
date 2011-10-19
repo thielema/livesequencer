@@ -29,7 +29,9 @@ instance Ord Identifier where
     compare i j = compare ( name i ) ( name j )
 
 isConstructor :: Identifier -> Bool
-isConstructor i = isUpper $ head $ name i
+isConstructor i = 
+  let c = head $ name i 
+  in  c == '[' || c == ':' || isUpper c
 
 isVariable :: Identifier -> Bool
 isVariable i = isLower $ head $ name i
@@ -146,14 +148,14 @@ bracketed_list = do
 inside_bracketed_list :: SourcePos -> SourcePos -> Parser Term
 inside_bracketed_list p p' =
         do q <- getPosition ; symbol "]" ; r <- getPosition
-           return $ Node ( Identifier { name = "Nil", start = q, end = r } ) []
+           return $ Node ( Identifier { name = "[]", start = q, end = r } ) []
     <|> do x <- input
            q <- getPosition
            xs <-   do symbol "]" ; r <- getPosition
-                      return $ Node ( Identifier { name = "Nil", start = q, end = r } ) []
+                      return $ Node ( Identifier { name = "[]", start = q, end = r } ) []
                <|> do symbol "," ; r <- getPosition
                       inside_bracketed_list q r
-           return $ Node ( Identifier { name = "Cons", start = p, end = p' } ) [ x, xs ]
+           return $ Node ( Identifier { name = ":", start = p, end = p' } ) [ x, xs ]
 
 instance Output Term where
   output t = case t of

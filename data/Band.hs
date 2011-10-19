@@ -8,9 +8,9 @@ main =  merge
         ( repeat chords ) ( repeat drums ) ;
 
 oc = 100 ;
-qu = times 2 oc ;
-ha = times 2 qu ;
-ga = times 2 ha ;
+qu = 2 * oc ;
+ha = 2 * qu ;
+ga = 2 * ha ;
 
 chords =
     channel 0 ( concat

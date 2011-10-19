@@ -41,8 +41,8 @@ execute p t sq = do
     liftIO $ forM_ log print
     liftIO $ print s
     case s of
-        Node i [] | name i == "Nil" -> return ()
-        Node i [x, xs] | name i == "Cons" -> do
+        Node i [] | name i == "[]" -> return ()
+        Node i [x, xs] | name i == ":" -> do
           play_event x sq
           execute p xs sq
 

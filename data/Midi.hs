@@ -21,9 +21,9 @@ program n =
   [ Event ( PgmChange n ) ] ;
 
 -- this is just (map (channelEvent chan))
-channel chan Nil = Nil ;
-channel chan (Cons x xs) =
-   Cons (channelEvent chan x) (channel chan xs) ;
+channel chan [] = [] ;
+channel chan (x : xs) =
+   channelEvent chan x : channel chan xs ;
 
 channelEvent chan (Event event) = Event (Channel chan event) ;
 channelEvent chan (Wait duration) = Wait duration ;

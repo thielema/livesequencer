@@ -119,9 +119,9 @@ execute program t output sq = do
     let ( s, log ) = runWriter $ force_head p t
     liftIO $ output $ ( log, show s )
     case s of
-        Node i [] | name i == "Nil" -> do
+        Node i [] | name i == "[]" -> do
             liftIO $ hPutStrLn stderr "finished."
-        Node i [x, xs] | name i == "Cons" -> do
+        Node i [x, xs] | name i == ":" -> do
             play_event x sq
             case x of 
                 Node j _ | name j == "Wait" -> do
