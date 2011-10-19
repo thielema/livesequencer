@@ -1,3 +1,5 @@
+{-# language EmptyDataDecls #-}
+
 module Module where
 
 import IO
