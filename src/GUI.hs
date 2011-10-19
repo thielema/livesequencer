@@ -22,6 +22,7 @@ import Graphics.UI.WXCore.WxcClassesMZ
     , textCtrlSetDefaultStyle, textCtrlSetSelection
     )
 import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
+import Graphics.UI.WXCore.WxcClassesMZ ( notebookGetSelection )
 
 import Graphics.UI.WXCore.Events
 import Event
@@ -197,7 +198,7 @@ gui input output pack = WX.start $ do
                       (m :: Identifier ,_) <- reads s 
                       return (m , [t]) 
                 varUpdate highlights $ M.unionWith (++) m
-                set_color highlighters m ( rgb 0 200 200 )
+                set_color nb highlighters m ( rgb 0 200 200 )
                 
             Data { } -> do
                 set reducer [ text := sr ]
@@ -209,11 +210,11 @@ gui input output pack = WX.start $ do
                       (m :: Identifier ,_) <- reads s 
                       return (m , [t]) 
                 varUpdate highlights $ M.unionWith (++) m
-                set_color highlighters m ( rgb 200 200 0 )
+                set_color nb highlighters m ( rgb 200 200 0 )
                 
             Reset_Display -> do
                 previous <- varSwap highlights M.empty
-                set_color highlighters previous ( rgb 255 255 255 ) 
+                set_color nb highlighters previous ( rgb 255 255 255 ) 
 
     set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill
@@ -225,12 +226,11 @@ gui input output pack = WX.start $ do
           ]
 
 
-set_color highlighters positions color = void $
+set_color nb highlighters positions color = void $ do
+        index <- notebookGetSelection nb
+        let (p, highlighter) = M.toList highlighters !! index
         forM ( M.toList positions  ) $ \ ( path, ids ) -> do
-            case M.lookup path highlighters of
-                Just highlighter -> do
-                    -- TODO: only act if  editor/highlighter is visible
-                    when True $ do
+            when ( path == p ) $ do
                         set highlighter [ visible := False ]
 
                         forM_ ids $ \ id -> do
@@ -248,4 +248,3 @@ set_color highlighters positions color = void $
                             textAttrSetTextColour attr oldColor
 
                         set highlighter [ visible := True ]
-                _ -> return ()
