@@ -14,15 +14,9 @@ import Control.Concurrent.Chan
 import Control.Concurrent.MVar
 
 import qualified Graphics.UI.WXCore as WXCore
+import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
-import Graphics.UI.WXCore.WxcClassesMZ 
-    ( wxEVT_COMMAND_MENU_SELECTED 
-    , textCtrlGetDefaultStyle, textAttrSetTextColour, textCtrlSetStyle
-    , textAttrGetTextColour, textCtrlXYToPosition, textAttrSetBackgroundColour
-    , textCtrlSetDefaultStyle, textCtrlSetSelection
-    )
 import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
-import Graphics.UI.WXCore.WxcClassesMZ ( notebookGetSelection )
 
 import Graphics.UI.WXCore.Events
 import Event
@@ -40,8 +34,7 @@ import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
 import qualified Data.Map as M
-import qualified Data.Set as S
-import Data.Maybe ( maybeToList )
+import Data.Maybe ( maybeToList, fromMaybe )
 
 import Prelude hiding ( log )
 
@@ -98,7 +91,7 @@ myEventId = wxID_HIGHEST+1 -- the custom event ID
 
 -- | the custom event is registered as a menu event
 createMyEvent :: IO (WXCore.CommandEvent ())
-createMyEvent = commandEventCreate wxEVT_COMMAND_MENU_SELECTED myEventId
+createMyEvent = commandEventCreate WXCMZ.wxEVT_COMMAND_MENU_SELECTED myEventId
 
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
@@ -167,6 +160,7 @@ gui input output pack = WX.start $ do
         set editor [ text := source_text content
                    , on enterKey := do
                        s <- get editor text
+                       set highlighter [ text := s ]
                        writeChan input (path,s)
                    ]
         set highlighter [ text := source_text content ]
@@ -225,26 +219,26 @@ gui input output pack = WX.start $ do
             , clientSize := sz 500 300
           ]
 
-
-set_color nb highlighters positions color = void $ do
-        index <- notebookGetSelection nb
-        let (p, highlighter) = M.toList highlighters !! index
-        forM ( M.toList positions  ) $ \ ( path, ids ) -> do
-            when ( path == p ) $ do
-                        set highlighter [ visible := False ]
-
-                        forM_ ids $ \ id -> do
-                            let mkpos p = 
-                                   textCtrlXYToPosition highlighter 
-                                      $ Point (Pos.sourceColumn p - 1) 
-                                              (Pos.sourceLine   p - 1)
-                            from <- mkpos $ Term.start id
-                            to   <- mkpos $ Term.end id
-                            attr <- textCtrlGetDefaultStyle highlighter
-                            oldColor <- textAttrGetTextColour attr
-                            -- textAttrSetTextColour attr color
-                            textAttrSetBackgroundColour attr color
-                            textCtrlSetStyle highlighter from to attr
-                            textAttrSetTextColour attr oldColor
-
-                        set highlighter [ visible := True ]
+set_color ::
+    (Ord k) =>
+    Notebook a ->
+    M.Map k (TextCtrl a) ->
+    M.Map k [Identifier] ->
+    Color ->
+    IO ()
+set_color nb highlighters positions hicolor = void $ do
+    index <- WXCMZ.notebookGetSelection nb
+    let (p, highlighter) = M.toList highlighters !! index
+    attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
+    bracket
+        (WXCMZ.textAttrGetBackgroundColour attr)
+        (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
+            WXCMZ.textAttrSetBackgroundColour attr hicolor
+            forM_ (fromMaybe [] $ M.lookup p positions) $ \ ident -> do
+                let mkpos pos =
+                       WXCMZ.textCtrlXYToPosition highlighter
+                          $ Point (Pos.sourceColumn pos - 1)
+                                  (Pos.sourceLine   pos - 1)
+                from <- mkpos $ Term.start ident
+                to   <- mkpos $ Term.end ident
+                WXCMZ.textCtrlSetStyle highlighter from to attr
