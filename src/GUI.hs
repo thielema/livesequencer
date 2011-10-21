@@ -125,6 +125,14 @@ execute program t output sq = do
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
+
+-- might be moved to wx package
+cursor :: Attr (TextCtrl a) Int
+cursor =
+    newAttr "cursor"
+        WXCMZ.textCtrlGetInsertionPoint
+        WXCMZ.textCtrlSetInsertionPoint
+
 editable :: WriteAttr (TextCtrl a) Bool
 editable =
     writeAttr "editable"
@@ -153,6 +161,11 @@ gui input output pack = WX.start $ do
     p <- WX.panel f [ ]
     nb <- WX.notebook p [ ]
 
+    let refreshProgram (path, editor, highlighter) = do
+            s <- get editor text
+            pos <- get editor cursor
+            set highlighter [ text := s, cursor := pos ]
+            writeChan input (path,s)
     -- TODO: control the sequencer:
     -- continue <- WX.button p [ text := "continue" ]
     -- pause <- WX.button p [ text := "pause" ]
@@ -165,20 +178,20 @@ gui input output pack = WX.start $ do
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
         set editor [ text := source_text content
-                   , on enterKey := do
-                       s <- get editor text
-                       set highlighter [ text := s ]
-                       writeChan input (path,s)
+                   , on enterKey := refreshProgram (path, editor, highlighter)
                    ]
         set highlighter [ text := source_text content ]
         return
            (tab ( show path ) $ container psub $ column 5 $
                map WX.fill $ [widget editor, widget highlighter],
-            (path,editor, highlighter))
+            (path, editor, highlighter))
 
     let panels = map fst panelsHls
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
 
+    refreshButton <- WX.button p
+        [ text := "refresh",
+          on command := mapM_ (refreshProgram . snd) panelsHls ]
     reducer <- textCtrl p [ font := fontFixed, editable := False ]
 
 
@@ -219,9 +232,10 @@ gui input output pack = WX.start $ do
                 setColorHighlighters previous 255 255 255
 
     set f [ layout := container p $ margin 5
-            $ column 5 $ map WX.fill
-            [ tabs nb panels
-            , widget reducer
+            $ column 5
+            [ WX.hfill $ row 5 $ map widget [refreshButton]
+            , WX.fill $ tabs nb panels
+            , WX.fill $ widget reducer
             ]
             , visible := True
             , clientSize := sz 500 300
