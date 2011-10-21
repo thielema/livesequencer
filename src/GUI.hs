@@ -7,6 +7,7 @@ import Term
 import Module ( Module, source_location, source_text )
 import Program
 import Rewrite
+import qualified Option
 
 import Graphics.UI.WX as WX
 import Control.Concurrent ( forkIO )
@@ -31,7 +32,6 @@ import Control.Monad ( forever, forM, forM_ )
 import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec as Pos
 
-import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
 import qualified Data.Map as M
@@ -44,8 +44,8 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     hSetBuffering stderr LineBuffering
-    [ f ] <- getArgs
-    p <- Program.chase [ ".", "data" ] $ read f
+    opt <- Option.get
+    p <- Program.chase [ ".", "data" ] $ Option.moduleName opt
 
     input <- newChan
     output <- newChan

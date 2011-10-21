@@ -1,21 +1,19 @@
 -- module Console where
 
-import IO
 import Term
 import Rewrite
 import Event
 import Program ( Program (..), chase )
 
+import qualified Option
 import Common
 
 import qualified Sound.ALSA.Sequencer as SndSeq
 
-import System.Environment
-
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
-import Control.Monad ( forM, forM_ )
+import Control.Monad ( forM_ )
 
 import Prelude hiding ( log )
 
@@ -23,11 +21,11 @@ import Prelude hiding ( log )
 -- | read rules files, start expansion of "main"
 main :: IO ()
 main = do
-    [ f ] <- getArgs
-    p <- Program.chase [ ".", "data" ] $ read f
+    opt <- Option.get
+    p <- Program.chase [ ".", "data" ] $ Option.moduleName opt
     withSequencer "Rewrite-Sequencer" $ \sq -> do
-                startQueue sq
-                MS.evalStateT ( execute p ( read "main" ) sq ) 0
+        startQueue sq
+        MS.evalStateT ( execute p ( read "main" ) sq ) 0
 
 
 execute ::
