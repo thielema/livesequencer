@@ -125,6 +125,12 @@ execute program t output sq = do
             execute program xs output sq
         _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
+editable :: WriteAttr (TextCtrl a) Bool
+editable =
+    writeAttr "editable"
+        WXCMZ.textCtrlSetEditable
+
+
 gui :: Chan (Identifier, String) -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan ([Message], String) -- ^ the machine writes here
@@ -155,7 +161,7 @@ gui input output pack = WX.start $ do
     panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed ]
-        highlighter <- textCtrlRich psub [ font := fontFixed  ]
+        highlighter <- textCtrlRich psub [ font := fontFixed, editable := False ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
         set editor [ text := source_text content
@@ -173,7 +179,7 @@ gui input output pack = WX.start $ do
     let panels = map fst panelsHls
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
 
-    reducer <- textCtrl p [ font := fontFixed ]
+    reducer <- textCtrl p [ font := fontFixed, editable := False ]
 
 
     highlights <- varCreate M.empty
