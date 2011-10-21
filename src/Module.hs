@@ -25,7 +25,15 @@ instance Input Import where
       reserved lexer "import"
       q <- Parsec.option False $ do reserved lexer "qualified" ; return True
       t <- input
-      r <- Parsec.optionMaybe $ do reserved lexer "as" ; input
+      r <- Parsec.optionMaybe $ reserved lexer "as" >> input
+      void $ Parsec.optionMaybe $ reserved lexer "hiding"
+      void $ Parsec.optionMaybe $
+          Token.parens lexer $ Token.commaSep lexer $
+          (do ident <- Token.identifier lexer
+              void $ Parsec.option [] $ Token.parens lexer $
+                  Token.commaSep lexer $ Token.identifier lexer
+              return ident) <|>
+          Token.parens lexer (Token.operator lexer)
       return $ Import { qualified = q, source = t, rename = r }
 
 instance Output Import where
