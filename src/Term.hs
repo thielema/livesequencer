@@ -11,7 +11,7 @@ import Text.ParserCombinators.Parsec
            ( CharParser, Parser, SourcePos, getPosition, (<|>), (<?>), )
 import Text.ParserCombinators.Parsec.Expr
            ( Assoc(AssocLeft, AssocRight, AssocNone) )
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
 
 import qualified Data.Set as S
 import Control.Monad ( liftM2, mzero )

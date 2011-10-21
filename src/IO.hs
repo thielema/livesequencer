@@ -1,7 +1,7 @@
 module IO where
 
 import qualified Text.ParserCombinators.Parsec as Parsec
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ ( Doc )
 
 class Input a where input :: Parsec.Parser a
 class Output a where output :: a -> Doc

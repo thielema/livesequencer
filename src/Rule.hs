@@ -3,7 +3,7 @@ module Rule where
 import IO
 import Term
 
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ ( fsep, render, text )
 
 
 data Rule = Rule { lhs :: Term
