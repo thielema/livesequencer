@@ -171,8 +171,7 @@ gui input output pack = WX.start $ do
             (path,editor, highlighter))
 
     let panels = map fst panelsHls
-        highlighters = M.fromList $ map ( \ (_,(p,e,h)) -> (p, h) )  panelsHls
-        editors      = M.fromList $ map ( \ (_,(p,e,h)) -> (p, e) )  panelsHls
+        highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
 
     reducer <- textCtrl p [ font := fontFixed ]
 
@@ -181,35 +180,37 @@ gui input output pack = WX.start $ do
 
     registerMyEvent f $ do
         (log,sr) <- readChan out
+        let setColorHighlighters ::
+                M.Map Identifier [Identifier] -> Int -> Int -> Int -> IO ()
+            setColorHighlighters m r g b =
+                set_color nb highlighters m ( rgb r g b )
         void $ forM log $ \ msg -> do
           case msg of
             Step { } -> do
                 set reducer [ text := sr ]
 
-                let ts = target msg : maybeToList ( Rewrite.rule msg )
                 let m = M.fromList $ do
-                      t <- ts
-                      let s = Pos.sourceName $ Term.start t 
-                      (m :: Identifier ,_) <- reads s 
-                      return (m , [t]) 
-                varUpdate highlights $ M.unionWith (++) m
-                set_color nb highlighters m ( rgb 0 200 200 )
-                
+                      t <- target msg : maybeToList ( Rewrite.rule msg )
+                      (ident,_) <-
+                          reads $ Pos.sourceName $ Term.start t
+                      return (ident, [t])
+                void $ varUpdate highlights $ M.unionWith (++) m
+                setColorHighlighters m 0 200 200
+
             Data { } -> do
                 set reducer [ text := sr ]
 
-                let ts = [ origin msg ]
-                let m = M.fromList $ do
-                      t <- ts
-                      let s = Pos.sourceName $ Term.start t 
-                      (m :: Identifier ,_) <- reads s 
-                      return (m , [t]) 
-                varUpdate highlights $ M.unionWith (++) m
-                set_color nb highlighters m ( rgb 200 200 0 )
-                
+                let t = origin msg
+                    m = M.fromList $ do
+                      (ident,_) <-
+                          reads $ Pos.sourceName $ Term.start t
+                      return (ident, [t])
+                void $ varUpdate highlights $ M.unionWith (++) m
+                setColorHighlighters m 200 200 0
+
             Reset_Display -> do
                 previous <- varSwap highlights M.empty
-                set_color nb highlighters previous ( rgb 255 255 255 ) 
+                setColorHighlighters previous 255 255 255
 
     set f [ layout := container p $ margin 5
             $ column 5 $ map WX.fill
