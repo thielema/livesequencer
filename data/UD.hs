@@ -13,30 +13,32 @@ qn = 2*en ;
 hn = 2*qn ;
 wn = 2*hn ;
 
+vel = 64 ;
+
 song = concat
     [ merge part1 mel, part2, part3 ]  ;
 
 mel = channel 3 ( concat
-     [ note hn c 64
-      , note hn f 64, note hn e 64, note hn c 64 ] ) ;
+     [ note hn c vel
+      , note hn f vel, note hn e vel, note hn c vel ] ) ;
 
 part1 = twice ( channel 0 ( concat
-    [ quad ( dur qn c 64 )
-    , quad ( dur qn c 64 )
-    , quad ( dur qn c 64 )
-    , concat [ dur qn c 64
-      	     , dur qn g 64
-	     , dur qn g 64
-	     , dur qn g 64
+    [ quad ( dur qn c vel )
+    , quad ( dur qn c vel )
+    , quad ( dur qn c vel )
+    , concat [ dur qn c vel
+      	     , dur qn g vel
+	     , dur qn g vel
+	     , dur qn g vel
              ]
     ] ) ) ;
 
 part2 = twice ( channel 0 ( concat
-    [ twice ( quad ( moll qn d 64 ) )
-    , quad ( dur qn f 64 )
-    , twice ( moll qn e 64 )
-    , twice ( moll qn d 64 )
-    , quad ( quad ( dur qn c 64 ) )
+    [ twice ( quad ( moll qn d vel ) )
+    , quad ( dur qn f vel )
+    , twice ( moll qn e vel )
+    , twice ( moll qn d vel )
+    , quad ( quad ( dur qn c vel ) )
      ] ) ) ;
 
 part3 = [] ;
