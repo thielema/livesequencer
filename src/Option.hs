@@ -2,11 +2,18 @@ module Option where
 
 import Term ( Identifier )
 
-import System.Environment ( getArgs )
-import System.FilePath ( (</>) )
+import qualified System.Console.GetOpt as Opt
+import System.Console.GetOpt
+          (getOpt, ArgOrder(..), ArgDescr(..), usageInfo, )
+import System.Environment (getArgs, getProgName, )
+import System.FilePath ( (</>), searchPathSeparator )
 
 import qualified System.Exit as Exit
 import qualified System.IO as IO
+
+import Control.Monad ( when )
+
+import Data.List.HT ( chop )
 
 
 data Option = Option {
@@ -22,18 +29,44 @@ deflt =
     }
 
 
-exitError :: String -> IO a
-exitError msg = do
+exitFailureMsg :: String -> IO a
+exitFailureMsg msg = do
     IO.hPutStrLn IO.stderr msg
     Exit.exitFailure
 
+{-
+Guide for common Linux/Unix command-line options:
+  http://www.faqs.org/docs/artu/ch10s05.html
+-}
+description :: [Opt.OptDescr (Option -> IO Option)]
+description =
+    Opt.Option ['h'] ["help"]
+        (NoArg $ \ _flags -> do
+            programName <- getProgName
+            putStrLn $
+                usageInfo ("Usage: " ++ programName ++ " [OPTIONS]") description
+            Exit.exitSuccess)
+        "show options" :
+    Opt.Option ['i'] ["import-paths"]
+        (flip ReqArg "PATHS" $ \str flags ->
+            return $ flags{importPaths = chop (searchPathSeparator==) str})
+        "colon separated import paths" :
+    []
+
+
 get :: IO Option
 get = do
-    args <- getArgs
-    case args of
-        [] -> exitError "no module specified"
-        _:_:_ -> exitError "more than one module specified"
+    argv <- getArgs
+    let (opts, files, errors) = getOpt RequireOrder description argv
+    when (not $ null errors) $
+        exitFailureMsg (init (concat errors))
+
+    parsedOpts <- foldl (>>=) (return deflt) opts
+
+    case files of
+        [] -> exitFailureMsg "no module specified"
+        _:_:_ -> exitFailureMsg "more than one module specified"
         [modu] ->
             case reads modu of
-                [(ident,"")] -> return $ deflt {moduleName = ident}
-                _ -> exitError $ show modu ++ " is not a module name"
+                [(ident,"")] -> return $ parsedOpts {moduleName = ident}
+                _ -> exitFailureMsg $ show modu ++ " is not a module name"

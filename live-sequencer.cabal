@@ -23,7 +23,7 @@ Executable live-sequencer
   GHC-Options: -Wall -threaded
   Build-Depends:
     base>=4, transformers, parsec, pretty, containers, directory, filepath,
-    midi-alsa, midi, alsa-seq, alsa-core
+    midi-alsa, midi, alsa-seq, alsa-core, utility-ht
 
 Executable live-sequencer-gui
   hs-source-dirs: src
@@ -31,4 +31,4 @@ Executable live-sequencer-gui
   GHC-Options: -Wall -threaded
   Build-Depends:
     base>=4, transformers, parsec, pretty, containers, directory, filepath,
-    wx, wxcore, midi-alsa, midi, alsa-seq, alsa-core
+    wx, wxcore, midi-alsa, midi, alsa-seq, alsa-core, utility-ht
