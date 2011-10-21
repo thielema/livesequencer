@@ -8,23 +8,23 @@ import Prelude ( (*) )
 main =  merge
         ( repeat chords ) ( repeat drums ) ;
 
-oc = 100 ;
-qu = 2 * oc ;
-ha = 2 * qu ;
-ga = 2 * ha ;
+en = 100 ;
+qn = 2 * en ;
+hn = 2 * qn ;
+wn = 2 * hn ;
 
 chords =
     channel 0 ( concat
-                [ quad ( dur qu c 64 )
-                , quad ( moll qu a 64 )
-                , quad ( dur qu f 64 )
-                , quad ( dur7 qu g 64 )
+                [ quad ( dur qn c 64 )
+                , quad ( moll qn a 64 )
+                , quad ( dur qn f 64 )
+                , quad ( dur7 qn g 64 )
                 ] ) ;
 
 drums =
     channel 9 ( concat
-        [ note ha 36 80
-        , quad ( note oc 38 64 )
+        [ note hn 36 80
+        , quad ( note en 38 64 )
         ] ) ;
 
 quad x = concat [ x, x, x, x ] ;

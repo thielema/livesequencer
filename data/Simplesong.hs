@@ -7,11 +7,11 @@ import Prelude ( (*) )
 
 main = repeat ( merge voice1 voice2 ) ;
 
-qu = 600 ;
-ha = 2 * qu ;
+qn = 600 ;
+hn = 2 * qn ;
 
 voice1 =
-    channel 0 (concat [ program 0 , note qu 60 64 , note ha 63 64 , note qu 68 64 ] ) ;
+    channel 0 (concat [ program 0 , note qn 60 64 , note hn 63 64 , note qn 68 64 ] ) ;
 
 voice2 =
-    channel 1 (concat [ program 1 , note ha 80 64 , note ha 82 64 ] ) ;
+    channel 1 (concat [ program 1 , note hn 80 64 , note hn 82 64 ] ) ;
