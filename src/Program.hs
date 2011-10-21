@@ -10,7 +10,8 @@ import Text.Parsec.Token
 import Text.PrettyPrint.HughesPJ
 
 import System.Directory ( doesFileExist )
-import System.IO ( hPutStrLn, stderr)
+import System.IO ( hPutStrLn, stderr )
+import System.FilePath ( (</>) )
 
 import qualified Data.Map as M
 import Control.Monad ( foldM )
@@ -48,12 +49,14 @@ chaser dirs p n = do
 
 -- | look for file, trying to append its name to the directories in the path,
 -- in turn. Will fail if file is not found.
+-- FIXME: Opening the file may fail nevertheless, thus we should merge chasing and opening files.
+chaseFile :: [FilePath] -> FilePath -> IO String
 chaseFile [] f = do
     error $ unwords [ "module", "not", "found:", f ]
-chaseFile (d:ds) f = do
-    let ff = d ++ "/" ++ f
+chaseFile (dir:dirs) f = do
+    let ff = dir </> f
     e <- doesFileExist ff
     if e then do
            hPutStrLn stderr $ unwords [ "found at location", ff ]
            return ff
-         else chaseFile ds f
+         else chaseFile dirs f
