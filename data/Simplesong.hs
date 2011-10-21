@@ -1,6 +1,9 @@
 module Simplesong where
 
 import Midi
+import List
+import Prelude ( (*) )
+
 
 main = repeat ( merge voice1 voice2 ) ;
 

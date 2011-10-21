@@ -3,6 +3,7 @@ module Band where
 import Chords
 import Midi
 import List
+import Prelude ( (*) )
 
 main =  merge
         ( repeat chords ) ( repeat drums ) ;

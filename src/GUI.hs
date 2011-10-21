@@ -33,6 +33,7 @@ import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec as Pos
 
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
+import System.FilePath ( (</>) )
 
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
@@ -45,7 +46,7 @@ main :: IO ()
 main = do
     hSetBuffering stderr LineBuffering
     opt <- Option.get
-    p <- Program.chase [ ".", "data" ] $ Option.moduleName opt
+    p <- Program.chase [ ".", "data", "data" </> "prelude" ] $ Option.moduleName opt
 
     input <- newChan
     output <- newChan

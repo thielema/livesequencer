@@ -1,6 +1,5 @@
 module Midi where
 
-import List
 
 data Event a = Wait Integer | Event a ;
 

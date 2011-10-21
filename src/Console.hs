@@ -15,6 +15,8 @@ import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forM_ )
 
+import System.FilePath ( (</>) )
+
 import Prelude hiding ( log )
 
 
@@ -22,7 +24,7 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     opt <- Option.get
-    p <- Program.chase [ ".", "data" ] $ Option.moduleName opt
+    p <- Program.chase [ ".", "data", "data" </> "prelude" ] $ Option.moduleName opt
     withSequencer "Rewrite-Sequencer" $ \sq -> do
         startQueue sq
         MS.evalStateT ( execute p ( read "main" ) sq ) 0
