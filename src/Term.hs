@@ -5,18 +5,22 @@ import Common ( void )
 
 import qualified Text.ParserCombinators.Parsec.Token as T
 import qualified Text.ParserCombinators.Parsec.Language as L
-import Text.ParserCombinators.Parsec ( Parser )
-import Text.Parsec as Parsec
-import Text.Parsec.Expr
-import Text.Parsec.Token ( reservedOp )
+import qualified Text.ParserCombinators.Parsec.Expr as Expr
+import qualified Text.ParserCombinators.Parsec as Parsec
+import Text.ParserCombinators.Parsec
+           ( CharParser, Parser, SourcePos, getPosition, (<|>), (<?>), )
+import Text.ParserCombinators.Parsec.Expr
+           ( Assoc(AssocLeft, AssocRight, AssocNone) )
 import Text.PrettyPrint.HughesPJ
 
 import qualified Data.Set as S
-import Control.Monad ( mzero )
+import Control.Monad ( liftM2, mzero )
 import Data.Char (isUpper, isLower)
+import Data.Ord (comparing)
 
-data Identifier =  
-     Identifier { name :: String 
+
+data Identifier =
+     Identifier { name :: String
                 , start :: SourcePos , end :: SourcePos
                 }
 
@@ -26,16 +30,19 @@ instance Eq Identifier where
     i == j = name i == name j
 
 instance Ord Identifier where
-    compare i j = compare ( name i ) ( name j )
+    compare = comparing name
 
 isConstructor :: Identifier -> Bool
-isConstructor i = 
-  let c = head $ name i 
-  in  c == '[' || c == ':' || isUpper c
+isConstructor i =
+    case name i of
+        (c:_) -> c == '[' || c == ':' || isUpper c
+        _ -> error "isConstructor: identifier must be non-empty"
 
 isVariable :: Identifier -> Bool
-isVariable i = isLower $ head $ name i
-
+isVariable i =
+    case name i of
+        (c:_) -> isLower c
+        _ -> error "isVariable: identifier must be non-empty"
 
 
 lexer :: T.TokenParser st
@@ -45,21 +52,24 @@ lexer =
       L.commentEnd = "-}",
       L.commentLine = "--",
       L.nestedComments = True,
-      L.identStart = letter <|> Parsec.char '_',
-      -- FIXME: check the distinction between '.' in qualified names, and as operator
-      L.identLetter = alphaNum <|> Parsec.char '_' <|> Parsec.char '.' ,
-      L.opStart = oneOf ":!#$%&*+./<=>?@\\^|-~" ,
-      L.opLetter = oneOf ":!#$%&*+./<=>?@\\^|-~" ,
-      L.caseSensitive = True ,
+      L.identStart = identifierStart,
+      L.identLetter = identifierLetter,
+      L.opStart = operatorStart,
+      L.opLetter = operatorLetter,
+      L.caseSensitive = True,
       L.reservedNames = [ "module", "where", "import", "qualified"
-                        , "as", "data", "class", "instance", "case", "of" ] ,
+                        , "as", "data", "class", "instance", "case", "of" ],
       L.reservedOpNames = [ "=", "::", "|" ]
       }
 
 
 -- FIXME: this should be read from a file (Prelude.hs).
 -- but then we need a parser that correctly handles fixity information
--- on-the-fly. 
+-- on-the-fly.
+-- A simplified solution could be:
+-- Allow fixity definitions only between import and the first declaration.
+-- With this restriction we could parse the preamble first
+-- and then start with a fresh parser for the module body.
 -- For now, we hard-code Prelude's fixities:
 {-
 
@@ -81,16 +91,28 @@ infixr 1  =<<
 infixr 0  $, $!, `seq`
 -}
 
-operators = 
+operators :: [[([Char], Assoc)]]
+operators =
   [ [ ( ".", AssocRight ) ]
   , [ ( "^", AssocRight) ]
-  , [ ( "*", AssocLeft), ("/", AssocLeft) ]  
-  , [ ( "+", AssocLeft), ("-", AssocLeft) ] 
+  , [ ( "*", AssocLeft), ("/", AssocLeft) ]
+  , [ ( "+", AssocLeft), ("-", AssocLeft) ]
   , [ ( ":", AssocRight ) ]
-  , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ] 
-  , [ ( "&&", AssocRight ) ]  
-  , [ ( "||", AssocRight ) ]    
+  , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ]
+  , [ ( "&&", AssocRight ) ]
+  , [ ( "||", AssocRight ) ]
   ]
+
+identifierStart, identifierLetter :: CharParser st Char
+identifierStart = Parsec.letter <|> Parsec.char '_'
+
+-- FIXME: check the distinction between '.' in qualified names, and as operator
+identifierLetter =
+    Parsec.alphaNum <|> Parsec.char '_' <|> Parsec.char '.'
+
+identifierCore :: Parser String
+identifierCore =
+    liftM2 (:) identifierStart (Parsec.many identifierLetter)
 
 identifier :: Parser String
 identifier = T.identifier lexer
@@ -102,10 +124,8 @@ symbol = void . T.symbol lexer
 instance Input Identifier where
   input = do
       p <- getPosition
-      x <- identifier
-      -- FIXME: the identifier parser will also eat trailing whitespace
-      -- so we get the wrong end position here:
-      q <- getPosition
+      x <- identifierCore
+      q <- T.lexeme lexer $ getPosition
       return $ Identifier { name = x , start = p, end = q }
 
 instance Output Identifier where
@@ -128,16 +148,26 @@ instance Input Term where
                      fmap Number (T.natural lexer)
                  <|> T.parens lexer input
                  <|> bracketed_list
-                 <|> do f <- input ; args <- if atomic then return [] else many ( p True )
+                 <|> do f <- input ; args <- if atomic then return [] else Parsec.many ( p True )
                         return $ Node f args
-          in  buildExpressionParser table ( p False )
+          in  Expr.buildExpressionParser table ( p False )
 
+operatorStart, operatorLetter :: CharParser st Char
+operatorStart  = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
+operatorLetter = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
+
+table :: Expr.OperatorTable Char st Term
 table = map ( map binary ) operators
-binary (s, assoc) = flip Infix assoc $ do
-  p <- getPosition
-  reservedOp lexer s  
-  q <- getPosition
-  return $ \ l r -> Node ( Identifier { name = s, start = p, end = q } ) [ l, r ]
+
+binary :: (String, Assoc) -> Expr.Operator Char st Term
+binary (s, assoc) = flip Expr.Infix assoc $ do
+    (p,q) <- Parsec.try $ T.lexeme lexer $ do
+        p <- getPosition
+        void $ Parsec.string s
+        q <- getPosition
+        Parsec.notFollowedBy operatorLetter <?> ("end of " ++ show s)
+        return (p,q)
+    return $ \ l r -> Node ( Identifier { name = s, start = p, end = q } ) [ l, r ]
 
 
 bracketed_list :: Parser Term
