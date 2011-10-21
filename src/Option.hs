@@ -3,19 +3,22 @@ module Option where
 import Term ( Identifier )
 
 import System.Environment ( getArgs )
+import System.FilePath ( (</>) )
 
 import qualified System.Exit as Exit
 import qualified System.IO as IO
 
 
 data Option = Option {
-         moduleName :: Identifier
+        moduleName :: Identifier,
+        importPaths :: [FilePath]
     }
 
 deflt :: Option
 deflt =
     Option {
-        moduleName = error "no module specified"
+        moduleName = error "no module specified",
+        importPaths = [ ".", "data", "data" </> "prelude" ]
     }
 
 
@@ -32,5 +35,5 @@ get = do
         _:_:_ -> exitError "more than one module specified"
         [modu] ->
             case reads modu of
-                [(ident,"")] -> return $ Option ident
+                [(ident,"")] -> return $ deflt {moduleName = ident}
                 _ -> exitError $ show modu ++ " is not a module name"
