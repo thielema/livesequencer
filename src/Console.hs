@@ -10,7 +10,6 @@ import Common
 
 import qualified Sound.ALSA.Sequencer as SndSeq
 
-import Text.Parsec
 import System.Environment
 
 import qualified Control.Monad.Trans.State as MS

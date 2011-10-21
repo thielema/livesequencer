@@ -7,13 +7,6 @@ import Program
 import Control.Monad ( forM )
 import Control.Monad.Trans.Writer ( Writer, tell )
 import qualified Data.Map as M
-import qualified Data.Set as S
-import qualified Text.Parsec.Pos as Pos
-import Text.Parsec.Pos ( SourcePos )
-
-import qualified Data.List as List
-import qualified Data.Char as Char
-import Data.Maybe ( maybeToList )
 
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
@@ -21,7 +14,7 @@ data Message = Step { target :: Identifier
              | Data { origin :: Identifier }
              | Reset_Display
     deriving Show
-             
+
 
 -- | force head of stream:
 -- evaluate until we have Cons or Nil at root,
@@ -81,7 +74,7 @@ eval p _ _t @ ( Node i xs )
 eval _p [] t = error $ unwords [ "eval", show t ]
 eval p (r : rs) t = do
   let Node f xs = lhs r ; Node g ys = t
-  if f == g 
+  if f == g
       then do
         (m, ys') <- match_expand_list p xs ys
         let t' = Node g ys'
@@ -138,5 +131,3 @@ apply m t = case t of
       Nothing -> Node f ( map ( apply m ) xs )
       Just t' -> t'
   _ -> t
-
-

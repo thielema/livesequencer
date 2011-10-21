@@ -5,9 +5,7 @@ import Term ( Identifier (..) )
 import Rule
 import Module
 
-import Text.Parsec
-import Text.Parsec.Token
-import Text.PrettyPrint.HughesPJ
+import Text.ParserCombinators.Parsec ( parse )
 
 import System.Directory ( doesFileExist )
 import System.IO ( hPutStrLn, stderr )

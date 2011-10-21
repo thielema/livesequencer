@@ -27,9 +27,10 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
-import Control.Monad ( forever, forM, forM_, guard )
-import Text.Parsec ( parse )
-import qualified Text.Parsec as Pos
+import Control.Monad ( forever, forM, forM_ )
+import Text.ParserCombinators.Parsec ( parse )
+import qualified Text.ParserCombinators.Parsec as Pos
+
 import System.Environment ( getArgs )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
