@@ -234,8 +234,17 @@ gui input output pack = WX.start $ do
         highlighter <- textCtrlRich psub [ font := fontFixed, editable := False ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
+        let isRefreshKey k =
+                -- Ctrl-R
+                keyKey k == KeyChar '\018' && keyModifiers k == justControl
+                -- Alt-R
+                -- keyKey k == KeyChar 'r' && keyModifiers k == justAlt
         set editor [ text := source_text content
-                   , on enterKey := refreshProgram (path, editor, highlighter)
+                   , on keyboard :~ \defaultHandler k ->
+                        -- print (case keyKey k of KeyChar c -> fromEnum c) >>
+                        if isRefreshKey k
+                          then refreshProgram (path, editor, highlighter)
+                          else defaultHandler k
                    ]
         set highlighter [ text := source_text content ]
         return
@@ -248,7 +257,11 @@ gui input output pack = WX.start $ do
 
     refreshButton <- WX.button p
         [ text := "refresh",
-          on command := mapM_ (refreshProgram . snd) panelsHls ]
+          on command := mapM_ (refreshProgram . snd) panelsHls,
+          tooltip :=
+              "parse the edited program and if successful\n" ++
+              "replace the executed program\n" ++
+              "shortcut: Ctrl-R" ]
     restartButton <- WX.button p
         [ text := "restart",
           on command := writeChan input (Execution Restart) ]
