@@ -1,7 +1,5 @@
 -- module GUI where
 
-{-# LANGUAGE ScopedTypeVariables #-}
-
 import qualified IO
 import Term
 import Module ( Module, source_location, source_text )
@@ -12,7 +10,8 @@ import qualified Option
 import Graphics.UI.WX as WX
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
-import Control.Concurrent.MVar
+import Control.Concurrent.STM.TVar
+import qualified Control.Monad.STM as STM
 
 import qualified Graphics.UI.WXCore as WXCore
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
@@ -61,29 +60,29 @@ machine :: Chan (Identifier, String) -- ^ machine reads program text from here
         -> Program -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
         -> IO ()
-machine input output pack sq = do
-    package <- newMVar pack
+machine input output prog sq = do
+    program <- newTVarIO prog
     void $ forkIO $ forever $ do
         (f, s) <- readChan input
         hPutStrLn stderr $ "module " ++ show f ++ " has new input\n" ++ s
         case parse IO.input ( show f ) s of
             Left err -> print err
-            Right ( m0 :: Module ) -> do
+            Right m0 -> (STM.atomically $ do
                 -- TODO: handle the case that the module changed its name
                 -- (might happen if user changes the text in the editor)
-                p <- readMVar package
+                p <- readTVar program
                 let Just previous = M.lookup f $ modules p
                 let m = m0 { source_location = source_location previous
                            , source_text = s 
                            }
-                hPutStrLn stderr "parser OK"
-                modifyMVar_ package $ \ p -> 
-                    return $ p { modules =  M.insert f m $ modules p }
-                hPutStrLn stderr "modified OK"
+                writeTVar program $
+                    p { modules =  M.insert f m $ modules p })
+                >>
+                hPutStrLn stderr "parsed and modified OK"
 
     startQueue sq
     MS.evalStateT
-       ( execute package ( read "main" ) ( writeChan output ) sq ) 0
+       ( execute program ( read "main" ) ( writeChan output ) sq ) 0
 
 
 -- | following code taken from http://snipplr.com/view/17538/
@@ -98,7 +97,7 @@ registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
 
-execute :: MVar Program
+execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
         -> Term -- ^ current term
         -> ( ( [Message], String) -> IO () ) -- ^ sink for messages (show current term)
@@ -106,20 +105,19 @@ execute :: MVar Program
         -> MS.StateT Time IO ()
 execute program t output sq = do
     -- hPutStrLn stderr "execute"
-    p <- liftIO $ readMVar program
+    p <- liftIO $ readTVarIO program
                           -- this happens anew at each click
                           -- since the program text might have changed in the editor
     -- hPutStrLn stderr "got program from MVar"
     let ( s, log ) = runWriter $ force_head p t
     liftIO $ output $ ( log, show s )
     case s of
-        Node i [] | name i == "[]" -> do
+        Node i [] | name i == "[]" ->
             liftIO $ hPutStrLn stderr "finished."
         Node i [x, xs] | name i == ":" -> do
             play_event x sq
             case x of 
-                Node j _ | name j == "Wait" -> do
-                    pa <- liftIO $ readMVar program
+                Node j _ | name j == "Wait" ->
                     liftIO $ output ( [ Reset_Display ], "Reset_Display" )
                 _ -> return ()
             execute program xs output sq
