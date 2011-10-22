@@ -37,6 +37,8 @@ import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
+import Data.Bool.HT ( if' )
+
 import Prelude hiding ( log )
 
 
@@ -228,6 +230,14 @@ gui input output pack = WX.start $ do
             set highlighter [ text := s, cursor := pos ]
             writeChan input (Modification (path,s))
 
+    runningButton <- WX.checkBox p
+        [ text := "running",
+          checked := True,
+          tooltip :=
+              "pause or continue program execution\n" ++
+              "shortcut: Ctrl-U" ]
+
+
     panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed ]
@@ -239,13 +249,28 @@ gui input output pack = WX.start $ do
                 keyKey k == KeyChar '\018' && keyModifiers k == justControl
                 -- Alt-R
                 -- keyKey k == KeyChar 'r' && keyModifiers k == justAlt
-        set editor [ text := source_text content
-                   , on keyboard :~ \defaultHandler k ->
-                        -- print (case keyKey k of KeyChar c -> fromEnum c) >>
-                        if isRefreshKey k
-                          then refreshProgram (path, editor, highlighter)
-                          else defaultHandler k
-                   ]
+            isRestartKey k =
+                keyKey k == KeyChar '\020' && keyModifiers k == justControl
+            isStopKey k =
+                keyKey k == KeyChar '\026' && keyModifiers k == justControl
+            isRunningKey k =
+                keyKey k == KeyChar '\021' && keyModifiers k == justControl
+        set editor
+            [ text := source_text content
+            , on keyboard :~ \defaultHandler k ->
+                 -- print (case keyKey k of KeyChar c -> fromEnum c) >>
+                 if' (isRefreshKey k)
+                     (refreshProgram (path, editor, highlighter)) $
+                 if' (isRestartKey k)
+                     (writeChan input (Execution Restart)) $
+                 if' (isStopKey k)
+                     (writeChan input (Execution Stop)) $
+                 if' (isRunningKey k)
+                     (do running <- get runningButton checked
+                         writeChan input . Execution $
+                             if' running Pause Continue) $
+                 defaultHandler k
+            ]
         set highlighter [ text := source_text content ]
         return
            (tab ( show path ) $ container psub $ column 5 $
@@ -264,20 +289,21 @@ gui input output pack = WX.start $ do
               "shortcut: Ctrl-R" ]
     restartButton <- WX.button p
         [ text := "restart",
-          on command := writeChan input (Execution Restart) ]
+          on command := writeChan input (Execution Restart),
+          tooltip :=
+              "restart program execution with 'main'\n" ++
+              "shortcut: Ctrl-T" ]
     stopButton <- WX.button p
         [ text := "stop",
-          on command := writeChan input (Execution Stop) ]
-    runningButton <- WX.checkBox p
-        [ text := "running",
-          checked := True ]
-
+          on command := writeChan input (Execution Stop),
+          tooltip :=
+              "stop program execution\n" ++
+              "shortcut: Ctrl-Z" ]
     set runningButton
         [ on command := do
               running <- get runningButton checked
-              if running
-                then writeChan input (Execution Continue)
-                else writeChan input (Execution Pause) ]
+              writeChan input . Execution $
+                  if running then Continue else Pause ]
 
     reducer <- textCtrl p [ font := fontFixed, editable := False ]
 
