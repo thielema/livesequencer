@@ -24,22 +24,22 @@ mel = channel 3 ( concat
       , note hn (f 4) vel, note hn (e 4) vel, note hn (c 4) vel ] ) ;
 
 part1 = twice ( channel 0 ( concat
-    [ quad ( dur qn (c 4) vel )
-    , quad ( dur qn (c 4) vel )
-    , quad ( dur qn (c 4) vel )
-    , concat [ dur qn (c 4) vel
-      	     , dur qn (g 4) vel
-	     , dur qn (g 4) vel
-	     , dur qn (g 4) vel
+    [ quad ( major qn (c 4) vel )
+    , quad ( major qn (c 4) vel )
+    , quad ( major qn (c 4) vel )
+    , concat [ major qn (c 4) vel
+      	     , major qn (g 4) vel
+	     , major qn (g 4) vel
+	     , major qn (g 4) vel
              ]
     ] ) ) ;
 
 part2 = twice ( channel 0 ( concat
-    [ twice ( quad ( moll qn (d 4) vel ) )
-    , quad ( dur qn (f 4) vel )
-    , twice ( moll qn (e 4) vel )
-    , twice ( moll qn (d 4) vel )
-    , quad ( quad ( dur qn (c 4) vel ) )
+    [ twice ( quad ( minor qn (d 4) vel ) )
+    , quad ( major qn (f 4) vel )
+    , twice ( minor qn (e 4) vel )
+    , twice ( minor qn (d 4) vel )
+    , quad ( quad ( major qn (c 4) vel ) )
      ] ) ) ;
 
 part3 = [] ;

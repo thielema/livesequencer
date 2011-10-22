@@ -17,10 +17,10 @@ vel = 64 ;
 
 chords =
     channel 0 ( concat
-                [ quad ( dur qn (c 4) vel )
-                , quad ( moll qn (a 4) vel )
-                , quad ( dur qn (f 4) vel )
-                , quad ( dur7 qn (g 4) vel )
+                [ quad ( major qn (c 4) vel )
+                , quad ( minor qn (a 4) vel )
+                , quad ( major qn (f 4) vel )
+                , quad ( major7 qn (g 4) vel )
                 ] ) ;
 
 drums =
