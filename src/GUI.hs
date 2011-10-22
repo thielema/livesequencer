@@ -4,7 +4,7 @@ import qualified IO
 import Term
 import Module ( Module, source_location, source_text )
 import Program
-import Rewrite
+import qualified Rewrite
 import qualified Option
 
 import Graphics.UI.WX as WX
@@ -58,7 +58,7 @@ main = do
 
 
 data Action =
-     Modification (Identifier, String)
+     Modification Identifier String Int
    | Execution Execution
 
 data Execution = Restart | Stop | Pause | Continue
@@ -76,7 +76,7 @@ we can keep the GUI and the execution of code going while parsing.
 -}
 machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
-        -> Chan ( [Message], String) -- ^ and writes output to here
+        -> Chan ( [Rewrite.Message], String) -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
         -> Program -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
@@ -89,7 +89,7 @@ machine input output prog sq = do
     void $ forkIO $ flip MS.evalStateT mainName $ forever $ do
         action <- liftIO $ readChan input
         let running b =
-                let msg = Running b
+                let msg = Rewrite.Running b
                 in  liftIO $ writeChan output ( [ msg ], show msg )
         case action of
             Execution exec ->
@@ -116,7 +116,7 @@ machine input output prog sq = do
                         liftIO . STM.atomically . writeTMVar term
                             =<< MS.get
                         MS.put mainName
-            Modification (moduleName, sourceCode) -> liftIO $ do
+            Modification moduleName sourceCode pos -> liftIO $ do
                 hPutStrLn stderr $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
@@ -133,6 +133,9 @@ machine input output prog sq = do
                         writeTVar program $
                             p { modules =  M.insert moduleName m $ modules p })
                         >>
+                        writeChan output
+                            ( [ Rewrite.Refresh moduleName sourceCode pos ], "refresh module" )
+                        >>
                         hPutStrLn stderr "parsed and modified OK"
 
     startQueue sq
@@ -143,7 +146,7 @@ machine input output prog sq = do
 execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
         -> TMVar Term -- ^ current term
-        -> ( ( [Message], String) -> IO () ) -- ^ sink for messages (show current term)
+        -> ( ( [Rewrite.Message], String) -> IO () ) -- ^ sink for messages (show current term)
         -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program term output sq = forever $ do
@@ -153,7 +156,7 @@ execute program term output sq = forever $ do
         -- since the program text might have changed in the editor
     ( ( s, log ), result ) <- liftIO $ STM.atomically $ do
         slog@( s, _log ) <-
-            fmap (runWriter . force_head p) $ takeTMVar term
+            fmap (runWriter . Rewrite.force_head p) $ takeTMVar term
         fmap ((,) slog) $
             case s of
                 Node i [x, xs] | name i == ":" -> do
@@ -170,12 +173,12 @@ execute program term output sq = forever $ do
         Left msg -> liftIO $ do
             hPutStrLn stderr msg
             stopQueue sq
-            output ( [ Running False ], "Running False" )
+            output ( [ Rewrite.Running False ], "Running False" )
         Right x -> do
             play_event x sq
             case x of
                 Node j _ | name j == "Wait" -> liftIO $
-                    output ( [ Reset_Display ], "Reset_Display" )
+                    output ( [ Rewrite.Reset_Display ], "Reset_Display" )
                 _ -> return ()
 
 
@@ -206,7 +209,7 @@ editable =
 
 gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan ([Message], String) -- ^ the machine writes here
+    -> Chan ([Rewrite.Message], String) -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> Program -- ^ initial texts for modules
     -> IO ()
@@ -224,11 +227,10 @@ gui input output pack = WX.start $ do
     p <- WX.panel f [ ]
     nb <- WX.notebook p [ ]
 
-    let refreshProgram (path, editor, highlighter) = do
+    let refreshProgram (path, editor, _highlighter) = do
             s <- get editor text
             pos <- get editor cursor
-            set highlighter [ text := s, cursor := pos ]
-            writeChan input (Modification (path,s))
+            writeChan input $ Modification path s pos
 
     runningButton <- WX.checkBox p
         [ text := "running",
@@ -318,33 +320,38 @@ gui input output pack = WX.start $ do
                 set_color nb highlighters m ( rgb r g b )
         void $ forM log $ \ msg -> do
           case msg of
-            Step { } -> do
+            Rewrite.Step target mrule -> do
                 set reducer [ text := sr ]
 
                 let m = M.fromList $ do
-                      t <- target msg : maybeToList ( Rewrite.rule msg )
+                      t <- target : maybeToList mrule
                       (ident,_) <-
                           reads $ Pos.sourceName $ Term.start t
                       return (ident, [t])
                 void $ varUpdate highlights $ M.unionWith (++) m
                 setColorHighlighters m 0 200 200
 
-            Data { } -> do
+            Rewrite.Data origin -> do
                 set reducer [ text := sr ]
 
-                let t = origin msg
-                    m = M.fromList $ do
+                let m = M.fromList $ do
                       (ident,_) <-
-                          reads $ Pos.sourceName $ Term.start t
-                      return (ident, [t])
+                          reads $ Pos.sourceName $ Term.start origin
+                      return (ident, [origin])
                 void $ varUpdate highlights $ M.unionWith (++) m
                 setColorHighlighters m 200 200 0
 
-            Reset_Display -> do
+            -- update highlighter text field only if parsing was successful
+            Rewrite.Refresh path s pos ->
+                maybe (return ())
+                    (\h -> set h [ text := s, cursor := pos ])
+                    (M.lookup path highlighters)
+
+            Rewrite.Reset_Display -> do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
-            Running running -> do
+            Rewrite.Running running -> do
                 set runningButton [ checked := running ]
 
     set f [ layout := container p $ margin 5

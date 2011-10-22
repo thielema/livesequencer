@@ -12,6 +12,7 @@ data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
                     }
              | Data { origin :: Identifier }
+             | Refresh { moduleName :: Identifier, content :: String, position :: Int }
              | Running Bool
              | Reset_Display
     deriving Show
