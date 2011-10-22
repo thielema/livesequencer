@@ -1,6 +1,7 @@
 module UD where
 
 import Chords
+import Pitch
 import Midi
 import List
 import Prelude ( (*) )
@@ -19,26 +20,26 @@ song = concat
     [ merge part1 mel, part2, part3 ]  ;
 
 mel = channel 3 ( concat
-     [ note hn c vel
-      , note hn f vel, note hn e vel, note hn c vel ] ) ;
+     [ note hn (c 4) vel
+      , note hn (f 4) vel, note hn (e 4) vel, note hn (c 4) vel ] ) ;
 
 part1 = twice ( channel 0 ( concat
-    [ quad ( dur qn c vel )
-    , quad ( dur qn c vel )
-    , quad ( dur qn c vel )
-    , concat [ dur qn c vel
-      	     , dur qn g vel
-	     , dur qn g vel
-	     , dur qn g vel
+    [ quad ( dur qn (c 4) vel )
+    , quad ( dur qn (c 4) vel )
+    , quad ( dur qn (c 4) vel )
+    , concat [ dur qn (c 4) vel
+      	     , dur qn (g 4) vel
+	     , dur qn (g 4) vel
+	     , dur qn (g 4) vel
              ]
     ] ) ) ;
 
 part2 = twice ( channel 0 ( concat
-    [ twice ( quad ( moll qn d vel ) )
-    , quad ( dur qn f vel )
-    , twice ( moll qn e vel )
-    , twice ( moll qn d vel )
-    , quad ( quad ( dur qn c vel ) )
+    [ twice ( quad ( moll qn (d 4) vel ) )
+    , quad ( dur qn (f 4) vel )
+    , twice ( moll qn (e 4) vel )
+    , twice ( moll qn (d 4) vel )
+    , quad ( quad ( dur qn (c 4) vel ) )
      ] ) ) ;
 
 part3 = [] ;

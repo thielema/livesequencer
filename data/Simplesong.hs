@@ -1,5 +1,6 @@
 module Simplesong where
 
+import Pitch
 import Midi
 import List
 import Prelude ( (*) )
@@ -13,7 +14,7 @@ hn = 2 * qn ;
 vel = 64 ;
 
 voice1 =
-    channel 0 (concat [ program 0 , note qn 60 vel , note hn 63 vel , note qn 68 vel ] ) ;
+    channel 0 (concat [ program 0 , note qn (c 4) vel , note hn (ds 4) vel , note qn (gs 4) vel ] ) ;
 
 voice2 =
-    channel 1 (concat [ program 1 , note hn 80 vel , note hn 82 vel ] ) ;
+    channel 1 (concat [ program 1 , note hn (gs 5) vel , note hn (as 5) vel ] ) ;

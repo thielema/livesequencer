@@ -1,12 +1,12 @@
 module Band where
 
 import Chords
+import Pitch
 import Midi
 import List
 import Prelude ( (*) )
 
-main =  merge
-        ( repeat chords ) ( repeat drums ) ;
+main = merge ( repeat chords ) ( repeat drums ) ;
 
 en = 100 ;
 qn = 2 * en ;
@@ -17,10 +17,10 @@ vel = 64 ;
 
 chords =
     channel 0 ( concat
-                [ quad ( dur qn c vel )
-                , quad ( moll qn a vel )
-                , quad ( dur qn f vel )
-                , quad ( dur7 qn g vel )
+                [ quad ( dur qn (c 4) vel )
+                , quad ( moll qn (a 4) vel )
+                , quad ( dur qn (f 4) vel )
+                , quad ( dur7 qn (g 4) vel )
                 ] ) ;
 
 drums =
