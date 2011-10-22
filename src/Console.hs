@@ -25,21 +25,22 @@ main = do
     p <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
     withSequencer "Rewrite-Sequencer" $ \sq -> do
         startQueue sq
-        MS.evalStateT ( execute p ( read "main" ) sq ) 0
+        MS.evalStateT ( execute p sq ( read "main" ) ) 0
 
 
 execute ::
     Program ->
-    Term ->
     Sequencer SndSeq.DuplexMode ->
+    Term ->
     MS.StateT Time IO ()
-execute p t sq = do
-    let (s, log) = runWriter $ force_head p t
-    liftIO $ forM_ log print
-    liftIO $ print s
-    case s of
-        Node i [] | name i == "[]" -> return ()
-        Node i [x, xs] | name i == ":" -> do
-          play_event x sq
-          execute p xs sq
-
+execute p sq =
+    let go t = do
+            let (s, log) = runWriter $ force_head p t
+            liftIO $ forM_ log print
+            liftIO $ print s
+            case s of
+                Node i [] | name i == "[]" -> return ()
+                Node i [x, xs] | name i == ":" -> do
+                    play_event x sq
+                    go xs
+    in  go
