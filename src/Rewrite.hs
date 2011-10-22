@@ -12,6 +12,7 @@ data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
                     }
              | Data { origin :: Identifier }
+             | Running Bool
              | Reset_Display
     deriving Show
 

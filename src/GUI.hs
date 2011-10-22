@@ -49,10 +49,21 @@ main = do
 
     input <- newChan
     output <- newChan
-    void $ forkIO $
-        withSequencer "Rewrite-Sequencer" $ machine input output p
-    gui input output p
+    withSequencer "Rewrite-Sequencer" $ \sq -> do
+        void $ forkIO $ machine input output p sq
+        gui input output p
+        stopQueue sq
 
+
+data Action =
+     Modification (Identifier, String)
+   | Execution Execution
+
+data Execution = Restart | Stop | Pause | Continue
+
+writeTMVar :: TMVar a -> a -> STM.STM ()
+writeTMVar var a =
+    tryTakeTMVar var >> putTMVar var a
 
 {-
 This runs concurrently
@@ -61,7 +72,7 @@ It parses them and provides the parsed modules to the execution engine.
 Since parsing is a bit of work
 we can keep the GUI and the execution of code going while parsing.
 -}
-machine :: Chan (Identifier, String) -- ^ machine reads program text from here
+machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> Chan ( [Message], String) -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
@@ -70,27 +81,57 @@ machine :: Chan (Identifier, String) -- ^ machine reads program text from here
         -> IO ()
 machine input output prog sq = do
     program <- newTVarIO prog
-    term <- newTMVarIO ( read "main" )
- 
-    void $ forkIO $ forever $ do
-        (moduleName, sourceCode) <- readChan input
-        hPutStrLn stderr $
-            "module " ++ show moduleName ++
-            " has new input\n" ++ sourceCode
-        case parse IO.input ( show moduleName ) sourceCode of
-            Left err -> print err
-            Right m0 -> (STM.atomically $ do
-                -- TODO: handle the case that the module changed its name
-                -- (might happen if user changes the text in the editor)
-                p <- readTVar program
-                let Just previous = M.lookup moduleName $ modules p
-                let m = m0 { source_location = source_location previous
-                           , source_text = sourceCode
-                           }
-                writeTVar program $
-                    p { modules =  M.insert moduleName m $ modules p })
-                >>
-                hPutStrLn stderr "parsed and modified OK"
+    let mainName = read "main"
+    term <- newTMVarIO mainName
+
+    void $ forkIO $ flip MS.evalStateT mainName $ forever $ do
+        action <- liftIO $ readChan input
+        let running b =
+                let msg = Running b
+                in  liftIO $ writeChan output ( [ msg ], show msg )
+        case action of
+            Execution exec ->
+                case exec of
+                    Restart -> do
+                        running True
+                        MS.put mainName
+                        liftIO $ quietContinueQueue sq
+                        liftIO $ void $ STM.atomically $ writeTMVar term mainName
+                    Stop -> do
+                        running False
+                        liftIO $ stopQueue sq
+                        liftIO $ void $ STM.atomically $ tryTakeTMVar term
+                        MS.put mainName
+                    Pause -> do
+                        running False
+                        liftIO $ pauseQueue sq
+                        MS.put .
+                            maybe mainName id
+                            =<< (liftIO $ STM.atomically $ tryTakeTMVar term)
+                    Continue -> do
+                        running True
+                        liftIO $ continueQueue sq
+                        liftIO . STM.atomically . writeTMVar term
+                            =<< MS.get
+                        MS.put mainName
+            Modification (moduleName, sourceCode) -> liftIO $ do
+                hPutStrLn stderr $
+                    "module " ++ show moduleName ++
+                    " has new input\n" ++ sourceCode
+                case parse IO.input ( show moduleName ) sourceCode of
+                    Left err -> print err
+                    Right m0 -> (STM.atomically $ do
+                        -- TODO: handle the case that the module changed its name
+                        -- (might happen if user changes the text in the editor)
+                        p <- readTVar program
+                        let Just previous = M.lookup moduleName $ modules p
+                        let m = m0 { source_location = source_location previous
+                                   , source_text = sourceCode
+                                   }
+                        writeTVar program $
+                            p { modules =  M.insert moduleName m $ modules p })
+                        >>
+                        hPutStrLn stderr "parsed and modified OK"
 
     startQueue sq
     MS.evalStateT
@@ -124,8 +165,10 @@ execute program term output sq = forever $ do
 
     liftIO $ output $ ( log, show s )
     case result of
-        Left msg ->
-            liftIO $ hPutStrLn stderr msg
+        Left msg -> liftIO $ do
+            hPutStrLn stderr msg
+            stopQueue sq
+            output ( [ Running False ], "Running False" )
         Right x -> do
             play_event x sq
             case x of
@@ -159,7 +202,7 @@ editable =
         WXCMZ.textCtrlSetEditable
 
 
-gui :: Chan (Identifier, String) -- ^  the gui writes here
+gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan ([Message], String) -- ^ the machine writes here
       -- (a textual representation of "current expression")
@@ -173,10 +216,8 @@ gui input output pack = WX.start $ do
     out <- newChan
 
     void $ forkIO $ forever $ do
-        s <- readChan output
-        writeChan out s
-        ev <- createMyEvent
-        evtHandlerAddPendingEvent f ev
+        writeChan out =<< readChan output
+        evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
     nb <- WX.notebook p [ ]
@@ -185,11 +226,7 @@ gui input output pack = WX.start $ do
             s <- get editor text
             pos <- get editor cursor
             set highlighter [ text := s, cursor := pos ]
-            writeChan input (path,s)
-    -- TODO: control the sequencer:
-    -- continue <- WX.button p [ text := "continue" ]
-    -- pause <- WX.button p [ text := "pause" ]
-    -- reset <- WX.button p [ text := "reset" ]
+            writeChan input (Modification (path,s))
 
     panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
         psub <- panel nb []
@@ -212,6 +249,23 @@ gui input output pack = WX.start $ do
     refreshButton <- WX.button p
         [ text := "refresh",
           on command := mapM_ (refreshProgram . snd) panelsHls ]
+    restartButton <- WX.button p
+        [ text := "restart",
+          on command := writeChan input (Execution Restart) ]
+    stopButton <- WX.button p
+        [ text := "stop",
+          on command := writeChan input (Execution Stop) ]
+    runningButton <- WX.checkBox p
+        [ text := "running",
+          checked := True ]
+
+    set runningButton
+        [ on command := do
+              running <- get runningButton checked
+              if running
+                then writeChan input (Execution Continue)
+                else writeChan input (Execution Pause) ]
+
     reducer <- textCtrl p [ font := fontFixed, editable := False ]
 
 
@@ -251,9 +305,14 @@ gui input output pack = WX.start $ do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
+            Running running -> do
+                set runningButton [ checked := running ]
+
     set f [ layout := container p $ margin 5
             $ column 5
-            [ WX.hfill $ row 5 $ map widget [refreshButton]
+            [ WX.hfill $ row 5 $
+                  [widget refreshButton,
+                   widget restartButton, widget stopButton, widget runningButton]
             , WX.fill $ tabs nb panels
             , WX.fill $ widget reducer
             ]
