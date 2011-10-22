@@ -283,24 +283,28 @@ gui input output pack = WX.start $ do
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
 
     refreshButton <- WX.button p
-        [ text := "refresh",
+        [ text := "Refresh",
           on command := mapM_ (refreshProgram . snd) panelsHls,
           tooltip :=
               "parse the edited program and if successful\n" ++
               "replace the executed program\n" ++
               "shortcut: Ctrl-R" ]
     restartButton <- WX.button p
-        [ text := "restart",
+        [ text := "Restart",
           on command := writeChan input (Execution Restart),
           tooltip :=
               "restart program execution with 'main'\n" ++
               "shortcut: Ctrl-T" ]
     stopButton <- WX.button p
-        [ text := "stop",
+        [ text := "Stop",
           on command := writeChan input (Execution Stop),
           tooltip :=
               "stop program execution\n" ++
               "shortcut: Ctrl-Z" ]
+    quitButton <- WX.button p
+        [ text := "Quit",
+          on command := close f ]
+
     set runningButton
         [ on command := do
               running <- get runningButton checked
@@ -356,9 +360,11 @@ gui input output pack = WX.start $ do
 
     set f [ layout := container p $ margin 5
             $ column 5
-            [ WX.hfill $ row 5 $
+            [ row 5 $
                   [widget refreshButton,
-                   widget restartButton, widget stopButton, widget runningButton]
+                   widget restartButton, widget stopButton, widget runningButton,
+                   WX.hfill empty,
+                   widget quitButton]
             , WX.fill $ tabs nb panels
             , WX.fill $ widget reducer
             ]
