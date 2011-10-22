@@ -11,6 +11,7 @@ import Graphics.UI.WX as WX
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
 import Control.Concurrent.STM.TVar
+import Control.Concurrent.STM.TMVar
 import qualified Control.Monad.STM as STM
 
 import qualified Graphics.UI.WXCore as WXCore
@@ -49,10 +50,17 @@ main = do
     input <- newChan
     output <- newChan
     void $ forkIO $
-        withSequencer "Rewrite-Sequencer" $ machine input output $ p
+        withSequencer "Rewrite-Sequencer" $ machine input output p
     gui input output p
 
 
+{-
+This runs concurrently
+and is fed with changes to the modules by the GUI.
+It parses them and provides the parsed modules to the execution engine.
+Since parsing is a bit of work
+we can keep the GUI and the execution of code going while parsing.
+-}
 machine :: Chan (Identifier, String) -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> Chan ( [Message], String) -- ^ and writes output to here
@@ -62,27 +70,68 @@ machine :: Chan (Identifier, String) -- ^ machine reads program text from here
         -> IO ()
 machine input output prog sq = do
     program <- newTVarIO prog
+    term <- newTMVarIO ( read "main" )
+ 
     void $ forkIO $ forever $ do
-        (f, s) <- readChan input
-        hPutStrLn stderr $ "module " ++ show f ++ " has new input\n" ++ s
-        case parse IO.input ( show f ) s of
+        (moduleName, sourceCode) <- readChan input
+        hPutStrLn stderr $
+            "module " ++ show moduleName ++
+            " has new input\n" ++ sourceCode
+        case parse IO.input ( show moduleName ) sourceCode of
             Left err -> print err
             Right m0 -> (STM.atomically $ do
                 -- TODO: handle the case that the module changed its name
                 -- (might happen if user changes the text in the editor)
                 p <- readTVar program
-                let Just previous = M.lookup f $ modules p
+                let Just previous = M.lookup moduleName $ modules p
                 let m = m0 { source_location = source_location previous
-                           , source_text = s 
+                           , source_text = sourceCode
                            }
                 writeTVar program $
-                    p { modules =  M.insert f m $ modules p })
+                    p { modules =  M.insert moduleName m $ modules p })
                 >>
                 hPutStrLn stderr "parsed and modified OK"
 
     startQueue sq
     MS.evalStateT
-       ( execute program ( read "main" ) ( writeChan output ) sq ) 0
+        ( execute program term ( writeChan output ) sq ) 0
+
+
+execute :: TVar Program
+                  -- ^ current program (GUI might change the contents)
+        -> TMVar Term -- ^ current term
+        -> ( ( [Message], String) -> IO () ) -- ^ sink for messages (show current term)
+        -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
+        -> MS.StateT Time IO ()
+execute program term output sq = forever $ do
+    -- hPutStrLn stderr "execute"
+    p <- liftIO $ readTVarIO program
+        -- this happens anew at each click
+        -- since the program text might have changed in the editor
+    ( ( s, log ), result ) <- liftIO $ STM.atomically $ do
+        slog@( s, _log ) <-
+            fmap (runWriter . force_head p) $ takeTMVar term
+        fmap ((,) slog) $
+            case s of
+                Node i [x, xs] | name i == ":" -> do
+                    putTMVar term xs
+                    return $ Right x
+                Node i [] | name i == "[]" ->
+                    return $ Left "finished."
+                _ ->
+                    return $ Left $
+                    "I do not know how to handle this term:\n" ++ show s
+
+    liftIO $ output $ ( log, show s )
+    case result of
+        Left msg ->
+            liftIO $ hPutStrLn stderr msg
+        Right x -> do
+            play_event x sq
+            case x of
+                Node j _ | name j == "Wait" -> liftIO $
+                    output ( [ Reset_Display ], "Reset_Display" )
+                _ -> return ()
 
 
 -- | following code taken from http://snipplr.com/view/17538/
@@ -95,33 +144,6 @@ createMyEvent = commandEventCreate WXCMZ.wxEVT_COMMAND_MENU_SELECTED myEventId
 
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
-
-
-execute :: TVar Program
-                  -- ^ current program (GUI might change the contents)
-        -> Term -- ^ current term
-        -> ( ( [Message], String) -> IO () ) -- ^ sink for messages (show current term)
-        -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
-        -> MS.StateT Time IO ()
-execute program t output sq = do
-    -- hPutStrLn stderr "execute"
-    p <- liftIO $ readTVarIO program
-                          -- this happens anew at each click
-                          -- since the program text might have changed in the editor
-    -- hPutStrLn stderr "got program from MVar"
-    let ( s, log ) = runWriter $ force_head p t
-    liftIO $ output $ ( log, show s )
-    case s of
-        Node i [] | name i == "[]" ->
-            liftIO $ hPutStrLn stderr "finished."
-        Node i [x, xs] | name i == ":" -> do
-            play_event x sq
-            case x of 
-                Node j _ | name j == "Wait" ->
-                    liftIO $ output ( [ Reset_Display ], "Reset_Display" )
-                _ -> return ()
-            execute program xs output sq
-        _ -> error $ "GUI.execute: invalid stream\n" ++ show s
 
 
 -- might be moved to wx package
