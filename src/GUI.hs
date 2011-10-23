@@ -1,5 +1,7 @@
 -- module GUI where
 
+{-# LANGUAGE TypeSynonymInstances #-}
+
 import qualified IO
 import Term
 import Module ( Module, source_location, source_text )
@@ -30,13 +32,14 @@ import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
 import Text.ParserCombinators.Parsec ( parse )
-import qualified Text.ParserCombinators.Parsec as Pos
+import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
+import qualified Data.List as List
 import Data.Bool.HT ( if' )
 
 import Prelude hiding ( log )
@@ -163,16 +166,19 @@ execute program term output sq = forever $ do
                     putTMVar term xs
                     return $ Right x
                 Node i [] | name i == "[]" ->
-                    return $ Left "finished."
-                _ ->
-                    return $ Left $
+                    return $ Left $ Rewrite.Exception (Term.start i) "finished."
+                Node i _ ->
+                    return $ Left $ Rewrite.Exception (Term.start i) $
                     "I do not know how to handle this term:\n" ++ show s
+                Number n ->
+                    return $ Left $ Rewrite.Exception (Pos.initialPos "") $
+                    "I do not know how to handle number literal " ++ show n
 
     liftIO $ output $ ( log, show s )
     case result of
         Left msg -> liftIO $ do
-            hPutStrLn stderr msg
             stopQueue sq
+            output ( [ msg ], "exception" )
             output ( [ Rewrite.Running False ], "Running False" )
         Right x -> do
             play_event x sq
@@ -205,6 +211,13 @@ editable :: WriteAttr (TextCtrl a) Bool
 editable =
     writeAttr "editable"
         WXCMZ.textCtrlSetEditable
+
+
+instance Selection (Notebook a) where
+    selection =
+        newAttr "selection"
+            WXCMZ.notebookGetSelection
+            (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
 
 
 gui :: Chan Action -- ^  the gui writes here
@@ -302,8 +315,7 @@ gui input output pack = do
               "stop program execution\n" ++
               "shortcut: Ctrl-Z" ]
     quitButton <- WX.button p
-        [ text := "Quit",
-          on command := close f ]
+        [ text := "Quit" ]
 
     set runningButton
         [ on command := do
@@ -311,7 +323,79 @@ gui input output pack = do
               writeChan input . Execution $
                   if running then Continue else Pause ]
 
-    reducer <- textCtrl p [ font := fontFixed, editable := False ]
+    reducer <-
+        textCtrl p
+            [ font := fontFixed, editable := False, wrap := WrapNone ]
+
+
+    set f [ layout := container p $ margin 5
+            $ column 5
+            [ row 5 $
+                  [widget refreshButton,
+                   widget restartButton, widget stopButton, widget runningButton,
+                   WX.hfill empty,
+                   widget quitButton]
+            , WX.fill $ tabs nb panels
+            , WX.fill $ widget reducer
+            ]
+            , visible := True
+            , clientSize := sz 500 300
+          ]
+
+    frameError <- WX.frame
+        [ text := "errors", visible := False
+        ]
+
+    panelError <- WX.panel frameError [ ]
+
+    errorLog <- WX.listCtrl panelError
+        [ columns :=
+              ("Module", AlignLeft, 120) :
+              ("Row", AlignRight, -1) :
+              ("Column", AlignRight, -1) :
+              ("Description", AlignLeft, 120) :
+              []
+        ]
+
+    set errorLog
+        [ on listEvent := \ev ->
+              case ev of
+                  {-
+                  We just read the error position from the listCtrl contents.
+                  Advantage:
+                      We are confident that we jump to the position
+                      that is displayed in the listCtrl.
+                  Disadvantage:
+                      We not have static warranty that the listCtrl
+                      contains numbers and
+                      the columns are in the order we expect.
+                  Alternatively we could maintain a separate Haskell list.
+                  In this case the advantage and disadvantage are just swapped.
+                  -}
+                  ListItemSelected n -> do
+                      moduleName : srow : scolumn : _ <- get errorLog (item n)
+                      let moduleIdent = read moduleName
+                      case List.elemIndex moduleIdent $ M.keys highlighters of
+                          Nothing -> return ()
+                          Just i -> set nb [ selection := i ]
+                      case M.lookup moduleIdent highlighters of
+                          Nothing -> return ()
+                          Just h -> do
+                              i <- textPosFromSourcePos h $
+                                   Pos.newPos moduleName (read srow) (read scolumn)
+                              set h [ cursor := i ]
+                  _ -> return ()
+        ]
+
+    set frameError
+        [ layout := container panelError $ margin 5
+              $ WX.fill $ widget errorLog
+        , visible := True
+        , clientSize := sz 500 300
+        ]
+
+    set quitButton
+        [ on command := close f >> close frameError ]
 
 
     highlights <- varCreate M.empty
@@ -345,6 +429,13 @@ gui input output pack = do
                 void $ varUpdate highlights $ M.unionWith (++) m
                 setColorHighlighters m 200 200 0
 
+            Rewrite.Exception pos descr -> do
+                itemAppend errorLog $
+                    Pos.sourceName pos :
+                    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
+                    descr :
+                    []
+
             -- update highlighter text field only if parsing was successful
             Rewrite.Refresh path s pos ->
                 maybe (return ())
@@ -358,19 +449,12 @@ gui input output pack = do
             Rewrite.Running running -> do
                 set runningButton [ checked := running ]
 
-    set f [ layout := container p $ margin 5
-            $ column 5
-            [ row 5 $
-                  [widget refreshButton,
-                   widget restartButton, widget stopButton, widget runningButton,
-                   WX.hfill empty,
-                   widget quitButton]
-            , WX.fill $ tabs nb panels
-            , WX.fill $ widget reducer
-            ]
-            , visible := True
-            , clientSize := sz 500 300
-          ]
+textPosFromSourcePos ::
+    TextCtrl a -> Pos.SourcePos -> IO Int
+textPosFromSourcePos highlighter pos =
+    WXCMZ.textCtrlXYToPosition highlighter
+       $ Point (Pos.sourceColumn pos - 1)
+               (Pos.sourceLine   pos - 1)
 
 set_color ::
     (Ord k) =>
@@ -380,7 +464,7 @@ set_color ::
     Color ->
     IO ()
 set_color nb highlighters positions hicolor = void $ do
-    index <- WXCMZ.notebookGetSelection nb
+    index <- get nb selection
     let (p, highlighter) = M.toList highlighters !! index
     attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
     bracket
@@ -388,10 +472,6 @@ set_color nb highlighters positions hicolor = void $ do
         (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
             WXCMZ.textAttrSetBackgroundColour attr hicolor
             forM_ (fromMaybe [] $ M.lookup p positions) $ \ ident -> do
-                let mkpos pos =
-                       WXCMZ.textCtrlXYToPosition highlighter
-                          $ Point (Pos.sourceColumn pos - 1)
-                                  (Pos.sourceLine   pos - 1)
-                from <- mkpos $ Term.start ident
-                to   <- mkpos $ Term.end ident
+                from <- textPosFromSourcePos highlighter $ Term.start ident
+                to   <- textPosFromSourcePos highlighter $ Term.end ident
                 WXCMZ.textCtrlSetStyle highlighter from to attr
