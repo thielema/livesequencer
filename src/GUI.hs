@@ -27,10 +27,9 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
-import Control.Monad.Trans.Maybe ( runMaybeT )
+import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
-import qualified Control.Monad as Monad
 import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Error as PErr
@@ -67,6 +66,18 @@ data Action =
 
 data Execution = Restart | Stop | Pause | Continue
 
+
+data ExceptionType = ParseException | TermException
+    deriving (Show, Eq, Ord, Enum)
+
+data GuiUpdate =
+     Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
+   | Exception { _excType :: ExceptionType, _pos :: Pos.SourcePos, _message :: String }
+   | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
+   | Running Bool
+   | ResetDisplay
+
+
 writeTMVar :: TMVar a -> a -> STM.STM ()
 writeTMVar var a =
     tryTakeTMVar var >> putTMVar var a
@@ -80,7 +91,7 @@ we can keep the GUI and the execution of code going while parsing.
 -}
 machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
-        -> Chan ( [Rewrite.Message], String) -- ^ and writes output to here
+        -> Chan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
         -> Program -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
@@ -92,9 +103,8 @@ machine input output prog sq = do
 
     void $ forkIO $ flip MS.evalStateT mainName $ forever $ do
         action <- liftIO $ readChan input
-        let running b =
-                let msg = Rewrite.Running b
-                in  liftIO $ writeChan output ( [ msg ], show msg )
+        let running =
+                liftIO . writeChan output . Running
         case action of
             Execution exec ->
                 case exec of
@@ -126,13 +136,12 @@ machine input output prog sq = do
                     " has new input\n" ++ sourceCode
                 case parse IO.input ( show moduleName ) sourceCode of
                     Left err ->
-                        writeChan output
-                            ( [ Rewrite.Exception (PErr.errorPos err) Rewrite.ParseException $
-                                PErr.showErrorMessages
-                                    "or" "unknown parse error" 
-                                    "expecting" "unexpected" "end of input" $
-                                PErr.errorMessages err ]
-                            , "parse error" )
+                        writeChan output $
+                            Exception ParseException (PErr.errorPos err) $
+                            PErr.showErrorMessages
+                                "or" "unknown parse error" 
+                                "expecting" "unexpected" "end of input" $
+                            PErr.errorMessages err
                     Right m0 -> (STM.atomically $ do
                         -- TODO: handle the case that the module changed its name
                         -- (might happen if user changes the text in the editor)
@@ -145,7 +154,7 @@ machine input output prog sq = do
                             p { modules =  M.insert moduleName m $ modules p })
                         >>
                         writeChan output
-                            ( [ Rewrite.Refresh moduleName sourceCode pos ], "refresh module" )
+                            (Refresh moduleName sourceCode pos)
                         >>
                         hPutStrLn stderr "parsed and modified OK"
 
@@ -157,7 +166,7 @@ machine input output prog sq = do
 execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
         -> TMVar Term -- ^ current term
-        -> ( ( [Rewrite.Message], String) -> IO () ) -- ^ sink for messages (show current term)
+        -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
         -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program term output sq = forever $ do
@@ -165,38 +174,38 @@ execute program term output sq = forever $ do
     p <- liftIO $ readTVarIO program
         -- this happens anew at each click
         -- since the program text might have changed in the editor
-    ( ( ms, log ), result ) <- liftIO $ STM.atomically $ do
-        mslog@( ms, _log ) <-
-            fmap (runWriter . runMaybeT . Rewrite.force_head p) $ takeTMVar term
+    ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
+        eslog@( es, _log ) <-
+            fmap (runWriter . Exc.runExceptionalT . Rewrite.force_head p) $ takeTMVar term
         let returnExc pos =
-                return . Left . (:[]) . Rewrite.Exception pos Rewrite.TermException
-        fmap ((,) mslog) $
-            case ms of
-                Nothing -> return $ Left []
-                Just s ->
+                return . Exc.Exception . (,) pos
+        fmap ((,) eslog) $
+            case es of
+                Exc.Exception (pos,msg) -> returnExc pos msg
+                Exc.Success s ->
                     case s of
                         Node i [x, xs] | name i == ":" -> do
                             putTMVar term xs
-                            return $ Right x
+                            return $ Exc.Success x
                         Node i [] | name i == "[]" ->
                             returnExc (Term.start i) "finished."
                         _ ->
                             returnExc (Term.termPos s) $
                             "I do not know how to handle this term: " ++ show s
 
-    liftIO $ output $ ( log, maybe "" show ms )
+    liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
+
     case result of
-        Left msgs -> liftIO $ do
+        Exc.Exception (pos,msg) -> liftIO $ do
             stopQueue sq
-            output ( msgs, "exception" )
-            output ( [ Rewrite.Running False ], "Running False" )
-        Right x -> do
-            msgs <- play_event x sq
-            Monad.when ( not ( null msgs ) ) $
-                liftIO $ output ( msgs, "unknown events" )
+            output $ Exception TermException pos msg
+            output $ Running False
+        Exc.Success x -> do
+            mapM_ (liftIO . output . uncurry (Exception TermException))
+                =<< play_event x sq
             case x of
                 Node j _ | name j == "Wait" -> liftIO $
-                    output ( [ Rewrite.Reset_Display ], "Reset_Display" )
+                    output ResetDisplay
                 _ -> return ()
 
 
@@ -234,7 +243,7 @@ notebookSelection =
 
 gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan ([Rewrite.Message], String) -- ^ the machine writes here
+    -> Chan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> Program -- ^ initial texts for modules
     -> IO ()
@@ -420,56 +429,58 @@ gui input output pack = do
     highlights <- varCreate M.empty
 
     registerMyEvent f $ do
-        (log,sr) <- readChan out
+        msg <- readChan out
         let setColorHighlighters ::
                 M.Map Identifier [Identifier] -> Int -> Int -> Int -> IO ()
             setColorHighlighters m r g b =
                 set_color nb highlighters m ( rgb r g b )
-        void $ forM log $ \ msg -> do
-          case msg of
-            Rewrite.Step target mrule -> do
+        case msg of
+            Term steps sr -> do
                 set reducer [ text := sr, cursor := 0 ]
+                forM_ steps $ \step ->
+                  case step of
+                    Rewrite.Step target mrule -> do
 
-                let m = M.fromList $ do
-                      t <- target : maybeToList mrule
-                      (ident,_) <-
-                          reads $ Pos.sourceName $ Term.start t
-                      return (ident, [t])
-                void $ varUpdate highlights $ M.unionWith (++) m
-                setColorHighlighters m 0 200 200
+                        let m = M.fromList $ do
+                              t <- target : maybeToList mrule
+                              (ident,_) <-
+                                  reads $ Pos.sourceName $ Term.start t
+                              return (ident, [t])
+                        void $ varUpdate highlights $ M.unionWith (++) m
+                        setColorHighlighters m 0 200 200
 
-            Rewrite.Data origin -> do
-                set reducer [ text := sr, cursor := 0 ]
+                    Rewrite.Data origin -> do
+                        set reducer [ text := sr, cursor := 0 ]
 
-                let m = M.fromList $ do
-                      (ident,_) <-
-                          reads $ Pos.sourceName $ Term.start origin
-                      return (ident, [origin])
-                void $ varUpdate highlights $ M.unionWith (++) m
-                setColorHighlighters m 200 200 0
+                        let m = M.fromList $ do
+                              (ident,_) <-
+                                  reads $ Pos.sourceName $ Term.start origin
+                              return (ident, [origin])
+                        void $ varUpdate highlights $ M.unionWith (++) m
+                        setColorHighlighters m 200 200 0
 
-            Rewrite.Exception pos typ descr -> do
+            Exception typ pos descr -> do
                 -- caution: if you alter the format, also update listEvent handling
                 itemAppend errorLog $
                     Pos.sourceName pos :
                     show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
                     (case typ of
-                         Rewrite.ParseException -> "parse error"
-                         Rewrite.TermException -> "term error") :
+                        ParseException -> "parse error"
+                        TermException -> "term error") :
                     descr :
                     []
 
             -- update highlighter text field only if parsing was successful
-            Rewrite.Refresh path s pos ->
+            Refresh path s pos ->
                 maybe (return ())
                     (\h -> set h [ text := s, cursor := pos ])
                     (M.lookup path highlighters)
 
-            Rewrite.Reset_Display -> do
+            ResetDisplay -> do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
-            Rewrite.Running running -> do
+            Running running -> do
                 set runningButton [ checked := running ]
 
 textPosFromSourcePos ::

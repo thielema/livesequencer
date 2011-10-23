@@ -204,7 +204,7 @@ type Position = [ Int ]
 
 termPos :: Term -> SourcePos
 termPos (Node i _) = start i
-termPos (Number _) = initialPos ""
+termPos (Number _) = initialPos "Prelude"
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of

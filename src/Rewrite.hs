@@ -6,33 +6,25 @@ import Program
 
 import qualified Text.ParserCombinators.Parsec as Pos
 
-import Control.Monad ( forM, mzero )
+import Control.Monad ( forM )
 import Control.Monad.Trans.Writer ( Writer, tell )
-import Control.Monad.Trans.Maybe ( MaybeT )
 import Control.Monad.Trans.Class ( lift )
+import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
-
-data ExceptionType = ParseException | TermException
-    deriving (Show, Eq, Ord, Enum)
 
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
                     }
              | Data { origin :: Identifier }
-             | Exception { pos :: Pos.SourcePos, excType :: ExceptionType, message :: String }
-             | Refresh { moduleName :: Identifier, content :: String, position :: Int }
-             | Running Bool
-             | Reset_Display
     deriving Show
 
-type Evaluator = MaybeT ( Writer [ Message ] )
+type Evaluator = ExceptionalT (Pos.SourcePos, String) ( Writer [ Message ] )
 
 exception :: Term -> String -> Evaluator a
-exception t msg = do
-    lift $ tell [ Exception (termPos t) TermException $ msg ]
-    mzero
+exception t msg =
+    throwT $ (termPos t, msg)
 
 
 -- | force head of stream:
@@ -48,7 +40,7 @@ force_head p t = do
       Node i [] | name i == "[]" ->
         return $ Node i []
       _ ->
-        exception t $ "not a list term: " ++ show t
+        exception t' $ "not a list term: " ++ show t
 
 -- | force full evaluation
 -- (result has only constructors and numbers)
@@ -98,7 +90,7 @@ eval p _ t @ ( Node i xs )
                       exception t $ "unknown operation " ++ show opName
           _ -> exception t $ "wrong number of arguments"
 
-eval _p [] t = exception t $ unwords [ "eval", show t ]
+eval _p [] t = exception t $ unwords [ "cannot reduce", show t ]
 eval p (r : rs) t = do
   let Node f xs = lhs r ; Node g ys = t
   if f == g
@@ -158,9 +150,9 @@ match_expand_list p (x:xs) (y:ys) = do
                             Just un -> return $ Just un
             return (n',  y' : ys')
 match_expand_list _ (x:_) _ =
-    exception x "first pattern too long"
+    exception x "too few arguments"
 match_expand_list _ _ (y:_) =
-    exception y "second pattern too long"
+    exception y "too many arguments"
 
 apply :: M.Map Identifier Term -> Term -> Term
 apply m t = case t of

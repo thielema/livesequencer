@@ -22,7 +22,7 @@ Executable live-sequencer
   Main-is: Console.hs
   GHC-Options: -Wall -threaded
   Build-Depends:
-    base>=4, transformers, parsec, pretty, containers, directory, filepath,
+    base>=4, transformers, explicit-exception, parsec, pretty, containers, directory, filepath,
     midi-alsa, midi, alsa-seq, alsa-core, utility-ht
 
 Executable live-sequencer-gui
@@ -30,5 +30,5 @@ Executable live-sequencer-gui
   Main-is: GUI.hs
   GHC-Options: -Wall -threaded
   Build-Depends:
-    base>=4, transformers, parsec, pretty, containers, directory, filepath,
+    base>=4, transformers, explicit-exception, parsec, pretty, containers, directory, filepath,
     wx, wxcore, stm, midi-alsa, midi, alsa-seq, alsa-core, utility-ht

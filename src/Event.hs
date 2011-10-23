@@ -1,8 +1,9 @@
 module Event where
 
-import qualified Rewrite
 import Term
 import Common ( Sequencer(Sequencer), sendEvent, Time, void )
+
+import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
 import qualified Sound.MIDI.Message.Channel as ChannelMsg
 import qualified Sound.MIDI.ALSA as MidiAlsa
@@ -21,20 +22,19 @@ import Control.Monad ( when )
 -- import Control.Concurrent ( threadDelay )
 
 
-termException :: String -> Term -> Rewrite.Message
+termException :: String -> Term -> (Pos.SourcePos, String)
 termException msg s =
-    Rewrite.Exception (Term.termPos s) Rewrite.TermException $
-    msg ++ " " ++ show s
+    (Term.termPos s, msg ++ " " ++ show s)
 
 
-runIO :: (MonadIO m) => IO () -> m [Rewrite.Message]
+runIO :: (MonadIO m) => IO () -> m [(Pos.SourcePos, String)]
 runIO action = liftIO action >> return []
 
 play_event ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
     Term ->
     Sequencer mode ->
-    MS.StateT Time IO [ Rewrite.Message ]
+    MS.StateT Time IO [ (Pos.SourcePos, String) ]
 play_event x sq = case x of
     Node i [Number n] | name i == "Wait" ->
 --        threadDelay (fromIntegral n * 1000)
