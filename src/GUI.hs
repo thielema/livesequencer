@@ -14,6 +14,8 @@ import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TMVar
 import qualified Control.Monad.STM as STM
 
+import Data.IORef ( newIORef, readIORef, writeIORef, modifyIORef )
+
 import qualified Graphics.UI.WXCore as WXCore
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
@@ -36,6 +38,8 @@ import qualified Text.ParserCombinators.Parsec.Error as PErr
 
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
+import qualified Data.Foldable as Fold
+import qualified Data.Sequence as Seq
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
@@ -76,6 +80,19 @@ data GuiUpdate =
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | Running Bool
    | ResetDisplay
+
+
+type ExceptionItem = (ExceptionType, Pos.SourcePos, String)
+
+lineFromExceptionItem :: ExceptionItem -> [String]
+lineFromExceptionItem (typ, pos, descr) =
+    Pos.sourceName pos :
+    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
+    (case typ of
+        ParseException -> "parse error"
+        TermException -> "term error") :
+    descr :
+    []
 
 
 writeTMVar :: TMVar a -> a -> STM.STM ()
@@ -248,6 +265,33 @@ gui :: Chan Action -- ^  the gui writes here
     -> Program -- ^ initial texts for modules
     -> IO ()
 gui input output pack = do
+    frameError <- WX.frame
+        [ text := "errors", visible := False
+        ]
+
+    panelError <- WX.panel frameError [ ]
+
+    errorLog <- WX.listCtrl panelError
+        [ columns :=
+              ("Module", AlignLeft, 120) :
+              ("Row", AlignRight, -1) :
+              ("Column", AlignRight, -1) :
+              ("Type", AlignLeft, -1) :
+              ("Description", AlignLeft, 500) :
+              []
+        ]
+    errorList <- newIORef Seq.empty
+    let refreshErrorLog = do
+            errors <- readIORef errorList
+            set errorLog [ items :=
+                  map lineFromExceptionItem $ Fold.toList errors ]
+
+    clearLog <- WX.button panelError
+        [ text := "Clear",
+          on command :=
+              writeIORef errorList Seq.empty >> refreshErrorLog ]
+
+
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]
@@ -265,6 +309,12 @@ gui input output pack = do
             s <- get editor text
             pos <- get editor cursor
             writeChan input $ Modification path s pos
+
+            modifyIORef errorList
+                (Seq.filter
+                    (\(_, errorPos, _) ->
+                        name path /= Pos.sourceName errorPos))
+            refreshErrorLog
 
     runningButton <- WX.checkBox p
         [ text := "running",
@@ -364,58 +414,25 @@ gui input output pack = do
             , clientSize := sz 500 300
           ]
 
-    frameError <- WX.frame
-        [ text := "errors", visible := False
-        ]
-
-    panelError <- WX.panel frameError [ ]
-
-    errorLog <- WX.listCtrl panelError
-        [ columns :=
-              ("Module", AlignLeft, 120) :
-              ("Row", AlignRight, -1) :
-              ("Column", AlignRight, -1) :
-              ("Type", AlignLeft, -1) :
-              ("Description", AlignLeft, 500) :
-              []
-        ]
-
-    clearLog <- WX.button panelError
-        [ text := "Clear",
-          on command := set errorLog [ items := [] ] ]
-
 
     set errorLog
         [ on listEvent := \ev ->
               case ev of
-                  {-
-                  We just read the error position from the listCtrl contents.
-                  Advantage:
-                      We are confident that we jump to the position
-                      that is displayed in the listCtrl.
-                  Disadvantage:
-                      We not have static warranty that the listCtrl
-                      contains numbers and
-                      the columns are in the order we expect.
-                  Alternatively we could maintain a separate Haskell list.
-                  In this case the advantage and disadvantage are just swapped.
-                  -}
                   ListItemSelected n -> do
-                      moduleName : srow : scolumn : typ : _ <-
-                          get errorLog (item n)
-                      let moduleIdent = read moduleName
+                      errors <- readIORef errorList
+                      let (typ, errorPos, _descr) = Seq.index errors n
+                          moduleIdent = read (Pos.sourceName errorPos)
                       case List.elemIndex moduleIdent $ M.keys highlighters of
                           Nothing -> return ()
                           Just i -> set nb [ notebookSelection := i ]
                       let textField =
-                              if typ == "parse error"
-                                then editors
-                                else highlighters
+                              case typ of
+                                  ParseException -> editors
+                                  TermException -> highlighters
                       case M.lookup moduleIdent textField of
                           Nothing -> return ()
                           Just h -> do
-                              i <- textPosFromSourcePos h $
-                                   Pos.newPos moduleName (read srow) (read scolumn)
+                              i <- textPosFromSourcePos h errorPos
                               set h [ cursor := i ]
                   _ -> return ()
         ]
@@ -467,24 +484,15 @@ gui input output pack = do
                         setColorHighlighters m 200 200 0
 
             Exception typ pos descr -> do
-                -- caution: if you alter the format, also update listEvent handling
-                itemAppend errorLog $
-                    Pos.sourceName pos :
-                    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
-                    (case typ of
-                        ParseException -> "parse error"
-                        TermException -> "term error") :
-                    descr :
-                    []
+                let exc = (typ, pos, descr)
+                itemAppend errorLog $ lineFromExceptionItem exc
+                modifyIORef errorList (Seq.|> exc)
 
             -- update highlighter text field only if parsing was successful
             Refresh path s pos -> do
                 maybe (return ())
                     (\h -> set h [ text := s, cursor := pos ])
                     (M.lookup path highlighters)
-
-                errors <- get errorLog items
-                set errorLog [ items := filter ((name path /=) . head) errors ]
 
             ResetDisplay -> do
                 previous <- varSwap highlights M.empty
