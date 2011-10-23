@@ -4,8 +4,6 @@ import Term
 import Rule
 import Program
 
-import qualified Text.ParserCombinators.Parsec as Pos
-
 import Control.Monad ( forM )
 import Control.Monad.Trans.Writer ( Writer, tell )
 import Control.Monad.Trans.Class ( lift )
@@ -20,11 +18,11 @@ data Message = Step { target :: Identifier
              | Data { origin :: Identifier }
     deriving Show
 
-type Evaluator = ExceptionalT (Pos.SourcePos, String) ( Writer [ Message ] )
+type Evaluator = ExceptionalT (Range, String) ( Writer [ Message ] )
 
 exception :: Term -> String -> Evaluator a
 exception t msg =
-    throwT $ (termPos t, msg)
+    throwT $ (termRange t, msg)
 
 
 -- | force head of stream:
@@ -77,14 +75,14 @@ eval p _ t @ ( Node i xs )
                   "<" ->
                       return $
                       Node ( Identifier { name = show (a < b)
-                           , start = start i, end = end i } ) []
+                           , range = range i } ) []
                   "compare" ->
                       return $
                       Node ( Identifier { name = show (compare a b)
-                           , start = start i, end = end i } ) []
-                  "-" -> return $ Number (start i) $ a - b
-                  "+" -> return $ Number (start i) $ a + b
-                  "*" -> return $ Number (start i) $ a * b
+                           , range = range i } ) []
+                  "-" -> return $ Number (range i) $ a - b
+                  "+" -> return $ Number (range i) $ a + b
+                  "*" -> return $ Number (range i) $ a * b
                   opName ->
                       exception t $ "unknown operation " ++ show opName
           _ -> exception t $ "wrong number of arguments"

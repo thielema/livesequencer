@@ -21,10 +21,11 @@ import Data.Char (isUpper, isLower)
 import Data.Ord (comparing)
 
 
+data Range = Range { start :: SourcePos , end :: SourcePos }
+    deriving (Eq, Ord, Show)
+
 data Identifier =
-     Identifier { name :: String
-                , start :: SourcePos , end :: SourcePos
-                }
+     Identifier { range :: Range, name :: String }
 
 instance Eq Identifier where
 -- | FIXME: this is ignoring the module.
@@ -122,13 +123,18 @@ identifier = T.identifier lexer
 symbol :: String -> Parser ()
 symbol = void . T.symbol lexer
 
+ranged :: CharParser st a -> CharParser st (Range, a)
+ranged p = do
+    from <- getPosition
+    x <- p
+    to <- getPosition
+    return $ (Range from to, x)
+
 
 instance Input Identifier where
-  input = do
-      p <- getPosition
-      x <- identifierCore
-      q <- T.lexeme lexer $ getPosition
-      return $ Identifier { name = x , start = p, end = q }
+  input =
+      T.lexeme lexer $
+      fmap (uncurry Identifier) $ ranged identifierCore
 
 instance Output Identifier where
   output i = text $ name i
@@ -138,7 +144,7 @@ instance Read Identifier where readsPrec = parsec_reader
 
 
 data Term = Node Identifier [ Term ]
-          | Number SourcePos Integer
+          | Number Range Integer
     deriving ( Eq, Ord )
 
 instance Show Term where show = render . output
@@ -147,7 +153,8 @@ instance Read Term where readsPrec = parsec_reader
 
 instance Input Term where
   input = let p atomic =
-                     liftM2 Number getPosition (T.natural lexer)
+                     (T.lexeme lexer $ fmap (uncurry Number) $
+                      ranged (fmap read $ Parsec.many1 Parsec.digit))
                  <|> T.parens lexer input
                  <|> bracketed_list
                  <|> do f <- input ; args <- if atomic then return [] else Parsec.many ( p True )
@@ -163,31 +170,29 @@ table = map ( map binary ) operators
 
 binary :: (String, Assoc) -> Expr.Operator Char st Term
 binary (s, assoc) = flip Expr.Infix assoc $ do
-    (p,q) <- Parsec.try $ T.lexeme lexer $ do
-        p <- getPosition
-        void $ Parsec.string s
-        q <- getPosition
+    rng <- Parsec.try $ T.lexeme lexer $ do
+        (rng,_) <- ranged $ Parsec.string s
         Parsec.notFollowedBy operatorLetter <?> ("end of " ++ show s)
-        return (p,q)
-    return $ \ l r -> Node ( Identifier { name = s, start = p, end = q } ) [ l, r ]
+        return rng
+    return $ \ l r -> Node ( Identifier { name = s, range = rng } ) [ l, r ]
 
 
 bracketed_list :: Parser Term
 bracketed_list = do
-    q <- getPosition ; symbol "[" ; r <- getPosition
-    inside_bracketed_list q r
+    (r,_) <- ranged $ symbol "["
+    inside_bracketed_list r
 
-inside_bracketed_list :: SourcePos -> SourcePos -> Parser Term
-inside_bracketed_list p p' =
-        do q <- getPosition ; symbol "]" ; r <- getPosition
-           return $ Node ( Identifier { name = "[]", start = q, end = r } ) []
+inside_bracketed_list :: Range -> Parser Term
+inside_bracketed_list rng =
+        do (r,_) <- ranged $ symbol "]"
+           return $ Node ( Identifier { name = "[]", range = r } ) []
     <|> do x <- input
            q <- getPosition
            xs <-   do symbol "]" ; r <- getPosition
-                      return $ Node ( Identifier { name = "[]", start = q, end = r } ) []
+                      return $ Node ( Identifier { name = "[]", range = Range q r } ) []
                <|> do symbol "," ; r <- getPosition
-                      inside_bracketed_list q r
-           return $ Node ( Identifier { name = ":", start = p, end = p' } ) [ x, xs ]
+                      inside_bracketed_list $ Range q r
+           return $ Node ( Identifier { name = ":", range = rng } ) [ x, xs ]
 
 instance Output Term where
   output t = case t of
@@ -202,9 +207,9 @@ protected t = case t of
 
 type Position = [ Int ]
 
-termPos :: Term -> SourcePos
-termPos (Node i _) = start i
-termPos (Number pos _) = pos
+termRange :: Term -> Range
+termRange (Node i _) = range i
+termRange (Number rng _) = rng
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of

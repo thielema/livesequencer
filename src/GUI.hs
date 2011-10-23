@@ -76,23 +76,25 @@ data ExceptionType = ParseException | TermException
 
 data GuiUpdate =
      Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
-   | Exception { _excType :: ExceptionType, _pos :: Pos.SourcePos, _message :: String }
+   | Exception { _excType :: ExceptionType, _range :: Range, _message :: String }
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | Running Bool
    | ResetDisplay
 
 
-type ExceptionItem = (ExceptionType, Pos.SourcePos, String)
+type ExceptionItem = (ExceptionType, Range, String)
 
 lineFromExceptionItem :: ExceptionItem -> [String]
-lineFromExceptionItem (typ, pos, descr) =
-    Pos.sourceName pos :
-    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
-    (case typ of
-        ParseException -> "parse error"
-        TermException -> "term error") :
-    descr :
-    []
+lineFromExceptionItem (typ, rng, descr) =
+    case rng of
+        Range pos _ ->
+            Pos.sourceName pos :
+            show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
+            (case typ of
+                ParseException -> "parse error"
+                TermException -> "term error") :
+            descr :
+            []
 
 
 writeTMVar :: TMVar a -> a -> STM.STM ()
@@ -154,9 +156,11 @@ machine input output prog sq = do
                 case parse IO.input ( show moduleName ) sourceCode of
                     Left err ->
                         writeChan output $
-                            Exception ParseException (PErr.errorPos err) $
+                            Exception ParseException
+                                (let p = PErr.errorPos err
+                                 in  Range p (Pos.updatePosChar p ' ')) $
                             PErr.showErrorMessages
-                                "or" "unknown parse error" 
+                                "or" "unknown parse error"
                                 "expecting" "unexpected" "end of input" $
                             PErr.errorMessages err
                     Right m0 -> (STM.atomically $ do
@@ -205,17 +209,17 @@ execute program term output sq = forever $ do
                             putTMVar term xs
                             return $ Exc.Success x
                         Node i [] | name i == "[]" ->
-                            returnExc (Term.start i) "finished."
+                            returnExc (Term.range i) "finished."
                         _ ->
-                            returnExc (Term.termPos s) $
+                            returnExc (Term.termRange s) $
                             "I do not know how to handle this term: " ++ show s
 
     liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
 
     case result of
-        Exc.Exception (pos,msg) -> liftIO $ do
+        Exc.Exception (rng,msg) -> liftIO $ do
             stopQueue sq
-            output $ Exception TermException pos msg
+            output $ Exception TermException rng msg
             output $ Running False
         Exc.Success x -> do
             mapM_ (liftIO . output . uncurry (Exception TermException))
@@ -312,8 +316,8 @@ gui input output pack = do
 
             modifyIORef errorList
                 (Seq.filter
-                    (\(_, errorPos, _) ->
-                        name path /= Pos.sourceName errorPos))
+                    (\(_, errorRng, _) ->
+                        name path /= Pos.sourceName (Term.start errorRng)))
             refreshErrorLog
 
     runningButton <- WX.checkBox p
@@ -420,8 +424,8 @@ gui input output pack = do
               case ev of
                   ListItemSelected n -> do
                       errors <- readIORef errorList
-                      let (typ, errorPos, _descr) = Seq.index errors n
-                          moduleIdent = read (Pos.sourceName errorPos)
+                      let (typ, errorRng, _descr) = Seq.index errors n
+                          moduleIdent = read $ Pos.sourceName $ Term.start errorRng
                       case List.elemIndex moduleIdent $ M.keys highlighters of
                           Nothing -> return ()
                           Just i -> set nb [ notebookSelection := i ]
@@ -432,8 +436,10 @@ gui input output pack = do
                       case M.lookup moduleIdent textField of
                           Nothing -> return ()
                           Just h -> do
-                              i <- textPosFromSourcePos h errorPos
+                              i <- textPosFromSourcePos h $ Term.start errorRng
+                              j <- textPosFromSourcePos h $ Term.end errorRng
                               set h [ cursor := i ]
+                              WXCMZ.textCtrlSetSelection h i j
                   _ -> return ()
         ]
 
@@ -468,7 +474,7 @@ gui input output pack = do
                         let m = M.fromList $ do
                               t <- target : maybeToList mrule
                               (ident,_) <-
-                                  reads $ Pos.sourceName $ Term.start t
+                                  reads $ Pos.sourceName $ Term.start $ Term.range t
                               return (ident, [t])
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 0 200 200
@@ -478,7 +484,7 @@ gui input output pack = do
 
                         let m = M.fromList $ do
                               (ident,_) <-
-                                  reads $ Pos.sourceName $ Term.start origin
+                                  reads $ Pos.sourceName $ Term.start $ Term.range origin
                               return (ident, [origin])
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 200 200 0
@@ -524,6 +530,7 @@ set_color nb highlighters positions hicolor = void $ do
         (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
             WXCMZ.textAttrSetBackgroundColour attr hicolor
             forM_ (fromMaybe [] $ M.lookup p positions) $ \ ident -> do
-                from <- textPosFromSourcePos highlighter $ Term.start ident
-                to   <- textPosFromSourcePos highlighter $ Term.end ident
+                let rng = Term.range ident
+                from <- textPosFromSourcePos highlighter $ Term.start rng
+                to   <- textPosFromSourcePos highlighter $ Term.end rng
                 WXCMZ.textCtrlSetStyle highlighter from to attr
