@@ -31,6 +31,7 @@ import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
 import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
+import qualified Text.ParserCombinators.Parsec.Error as PErr
 
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 
@@ -122,7 +123,14 @@ machine input output prog sq = do
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
                 case parse IO.input ( show moduleName ) sourceCode of
-                    Left err -> print err
+                    Left err ->
+                        writeChan output
+                            ( [ Rewrite.Exception (PErr.errorPos err) $
+                                PErr.showErrorMessages
+                                    "or" "unknown parse error" 
+                                    "expecting" "unexpected" "end of input" $
+                                PErr.errorMessages err ]
+                            , "parse error" )
                     Right m0 -> (STM.atomically $ do
                         -- TODO: handle the case that the module changed its name
                         -- (might happen if user changes the text in the editor)
@@ -351,7 +359,7 @@ gui input output pack = do
               ("Module", AlignLeft, 120) :
               ("Row", AlignRight, -1) :
               ("Column", AlignRight, -1) :
-              ("Description", AlignLeft, 120) :
+              ("Description", AlignLeft, 500) :
               []
         ]
 
