@@ -325,7 +325,7 @@ gui input output pack = WX.start $ do
         void $ forM log $ \ msg -> do
           case msg of
             Rewrite.Step target mrule -> do
-                set reducer [ text := sr ]
+                set reducer [ text := sr, cursor := 0 ]
 
                 let m = M.fromList $ do
                       t <- target : maybeToList mrule
@@ -336,7 +336,7 @@ gui input output pack = WX.start $ do
                 setColorHighlighters m 0 200 200
 
             Rewrite.Data origin -> do
-                set reducer [ text := sr ]
+                set reducer [ text := sr, cursor := 0 ]
 
                 let m = M.fromList $ do
                       (ident,_) <-
