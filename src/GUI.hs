@@ -380,6 +380,11 @@ gui input output pack = do
               []
         ]
 
+    clearLog <- WX.button panelError
+        [ text := "Clear",
+          on command := set errorLog [ items := [] ] ]
+
+
     set errorLog
         [ on listEvent := \ev ->
               case ev of
@@ -417,7 +422,9 @@ gui input output pack = do
 
     set frameError
         [ layout := container panelError $ margin 5
-              $ WX.fill $ widget errorLog
+              $ column 5 $
+                 [ WX.fill $ widget errorLog,
+                   WX.hfloatLeft $ widget clearLog ]
         , visible := True
         , clientSize := sz 500 300
         ]
