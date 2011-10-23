@@ -471,10 +471,13 @@ gui input output pack = do
                     []
 
             -- update highlighter text field only if parsing was successful
-            Refresh path s pos ->
+            Refresh path s pos -> do
                 maybe (return ())
                     (\h -> set h [ text := s, cursor := pos ])
                     (M.lookup path highlighters)
+
+                errors <- get errorLog items
+                set errorLog [ items := filter ((name path /=) . head) errors ]
 
             ResetDisplay -> do
                 previous <- varSwap highlights M.empty
