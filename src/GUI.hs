@@ -1,7 +1,5 @@
 -- module GUI where
 
-{-# LANGUAGE TypeSynonymInstances #-}
-
 import qualified IO
 import Term
 import Module ( Module, source_location, source_text )
@@ -213,11 +211,11 @@ editable =
         WXCMZ.textCtrlSetEditable
 
 
-instance Selection (Notebook a) where
-    selection =
-        newAttr "selection"
-            WXCMZ.notebookGetSelection
-            (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
+notebookSelection :: Attr (Notebook a) Int
+notebookSelection =
+    newAttr "selection"
+        WXCMZ.notebookGetSelection
+        (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
 
 
 gui :: Chan Action -- ^  the gui writes here
@@ -377,7 +375,7 @@ gui input output pack = do
                       let moduleIdent = read moduleName
                       case List.elemIndex moduleIdent $ M.keys highlighters of
                           Nothing -> return ()
-                          Just i -> set nb [ selection := i ]
+                          Just i -> set nb [ notebookSelection := i ]
                       case M.lookup moduleIdent highlighters of
                           Nothing -> return ()
                           Just h -> do
@@ -464,7 +462,7 @@ set_color ::
     Color ->
     IO ()
 set_color nb highlighters positions hicolor = void $ do
-    index <- get nb selection
+    index <- get nb notebookSelection
     let (p, highlighter) = M.toList highlighters !! index
     attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
     bracket
