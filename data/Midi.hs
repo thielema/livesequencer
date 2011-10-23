@@ -26,3 +26,13 @@ channel chan (x : xs) =
 
 channelEvent chan (Event event) = Event (Channel chan event) ;
 channelEvent chan (Wait duration) = Wait duration ;
+
+
+-- this is just (map (tranposeEvent d))
+transpose d [] = [] ;
+transpose d (x : xs) =
+   transposeEvent d x : transpose d xs ;
+
+transposeEvent d (Event (On pitch velocity)) = Event (On (pitch+d) velocity) ;
+transposeEvent d (Event (Off pitch velocity)) = Event (Off (pitch+d) velocity) ;
+transposeEvent d event = event ;
