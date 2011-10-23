@@ -16,6 +16,7 @@ import Control.Monad ( foldM )
 
 
 data Program = Program { modules :: M.Map Identifier Module }
+    deriving (Show)
 
 rules :: Program -> [ Rule ]
 rules p = concat $ map Module.rules $ M.elems $ modules p
@@ -24,25 +25,26 @@ rules p = concat $ map Module.rules $ M.elems $ modules p
 chase :: [ FilePath ] -> Identifier -> IO Program
 chase dirs n = chaser dirs ( Program { modules = M.empty } )  n
 
+-- FIXME: error's should be exceptions in order to handle failed load at runtime
 chaser :: [ FilePath ] -> Program -> Identifier -> IO Program
 chaser dirs p n = do
     hPutStrLn stderr $ unwords [ "chasing", "module", show n ]
     case M.lookup n ( modules p ) of
-        Just m -> do
+        Just _ -> do
             hPutStrLn stderr $ "module is already loaded"
             return p
-        Nothing -> do    
+        Nothing -> do
             let f = map ( \ c -> if c == '.' then '/' else c ) ( Term.name n )
-                  ++ ".hs"  
-            ff <- chaseFile dirs f    
+                  ++ ".hs"
+            ff <- chaseFile dirs f
             s <- readFile ff
-            case parse input ( Term.name n ) s of 
+            case parse input ( Term.name n ) s of
                 Left err -> error $ show err
                 Right m0  -> do
                     let m = m0 { source_location = ff, source_text = s }
                     hPutStrLn stderr $ show m
-                    foldM ( chaser dirs ) 
-                          ( p { modules = M.insert n m $ modules p } ) 
+                    foldM ( chaser dirs )
+                          ( p { modules = M.insert n m $ modules p } )
                           $ map source $ imports m
 
 -- | look for file, trying to append its name to the directories in the path,
