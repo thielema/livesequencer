@@ -52,9 +52,9 @@ main = do
     input <- newChan
     output <- newChan
     withSequencer "Rewrite-Sequencer" $ \sq ->
-        flip finally (stopQueue sq) $ do
-            void $ forkIO $ machine input output p sq
+        flip finally (stopQueue sq) $ WX.start $ do
             gui input output p
+            void $ forkIO $ machine input output p sq
 
 
 data Action =
@@ -213,7 +213,7 @@ gui :: Chan Action -- ^  the gui writes here
       -- (a textual representation of "current expression")
     -> Program -- ^ initial texts for modules
     -> IO ()
-gui input output pack = WX.start $ do
+gui input output pack = do
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]
