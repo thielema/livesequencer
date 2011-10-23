@@ -125,7 +125,7 @@ machine input output prog sq = do
                 case parse IO.input ( show moduleName ) sourceCode of
                     Left err ->
                         writeChan output
-                            ( [ Rewrite.Exception (PErr.errorPos err) $
+                            ( [ Rewrite.Exception (PErr.errorPos err) Rewrite.ParseException $
                                 PErr.showErrorMessages
                                     "or" "unknown parse error" 
                                     "expecting" "unexpected" "end of input" $
@@ -166,18 +166,20 @@ execute program term output sq = forever $ do
     ( ( s, log ), result ) <- liftIO $ STM.atomically $ do
         slog@( s, _log ) <-
             fmap (runWriter . Rewrite.force_head p) $ takeTMVar term
+        let returnExc pos =
+                return . Left . Rewrite.Exception pos Rewrite.TermException
         fmap ((,) slog) $
             case s of
                 Node i [x, xs] | name i == ":" -> do
                     putTMVar term xs
                     return $ Right x
                 Node i [] | name i == "[]" ->
-                    return $ Left $ Rewrite.Exception (Term.start i) "finished."
+                    returnExc (Term.start i) "finished."
                 Node i _ ->
-                    return $ Left $ Rewrite.Exception (Term.start i) $
+                    returnExc (Term.start i) $
                     "I do not know how to handle this term:\n" ++ show s
                 Number n ->
-                    return $ Left $ Rewrite.Exception (Pos.initialPos "") $
+                    returnExc (Pos.initialPos "") $
                     "I do not know how to handle number literal " ++ show n
 
     liftIO $ output $ ( log, show s )
@@ -300,6 +302,7 @@ gui input output pack = do
 
     let panels = map fst panelsHls
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
+        editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
 
     refreshButton <- WX.button p
         [ text := "Refresh",
@@ -359,6 +362,7 @@ gui input output pack = do
               ("Module", AlignLeft, 120) :
               ("Row", AlignRight, -1) :
               ("Column", AlignRight, -1) :
+              ("Type", AlignLeft, -1) :
               ("Description", AlignLeft, 500) :
               []
         ]
@@ -379,12 +383,17 @@ gui input output pack = do
                   In this case the advantage and disadvantage are just swapped.
                   -}
                   ListItemSelected n -> do
-                      moduleName : srow : scolumn : _ <- get errorLog (item n)
+                      moduleName : srow : scolumn : typ : _ <-
+                          get errorLog (item n)
                       let moduleIdent = read moduleName
                       case List.elemIndex moduleIdent $ M.keys highlighters of
                           Nothing -> return ()
                           Just i -> set nb [ notebookSelection := i ]
-                      case M.lookup moduleIdent highlighters of
+                      let textField =
+                              if typ == "parse error"
+                                then editors
+                                else highlighters
+                      case M.lookup moduleIdent textField of
                           Nothing -> return ()
                           Just h -> do
                               i <- textPosFromSourcePos h $
@@ -435,10 +444,14 @@ gui input output pack = do
                 void $ varUpdate highlights $ M.unionWith (++) m
                 setColorHighlighters m 200 200 0
 
-            Rewrite.Exception pos descr -> do
+            Rewrite.Exception pos typ descr -> do
+                -- caution: if you alter the format, also update listEvent handling
                 itemAppend errorLog $
                     Pos.sourceName pos :
                     show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
+                    (case typ of
+                         Rewrite.ParseException -> "parse error"
+                         Rewrite.TermException -> "term error") :
                     descr :
                     []
 

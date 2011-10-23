@@ -10,11 +10,14 @@ import Control.Monad ( forM )
 import Control.Monad.Trans.Writer ( Writer, tell )
 import qualified Data.Map as M
 
+data ExceptionType = ParseException | TermException
+    deriving (Show, Eq, Ord, Enum)
+
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
                     }
              | Data { origin :: Identifier }
-             | Exception { pos :: Pos.SourcePos, message :: String }
+             | Exception { pos :: Pos.SourcePos, excType :: ExceptionType, message :: String }
              | Refresh { moduleName :: Identifier, content :: String, position :: Int }
              | Running Bool
              | Reset_Display
