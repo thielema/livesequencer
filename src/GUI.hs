@@ -51,10 +51,10 @@ main = do
 
     input <- newChan
     output <- newChan
-    withSequencer "Rewrite-Sequencer" $ \sq -> do
-        void $ forkIO $ machine input output p sq
-        gui input output p
-        stopQueue sq
+    withSequencer "Rewrite-Sequencer" $ \sq ->
+        flip finally (stopQueue sq) $ do
+            void $ forkIO $ machine input output p sq
+            gui input output p
 
 
 data Action =
