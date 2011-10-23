@@ -1,7 +1,10 @@
 module Event where
 
+import qualified Rewrite
 import Term
 import Common ( Sequencer(Sequencer), sendEvent, Time, void )
+
+import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
 import qualified Sound.MIDI.Message.Channel as ChannelMsg
 import qualified Sound.MIDI.ALSA as MidiAlsa
@@ -14,49 +17,59 @@ import qualified Sound.ALSA.Sequencer.Event as Event
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
-import Control.Monad.IO.Class ( liftIO )
+import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when )
 
 -- import Control.Concurrent ( threadDelay )
 
 
+termException :: String -> Term -> Rewrite.Message
+termException msg s =
+    case s of
+        Node i _ ->
+            Rewrite.Exception (Term.start i) Rewrite.TermException $
+            msg ++ " " ++ show s
+        Number n ->
+            Rewrite.Exception  (Pos.initialPos "") Rewrite.TermException $
+            "I do not know how to handle number literal " ++ show n
+
+
+runIO :: (MonadIO m) => IO () -> m [Rewrite.Message]
+runIO action = liftIO action >> return []
+
 play_event ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
     Term ->
     Sequencer mode ->
-    MS.StateT Time IO ()
+    MS.StateT Time IO [ Rewrite.Message ]
 play_event x sq = case x of
     Node i [Number n] | name i == "Wait" ->
-        wait sq (10^(6::Int) * n)
 --        threadDelay (fromIntegral n * 1000)
+        wait sq (10^(6::Int) * n)
+        >>
+        return []
     Node ie [event] | name ie == "Event" -> case event of
         Node ic [Number c, body] | name ic == "Channel" ->
             let chan = ChannelMsg.toChannel $ fromIntegral c
             in  case body of
                     Node i [Number p, Number v] | name i == "On" ->
-                        liftIO $
+                        runIO $
                         sendNote sq Event.NoteOn chan
                             (ChannelMsg.toPitch $ fromIntegral p)
                             (ChannelMsg.toVelocity $ fromIntegral v)
                     Node i [Number p, Number v] | name i == "Off" ->
-                        liftIO $
+                        runIO $
                         sendNote sq Event.NoteOff chan
                             (ChannelMsg.toPitch $ fromIntegral p)
                             (ChannelMsg.toVelocity $ fromIntegral v)
                     Node i [Number p] | name i == "PgmChange" ->
-                        liftIO $
+                        runIO $
                         sendEvent sq $ Event.CtrlEv Event.PgmChange $
                             MidiAlsa.programChangeEvent chan
                                 (ChannelMsg.toProgram $ fromIntegral p)
-                    _ ->
-                       liftIO $ putStrLn $
-                       "Event.play_event: unknown channel event " ++ show x
-        _ ->
-           liftIO $ putStrLn $
-           "Event.play_event: Event must contain Channel, but not " ++ show x
-    _ ->
-       liftIO $ putStrLn $
-       "Event.play_event: can only process Wait or Event, but not " ++ show x
+                    _ -> return [ termException "unknown channel event" x ]
+        _ -> return [ termException "Event must contain Channel, but not " x ]
+    _ -> return [ termException "can only process Wait or Event, but not " x ]
 
 
 wait ::

@@ -29,6 +29,7 @@ import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
+import qualified Control.Monad as Monad
 import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Error as PErr
@@ -189,7 +190,9 @@ execute program term output sq = forever $ do
             output ( [ msg ], "exception" )
             output ( [ Rewrite.Running False ], "Running False" )
         Right x -> do
-            play_event x sq
+            msgs <- play_event x sq
+            Monad.when ( not ( null msgs ) ) $
+                liftIO $ output ( msgs, "unknown events" )
             case x of
                 Node j _ | name j == "Wait" -> liftIO $
                     output ( [ Rewrite.Reset_Display ], "Reset_Display" )
