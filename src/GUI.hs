@@ -27,6 +27,7 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
+import Control.Monad.Trans.Maybe ( runMaybeT )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
 import qualified Control.Monad as Monad
@@ -164,30 +165,30 @@ execute program term output sq = forever $ do
     p <- liftIO $ readTVarIO program
         -- this happens anew at each click
         -- since the program text might have changed in the editor
-    ( ( s, log ), result ) <- liftIO $ STM.atomically $ do
-        slog@( s, _log ) <-
-            fmap (runWriter . Rewrite.force_head p) $ takeTMVar term
+    ( ( ms, log ), result ) <- liftIO $ STM.atomically $ do
+        mslog@( ms, _log ) <-
+            fmap (runWriter . runMaybeT . Rewrite.force_head p) $ takeTMVar term
         let returnExc pos =
-                return . Left . Rewrite.Exception pos Rewrite.TermException
-        fmap ((,) slog) $
-            case s of
-                Node i [x, xs] | name i == ":" -> do
-                    putTMVar term xs
-                    return $ Right x
-                Node i [] | name i == "[]" ->
-                    returnExc (Term.start i) "finished."
-                Node i _ ->
-                    returnExc (Term.start i) $
-                    "I do not know how to handle this term:\n" ++ show s
-                Number n ->
-                    returnExc (Pos.initialPos "") $
-                    "I do not know how to handle number literal " ++ show n
+                return . Left . (:[]) . Rewrite.Exception pos Rewrite.TermException
+        fmap ((,) mslog) $
+            case ms of
+                Nothing -> return $ Left []
+                Just s ->
+                    case s of
+                        Node i [x, xs] | name i == ":" -> do
+                            putTMVar term xs
+                            return $ Right x
+                        Node i [] | name i == "[]" ->
+                            returnExc (Term.start i) "finished."
+                        _ ->
+                            returnExc (Term.termPos s) $
+                            "I do not know how to handle this term: " ++ show s
 
-    liftIO $ output $ ( log, show s )
+    liftIO $ output $ ( log, maybe "" show ms )
     case result of
-        Left msg -> liftIO $ do
+        Left msgs -> liftIO $ do
             stopQueue sq
-            output ( [ msg ], "exception" )
+            output ( msgs, "exception" )
             output ( [ Rewrite.Running False ], "Running False" )
         Right x -> do
             msgs <- play_event x sq

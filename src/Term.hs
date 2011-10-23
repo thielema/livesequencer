@@ -8,7 +8,9 @@ import qualified Text.ParserCombinators.Parsec.Language as L
 import qualified Text.ParserCombinators.Parsec.Expr as Expr
 import qualified Text.ParserCombinators.Parsec as Parsec
 import Text.ParserCombinators.Parsec
-           ( CharParser, Parser, SourcePos, getPosition, (<|>), (<?>), )
+           ( CharParser, Parser, getPosition, (<|>), (<?>), )
+import Text.ParserCombinators.Parsec.Pos
+           ( SourcePos, initialPos, )
 import Text.ParserCombinators.Parsec.Expr
            ( Assoc(AssocLeft, AssocRight, AssocNone) )
 import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
@@ -199,6 +201,10 @@ protected t = case t of
 
 
 type Position = [ Int ]
+
+termPos :: Term -> SourcePos
+termPos (Node i _) = start i
+termPos (Number _) = initialPos ""
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of

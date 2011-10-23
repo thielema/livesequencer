@@ -12,6 +12,7 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Trans.Writer ( runWriter )
+import Control.Monad.Trans.Maybe ( runMaybeT )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forM_ )
 
@@ -35,12 +36,16 @@ execute ::
     MS.StateT Time IO ()
 execute p sq =
     let go t = do
-            let (s, log) = runWriter $ force_head p t
+            let (ms, log) = runWriter $ runMaybeT $ force_head p t
             liftIO $ forM_ log print
-            liftIO $ print s
-            case s of
-                Node i [] | name i == "[]" -> return ()
-                Node i [x, xs] | name i == ":" -> do
-                    play_event x sq
-                    go xs
+            liftIO $ print ms
+            case ms of
+                Nothing -> return ()
+                Just s ->
+                    case s of
+                        Node i [] | name i == "[]" -> return ()
+                        Node i [x, xs] | name i == ":" -> do
+                            liftIO . mapM_ print =<< play_event x sq
+                            go xs
+                        _ -> liftIO $ putStrLn $ "do not know how to handle term\n" ++ show s
     in  go

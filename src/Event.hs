@@ -4,8 +4,6 @@ import qualified Rewrite
 import Term
 import Common ( Sequencer(Sequencer), sendEvent, Time, void )
 
-import qualified Text.ParserCombinators.Parsec.Pos as Pos
-
 import qualified Sound.MIDI.Message.Channel as ChannelMsg
 import qualified Sound.MIDI.ALSA as MidiAlsa
 
@@ -25,13 +23,8 @@ import Control.Monad ( when )
 
 termException :: String -> Term -> Rewrite.Message
 termException msg s =
-    case s of
-        Node i _ ->
-            Rewrite.Exception (Term.start i) Rewrite.TermException $
-            msg ++ " " ++ show s
-        Number n ->
-            Rewrite.Exception  (Pos.initialPos "") Rewrite.TermException $
-            "I do not know how to handle number literal " ++ show n
+    Rewrite.Exception (Term.termPos s) Rewrite.TermException $
+    msg ++ " " ++ show s
 
 
 runIO :: (MonadIO m) => IO () -> m [Rewrite.Message]
