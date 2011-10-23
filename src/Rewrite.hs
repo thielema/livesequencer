@@ -51,8 +51,7 @@ full p x = do
         Node f args -> do
             args' <- forM args $ full p
             return $ Node f args'
-        Number n -> do
-            return $ Number n
+        Number _ _ -> return x'
 
 -- | evaluate until root symbol is constructor.
 top :: Program -> Term -> Evaluator Term
@@ -72,7 +71,7 @@ eval p _ t @ ( Node i xs )
       ys <- forM xs $ top p
       lift $ tell $ [ Step { target = i, rule = Nothing } ]
       case ys of
-          [ Number a, Number b] ->
+          [ Number _ a, Number _ b] ->
               case name i of
                   -- FIXME: handling of positions is dubious
                   "<" ->
@@ -83,9 +82,9 @@ eval p _ t @ ( Node i xs )
                       return $
                       Node ( Identifier { name = show (compare a b)
                            , start = start i, end = end i } ) []
-                  "-" -> return $ Number $ a - b
-                  "+" -> return $ Number $ a + b
-                  "*" -> return $ Number $ a * b
+                  "-" -> return $ Number (start i) $ a - b
+                  "+" -> return $ Number (start i) $ a + b
+                  "*" -> return $ Number (start i) $ a * b
                   opName ->
                       exception t $ "unknown operation " ++ show opName
           _ -> exception t $ "wrong number of arguments"
@@ -113,8 +112,8 @@ match_expand :: Program -> Term -> Term
 match_expand p pat t = case pat of
   Node f [] | isVariable f -> do
       return ( Just $ M.fromList [( f, t )], t )
-  Number a -> do
-      t' @ ( Number b ) <- top p t
+  Number _ a -> do
+      t' @ ( Number _ b ) <- top p t
       if a /= b
           then return  ( Nothing, t' )
           else return ( Just M.empty, t' )

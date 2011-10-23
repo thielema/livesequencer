@@ -36,26 +36,26 @@ play_event ::
     Sequencer mode ->
     MS.StateT Time IO [ (Pos.SourcePos, String) ]
 play_event x sq = case x of
-    Node i [Number n] | name i == "Wait" ->
+    Node i [Number _ n] | name i == "Wait" ->
 --        threadDelay (fromIntegral n * 1000)
         wait sq (10^(6::Int) * n)
         >>
         return []
     Node ie [event] | name ie == "Event" -> case event of
-        Node ic [Number c, body] | name ic == "Channel" ->
+        Node ic [Number _ c, body] | name ic == "Channel" ->
             let chan = ChannelMsg.toChannel $ fromIntegral c
             in  case body of
-                    Node i [Number p, Number v] | name i == "On" ->
+                    Node i [Number _ p, Number _ v] | name i == "On" ->
                         runIO $
                         sendNote sq Event.NoteOn chan
                             (ChannelMsg.toPitch $ fromIntegral p)
                             (ChannelMsg.toVelocity $ fromIntegral v)
-                    Node i [Number p, Number v] | name i == "Off" ->
+                    Node i [Number _ p, Number _ v] | name i == "Off" ->
                         runIO $
                         sendNote sq Event.NoteOff chan
                             (ChannelMsg.toPitch $ fromIntegral p)
                             (ChannelMsg.toVelocity $ fromIntegral v)
-                    Node i [Number p] | name i == "PgmChange" ->
+                    Node i [Number _ p] | name i == "PgmChange" ->
                         runIO $
                         sendEvent sq $ Event.CtrlEv Event.PgmChange $
                             MidiAlsa.programChangeEvent chan

@@ -10,7 +10,7 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 import Text.ParserCombinators.Parsec
            ( CharParser, Parser, getPosition, (<|>), (<?>), )
 import Text.ParserCombinators.Parsec.Pos
-           ( SourcePos, initialPos, )
+           ( SourcePos, )
 import Text.ParserCombinators.Parsec.Expr
            ( Assoc(AssocLeft, AssocRight, AssocNone) )
 import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
@@ -138,7 +138,7 @@ instance Read Identifier where readsPrec = parsec_reader
 
 
 data Term = Node Identifier [ Term ]
-          | Number Integer  -- ^ FIXME: Number is missing source information
+          | Number SourcePos Integer
     deriving ( Eq, Ord )
 
 instance Show Term where show = render . output
@@ -147,7 +147,7 @@ instance Read Term where readsPrec = parsec_reader
 
 instance Input Term where
   input = let p atomic =
-                     fmap Number (T.natural lexer)
+                     liftM2 Number getPosition (T.natural lexer)
                  <|> T.parens lexer input
                  <|> bracketed_list
                  <|> do f <- input ; args <- if atomic then return [] else Parsec.many ( p True )
@@ -191,7 +191,7 @@ inside_bracketed_list p p' =
 
 instance Output Term where
   output t = case t of
-     Number n -> text $ show n
+     Number _ n -> text $ show n
      Node f args -> output f <+> fsep ( map protected args )
 
 protected :: Term -> Doc
@@ -204,7 +204,7 @@ type Position = [ Int ]
 
 termPos :: Term -> SourcePos
 termPos (Node i _) = start i
-termPos (Number _) = initialPos "Prelude"
+termPos (Number pos _) = pos
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of
