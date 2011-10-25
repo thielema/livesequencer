@@ -3,7 +3,7 @@ module Event where
 import Term
 import Common ( Sequencer(Sequencer), sendEvent, Time, void )
 
-import qualified Sound.MIDI.Message.Channel as ChannelMsg
+import qualified Sound.MIDI.Message.Channel as CM
 import qualified Sound.MIDI.ALSA as MidiAlsa
 
 import qualified Sound.ALSA.Sequencer.Address as Addr
@@ -17,6 +17,8 @@ import qualified Control.Monad.Trans.State as MS
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when )
 
+import Data.Bool.HT ( if' )
+
 -- import Control.Concurrent ( threadDelay )
 
 
@@ -27,6 +29,36 @@ termException msg s =
 
 runIO :: (MonadIO m) => IO () -> m [(Range, String)]
 runIO action = liftIO action >> return []
+
+withRangeCheck ::
+    (Bounded a, Monad m) =>
+    String -> (Int -> a) -> (a -> Int) ->
+    Term ->
+    (a -> m [(Range, String)]) -> m [(Range, String)]
+withRangeCheck typ fromInt0 toInt0 (Number rng x) =
+    let aux ::
+            (Monad m) =>
+            (Int -> a) -> (a -> Int) ->
+            a -> a -> (a -> m [(Range, String)]) -> m [(Range, String)]
+        aux fromInt toInt minb maxb f =
+            if' (x < fromIntegral (toInt minb))
+                (return [(rng, typ ++ " argument " ++ show x ++
+                              " is less than minimum value " ++ show (toInt minb))]) $
+            if' (fromIntegral (toInt maxb) < x)
+                (return [(rng, typ ++ " argument " ++ show x ++
+                              " is greater than maximum value " ++ show (toInt maxb))]) $
+            f (fromInt $ fromInteger x)
+    in  aux fromInt0 toInt0 minBound maxBound
+withRangeCheck typ _ _ (Node ident _t) =
+    \ _f -> return [(range ident, typ ++ " argument is not a number")]
+
+
+newtype ControllerValue = ControllerValue {fromControllerValue :: Int}
+    deriving (Eq, Ord, Show)
+
+instance Bounded ControllerValue where
+    minBound = ControllerValue 0
+    maxBound = ControllerValue 127
 
 play_event ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
@@ -40,30 +72,30 @@ play_event x sq = case x of
         >>
         return []
     Node ie [event] | name ie == "Event" -> case event of
-        Node ic [Number _ c, body] | name ic == "Channel" ->
-            let chan = ChannelMsg.toChannel $ fromIntegral c
-            in  case body of
-                    Node i [Number _ p, Number _ v] | name i == "On" ->
+        Node ic [chann, body] | name ic == "Channel" ->
+            withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
+                case body of
+                    Node i [pn, vn] | name i == "On" ->
+                        withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
+                        withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
                         runIO $
-                        sendNote sq Event.NoteOn chan
-                            (ChannelMsg.toPitch $ fromIntegral p)
-                            (ChannelMsg.toVelocity $ fromIntegral v)
-                    Node i [Number _ p, Number _ v] | name i == "Off" ->
+                        sendNote sq Event.NoteOn chan p v
+                    Node i [pn, vn] | name i == "Off" ->
+                        withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
+                        withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
                         runIO $
-                        sendNote sq Event.NoteOff chan
-                            (ChannelMsg.toPitch $ fromIntegral p)
-                            (ChannelMsg.toVelocity $ fromIntegral v)
-                    Node i [Number _ p] | name i == "PgmChange" ->
+                        sendNote sq Event.NoteOff chan p v
+                    Node i [pn] | name i == "PgmChange" ->
+                        withRangeCheck "program" CM.toProgram CM.fromProgram pn $ \p ->
                         runIO $
                         sendEvent sq $ Event.CtrlEv Event.PgmChange $
-                            MidiAlsa.programChangeEvent chan
-                                (ChannelMsg.toProgram $ fromIntegral p)
-                    Node i [Number _ p, Number _ v] | name i == "Controller" ->
+                            MidiAlsa.programChangeEvent chan p
+                    Node i [ccn, vn] | name i == "Controller" ->
+                        withRangeCheck "controller" CM.toController CM.fromController ccn $ \cc ->
+                        withRangeCheck "controller value" ControllerValue fromControllerValue vn $ \(ControllerValue v) ->
                         runIO $
                         sendEvent sq $ Event.CtrlEv Event.Controller $
-                            MidiAlsa.controllerEvent chan
-                                (ChannelMsg.toController $ fromIntegral p)
-                                (fromIntegral v)
+                            MidiAlsa.controllerEvent chan cc (fromIntegral v)
                     _ -> return [ termException "unknown channel event" x ]
         _ -> return [ termException "Event must contain Channel, but not " x ]
     _ -> return [ termException "can only process Wait or Event, but not " x ]
@@ -117,9 +149,9 @@ sendNote ::
     (SndSeq.AllowOutput mode) =>
     Sequencer mode ->
     Event.NoteEv ->
-    ChannelMsg.Channel ->
-    ChannelMsg.Pitch ->
-    ChannelMsg.Velocity ->
+    CM.Channel ->
+    CM.Pitch ->
+    CM.Velocity ->
     IO ()
 sendNote h onoff chan pitch velocity =
     sendEvent h $
