@@ -7,6 +7,7 @@ data Channel a = Channel Integer a ;
 
 data Message =
      PgmChange Integer
+   | Controller Integer Integer
    | On Integer Integer
    | Off Integer Integer ;
 
@@ -36,3 +37,8 @@ transpose d (x : xs) =
 transposeEvent d (Event (On pitch velocity)) = Event (On (pitch+d) velocity) ;
 transposeEvent d (Event (Off pitch velocity)) = Event (Off (pitch+d) velocity) ;
 transposeEvent d event = event ;
+
+
+controlCurve d cc [] = [] ;
+controlCurve d cc (x : xs) =
+    Event (Controller cc x) : Wait d : controlCurve d cc xs ;

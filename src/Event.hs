@@ -58,6 +58,12 @@ play_event x sq = case x of
                         sendEvent sq $ Event.CtrlEv Event.PgmChange $
                             MidiAlsa.programChangeEvent chan
                                 (ChannelMsg.toProgram $ fromIntegral p)
+                    Node i [Number _ p, Number _ v] | name i == "Controller" ->
+                        runIO $
+                        sendEvent sq $ Event.CtrlEv Event.Controller $
+                            MidiAlsa.controllerEvent chan
+                                (ChannelMsg.toController $ fromIntegral p)
+                                (fromIntegral v)
                     _ -> return [ termException "unknown channel event" x ]
         _ -> return [ termException "Event must contain Channel, but not " x ]
     _ -> return [ termException "can only process Wait or Event, but not " x ]
