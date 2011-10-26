@@ -14,6 +14,7 @@ import qualified System.IO as IO
 import Control.Monad ( when )
 
 import Data.List.HT ( chop )
+import Data.List ( intercalate )
 
 
 data Option = Option {
@@ -50,7 +51,8 @@ description =
     Opt.Option ['i'] ["import-paths"]
         (flip ReqArg "PATHS" $ \str flags ->
             return $ flags{importPaths = chop (searchPathSeparator==) str})
-        "colon separated import paths" :
+        ("colon separated import paths,\ndefault " ++
+         intercalate ":" (importPaths deflt)) :
     []
 
 
