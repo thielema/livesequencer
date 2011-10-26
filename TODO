@@ -1,33 +1,58 @@
-* (easy, not important now) 
-implement start/stop/reset, file loading
+* file load / save
 
-* (easy, important) 
-fix the crash that happens when
-writing to textCtrl, cf. line
--- set tracer [ text := s ]
-in GUI.hs
+* precise ALSA timing
+  For precise timing it is certainly better
+  to send ALSA events with future time stamps.
+  Currently we wait using ALSA echo events
+  and then send the actual event immediately.
+  The proposed change increases latency of changes in the source files.
 
-* proper event handling, cf.
-http://thread.gmane.org/gmane.comp.lang.haskell.cafe/92969
-
-* proper timing (done by the alsa sequencer,
-and a feedback loop to the GUI)
-
-* highlight "the rule that is currently applied" in the editor
-
-* highlight "the data (Number) that is 
-currently being output" in the editor
-
-* show parse errors in the editor window
+* allocate multiple ALSA ports and extend the Channel constructor by a port field
+  Multiple ports allow to connect to different ALSA nodes
+  and feed them with individual data.
+  This is more easily done than distinction using MIDI channels.
 
 * use haskell-src(-exts) for parsing, to be sure
   we have a subset of haskell
 
-* add a type checker to the implementation 
+* highlight "the data (Number) that is
+  currently being output" in the editor
+
+* compositional highlighting
+  The composition of note streams shall also compose their highlighting animations.
+  Currently active terms are highlighted during a Wait event,
+  but those Wait events are shortened by 'merge'.
+  Actually, all active terms should only be highlighted
+  for an infinitesimally short time.
+  For music highlighting we could highlight terms from NoteOn to corresponding NoteOff.
+
+* add a type checker to the implementation
   (and data declarations to the language)
 
-* add some numeric computations (as built-ins),
-we need at least "min" and "minus" to merge streams.
-of course "plus", "times" would be nice as well,
-as would comparisons.
+* check all head, read, error, unmatched patterns, print, putStr stderr,
+  toProgram, toPitch, toVelocity etc.
+  whether they should handle exceptions
+
+* handle for resizing parts of the window
+  even better: a way for rearranging parts of the GUI
+  this would allow to arrange text fields horizontally
+  such as required for wide aspect in YouTube movies
+
+* bug: when changing a module you might remove a term,
+  that is still present in the reduced term
+  In this case, the highlighter will highlight its original position.
+  Reproduce it by: delete the 'repeat' in Simplesong and refresh -
+  the former position of merge is highlighted
+
+* cabal test:
+  check whether modules in 'data' can be parsed by our parser
+  check whether modules in 'data' directory can be compiled by GHC
+
+* default path for data files
+  Option.importPaths deflt should contain the paths from the Paths module.
+  This makes working with an installation from Hackage easy,
+  but makes working in the GIT working copy awful,
+  because after every change in data/ you have to reinstall the files.
+
+
 
