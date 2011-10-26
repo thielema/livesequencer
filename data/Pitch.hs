@@ -1,3 +1,5 @@
+module Pitch where
+
 pitch cls octave = cls + (octave+1)*12 ;
 
 cb =  0 ; c o = pitch cb o ; cs o = pitch (cb+1) o ; cf o = pitch (cb-1) o ;
