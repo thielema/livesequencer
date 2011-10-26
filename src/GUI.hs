@@ -262,6 +262,10 @@ notebookSelection =
         (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
 
 
+{-
+The order of widget creation is important
+for cycling through widgets using tabulator key.
+-}
 gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan GuiUpdate -- ^ the machine writes here
@@ -307,7 +311,6 @@ gui input output pack = do
         evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
-    nb <- WX.notebook p [ ]
 
     let refreshProgram (path, editor, _highlighter) = do
             s <- get editor text
@@ -320,6 +323,25 @@ gui input output pack = do
                         name path /= Pos.sourceName (Term.start errorRng)))
             refreshErrorLog
 
+    refreshButton <- WX.button p
+        [ text := "Refresh",
+          tooltip :=
+              "parse the edited program and if successful\n" ++
+              "replace the executed program\n" ++
+              "shortcut: Ctrl-R" ]
+    restartButton <- WX.button p
+        [ text := "Restart",
+          on command := writeChan input (Execution Restart),
+          tooltip :=
+              "restart program execution with 'main'\n" ++
+              "shortcut: Ctrl-T" ]
+    stopButton <- WX.button p
+        [ text := "Stop",
+          on command := writeChan input (Execution Stop),
+          tooltip :=
+              "stop program execution\n" ++
+              "shortcut: Ctrl-Z" ]
+
     runningButton <- WX.checkBox p
         [ text := "running",
           checked := True,
@@ -327,6 +349,11 @@ gui input output pack = do
               "pause or continue program execution\n" ++
               "shortcut: Ctrl-U" ]
 
+    quitButton <- WX.button p
+        [ text := "Quit" ]
+
+
+    nb <- WX.notebook p [ ]
 
     panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
         psub <- panel nb []
@@ -371,33 +398,16 @@ gui input output pack = do
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
         editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
 
-    refreshButton <- WX.button p
-        [ text := "Refresh",
-          on command := mapM_ (refreshProgram . snd) panelsHls,
-          tooltip :=
-              "parse the edited program and if successful\n" ++
-              "replace the executed program\n" ++
-              "shortcut: Ctrl-R" ]
-    restartButton <- WX.button p
-        [ text := "Restart",
-          on command := writeChan input (Execution Restart),
-          tooltip :=
-              "restart program execution with 'main'\n" ++
-              "shortcut: Ctrl-T" ]
-    stopButton <- WX.button p
-        [ text := "Stop",
-          on command := writeChan input (Execution Stop),
-          tooltip :=
-              "stop program execution\n" ++
-              "shortcut: Ctrl-Z" ]
-    quitButton <- WX.button p
-        [ text := "Quit" ]
+
+    set refreshButton
+        [ on command := mapM_ (refreshProgram . snd) panelsHls ]
 
     set runningButton
         [ on command := do
               running <- get runningButton checked
               writeChan input . Execution $
                   if running then Continue else Pause ]
+
 
     reducer <-
         textCtrl p
