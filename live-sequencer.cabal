@@ -48,16 +48,40 @@ Description:
    to head normal form (with @:@ at the top),
    and the first arg of the @:@ gets fully expanded
    and it must be a midi event.
-
 Build-Type: Simple
 
+Data-Files:
+  data/prelude/Prelude.hs
+  data/Klingklong.hs
+  data/Finite.hs
+  data/Midi.hs
+  data/Chords.hs
+  data/Pitch.hs
+  data/Band.hs
+  data/Stream.hs
+  data/Sweep.hs
+  data/UD.hs
+  data/Simplesong.hs
+  data/List.hs
+
 Source-Repository head
-   type: git
-   location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
+  Type: git
+  Location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
 
 Executable live-sequencer
-  hs-source-dirs: src
+  Hs-Source-Dirs: src
   Main-is: Console.hs
+  Other-Modules:
+    Common
+    Event
+    IO
+    Module
+    Option
+    Program
+    Rewrite
+    Rule
+    Step
+    Term
   GHC-Options: -Wall -threaded
   Build-Depends:
     transformers >=0.2.2 && <0.3,
@@ -75,8 +99,19 @@ Executable live-sequencer
     base >=4.2 && <5
 
 Executable live-sequencer-gui
-  hs-source-dirs: src
+  Hs-Source-Dirs: src
   Main-is: GUI.hs
+  Other-Modules:
+    Common
+    Event
+    IO
+    Module
+    Option
+    Program
+    Rewrite
+    Rule
+    Step
+    Term
   GHC-Options: -Wall -threaded
   Build-Depends:
     wx >=0.12.1 && <0.13,
