@@ -21,8 +21,6 @@ expand ( A : xs ) = A : B : C : expand xs ;
 expand ( B : xs ) = A : C : expand xs ;
 expand ( C : xs ) = A : expand xs ;
 
-vel = 64 ;
-
-hi = note 200 (c 5) vel ;
-mid = note 300 (c 4) vel ;
-lo = note 400 (d 3) vel ;
+hi = note 200 (c 5) ;
+mid = note 300 (c 4) ;
+lo = note 400 (d 3) ;

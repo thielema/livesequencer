@@ -11,10 +11,10 @@ data Message =
    | On Integer Integer
    | Off Integer Integer ;
 
-note duration pitch velocity =
-  [ Event (On pitch velocity)
+note duration pitch =
+  [ Event (On pitch normalVelocity)
   , Wait duration
-  , Event (Off pitch velocity)
+  , Event (Off pitch normalVelocity)
   ] ;
 
 rest duration =
@@ -45,3 +45,17 @@ transposeEvent d event = event ;
 controlCurve d cc [] = [] ;
 controlCurve d cc (x : xs) =
     Event (Controller cc x) : Wait d : controlCurve d cc xs ;
+
+normalVelocity = 64 ;
+
+emphasize v [] = [] ;
+emphasize v (x : xs) =
+   emphasizeEvent v x : emphasize v xs ;
+
+{-
+We only alter the start velocity.
+In most cases NoteOff velocity is the normal velocity
+and this is handled more efficiently by the MIDI message encoding.
+-}
+emphasizeEvent v (Event (On pitch velocity)) = Event (On pitch (velocity+v)) ;
+emphasizeEvent v event = event ;

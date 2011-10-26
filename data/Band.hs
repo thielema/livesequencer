@@ -13,20 +13,18 @@ qn = 2 * en ;
 hn = 2 * qn ;
 wn = 2 * hn ;
 
-vel = 64 ;
-
 chords =
     channel 0 ( concat
-                [ quad ( major qn (c 4) vel )
-                , quad ( minor qn (a 4) vel )
-                , quad ( major qn (f 4) vel )
-                , quad ( major7 qn (g 4) vel )
+                [ quad ( major qn (c 4) )
+                , quad ( minor qn (a 4) )
+                , quad ( major qn (f 4) )
+                , quad ( major7 qn (g 4) )
                 ] ) ;
 
 drums =
     channel 9 ( concat
-        [ note hn 36 80
-        , quad ( note en 38 vel )
+        [ emphasize 16 ( note hn 36 )
+        , quad ( note en 38 )
         ] ) ;
 
 quad x = concat [ x, x, x, x ] ;

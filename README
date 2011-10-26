@@ -1,7 +1,7 @@
 1. example usage: ********************
 
 timidity -iA &
-./live-sequencer stream.hs &
+./live-sequencer Stream &
 aconnect Rewrite-Sequence TiMidity &
 
 this should give you an ongoing stream
@@ -9,16 +9,18 @@ of notes
 
 then change one of the numbers 
 that appear in the lines like
-"mid = note 300 0 70 64"
+"mid = note 300 0 70"
 
+and press CTRL-R for "reloading" that module into the interpreter
 this should immediately have an effect
 (change pitch and duration of some of the notes)
 
 2. input language: ***********************
 
-syntax is first-order Haskell (no map, no fold),
+language is first-order Haskell (no map, no fold),
 pattern matching only at the definition level (no case),
-no local bindings (no lambda, let, where)
+no local bindings (no lambda, let, where),
+no types (no type signatures, no type inference)
 
 semantics is similar to lazy evaluation,
 the value of "main" is a stream of midi events
@@ -29,4 +31,3 @@ in each step, the head of the stream gets reduced
 to head normal form (with Cons at the top),
 and the first arg of the Cons gets fully expanded
 and it must be a midi event.
-
