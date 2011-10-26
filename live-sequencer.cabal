@@ -1,15 +1,53 @@
 Name: live-sequencer
 Version: 0.0
 Author: Henning Thielemann and Johannes Waldmann
+Maintainer: Johannes Waldmann <waldmann@imn.htwk-leipzig.de>, Henning Thielemann <haskell@henning-thielemann.de>
 Category: Sound, Music, GUI
 License: GPL
 License-file: LICENSE
-Cabal-Version: >= 1.2
+Cabal-Version: >= 1.6
 Tested-With: GHC==6.12.3, GHC==7.2.1
-Synopsis:
+Synopsis: Live coding of MIDI music
+Description:
    An editor shows a textual description of music (like Haskore),
-   an interpreter is computing the stream of MIDI events,
+   an interpreter computes and emits a stream of MIDI events,
    and (that's the main point) the user can change the program on the fly.
+   .
+   1. example usage *****
+   .
+   @
+   timidity -iA &
+   ./live-sequencer Stream &
+   aconnect Rewrite-Sequence TiMidity &
+   @
+   .
+   this should give you an ongoing stream
+   of notes
+   .
+   then change one of the numbers 
+   that appear in the lines like
+   @mid = note 300 (c 4)@
+   .
+   and press CTRL-R for \"reloading\" that module into the interpreter
+   this should immediately have an effect
+   (change pitch and duration of some of the notes)
+   .
+   2. input language *****
+   .
+   language is first-order Haskell (no map, no fold),
+   pattern matching only at the definition level (no case),
+   no local bindings (no lambda, let, where),
+   no types (no type signatures, no type inference)
+   .
+   semantics is similar to lazy evaluation,
+   the value of @main@ is a stream of midi events
+   (@On/Off channel pitch velocity@)
+   or (@Wait milliseconds@)
+   .
+   in each step, the head of the stream gets reduced
+   to head normal form (with @:@ at the top),
+   and the first arg of the @:@ gets fully expanded
+   and it must be a midi event.
 
 Build-Type: Simple
 
