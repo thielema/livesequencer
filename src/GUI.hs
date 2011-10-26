@@ -330,8 +330,8 @@ gui input output pack = do
 
     panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
         psub <- panel nb []
-        editor <- textCtrl psub [ font := fontFixed ]
-        highlighter <- textCtrlRich psub [ font := fontFixed, editable := False ]
+        editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
+        highlighter <- textCtrlRich psub [ font := fontFixed, wrap := WrapNone, editable := False ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
         let isRefreshKey k =
@@ -363,7 +363,7 @@ gui input output pack = do
             ]
         set highlighter [ text := source_text content ]
         return
-           (tab ( show path ) $ container psub $ column 5 $
+           (tab ( show path ) $ container psub $ row 5 $
                map WX.fill $ [widget editor, widget highlighter],
             (path, editor, highlighter))
 
