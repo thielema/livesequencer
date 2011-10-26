@@ -17,6 +17,9 @@ note duration pitch velocity =
   , Event (Off pitch velocity)
   ] ;
 
+rest duration =
+  [ Wait duration ] ;
+
 program n =
   [ Event ( PgmChange n ) ] ;
 
