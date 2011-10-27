@@ -25,7 +25,7 @@ rules p = concat $ map Module.rules $ M.elems $ modules p
 chase :: [ FilePath ] -> Identifier -> IO Program
 chase dirs n = chaser dirs ( Program { modules = M.empty } )  n
 
--- FIXME: error's should be exceptions in order to handle failed load at runtime
+-- FIXME: errors should be exceptions in order to handle failed load at runtime
 chaser :: [ FilePath ] -> Program -> Identifier -> IO Program
 chaser dirs p n = do
     hPutStrLn stderr $ unwords [ "chasing", "module", show n ]
