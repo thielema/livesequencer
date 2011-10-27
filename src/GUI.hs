@@ -7,6 +7,8 @@ import Program
 import qualified Rewrite
 import qualified Option
 
+import qualified Controls
+
 import Graphics.UI.WX as WX
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
@@ -63,10 +65,11 @@ main = do
             gui input output p
             void $ forkIO $ machine input output p sq
 
-
+-- | messages that are sent from GUI to machine
 data Action =
-     Modification Identifier String Int
+     Modification Identifier String Int -- ^ modulename, sourcetext, position
    | Execution Execution
+   | Control Controls.Event
 
 data Execution = Restart | Stop | Pause | Continue
 
@@ -74,6 +77,7 @@ data Execution = Restart | Stop | Pause | Continue
 data ExceptionType = ParseException | TermException
     deriving (Show, Eq, Ord, Enum)
 
+-- | messages that are sent from machine to GUI
 data GuiUpdate =
      Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
    | Exception { _excType :: ExceptionType, _range :: Range, _message :: String }
@@ -299,6 +303,9 @@ gui input output pack = do
           on command :=
               writeIORef errorList Seq.empty >> refreshErrorLog ]
 
+    frameControls <- WX.frame [ text := "controls" ]
+    panelControls <- WX.panel frameControls []
+    Controls.create panelControls pack $ \ e -> writeChan input ( Control e )
 
     f <- WX.frame
         [ text := "live-sequencer", visible := False
@@ -463,7 +470,7 @@ gui input output pack = do
         ]
 
     set quitButton
-        [ on command := close f >> close frameError ]
+        [ on command := close f >> close frameError >> close frameControls ]
 
 
     highlights <- varCreate M.empty

@@ -145,6 +145,7 @@ instance Read Identifier where readsPrec = parsec_reader
 
 data Term = Node Identifier [ Term ]
           | Number Range Integer
+          | String_Literal Range String
     deriving ( Eq, Ord )
 
 instance Show Term where show = render . output
@@ -155,6 +156,8 @@ instance Input Term where
   input = let p atomic =
                      (T.lexeme lexer $ fmap (uncurry Number) $
                       ranged (fmap read $ Parsec.many1 Parsec.digit))
+                 <|> do s <- T.stringLiteral lexer 
+                        return $ String_Literal undefined s 
                  <|> T.parens lexer input
                  <|> bracketed_list
                  <|> do f <- input ; args <- if atomic then return [] else Parsec.many ( p True )
@@ -197,6 +200,7 @@ inside_bracketed_list rng =
 instance Output Term where
   output t = case t of
      Number _ n -> text $ show n
+     String_Literal _ s -> text $ show s
      Node f args -> output f <+> fsep ( map protected args )
 
 protected :: Term -> Doc
