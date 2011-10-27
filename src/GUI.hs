@@ -305,7 +305,8 @@ gui input output pack = do
 
     frameControls <- WX.frame [ text := "controls" ]
     panelControls <- WX.panel frameControls []
-    Controls.create panelControls pack $ \ e -> writeChan input ( Control e )
+    Controls.create frameControls panelControls pack 
+        $ \ e -> writeChan input ( Control e )
 
     f <- WX.frame
         [ text := "live-sequencer", visible := False

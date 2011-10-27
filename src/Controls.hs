@@ -11,15 +11,16 @@ import qualified Rule
 import qualified Term
 
 import qualified Data.Map as M
-import Control.Monad ( forM_ )
+import Control.Monad ( forM )
 import Graphics.UI.WX as WX
 
 data Event = EventBool Term.Identifier Bool
 
 data Control = CheckBox Bool
 
-create panel prog sink = forM_ ( collect prog ) $ \ ( name, con ) -> 
-    case con of
+create frame panel prog sink = do
+    ws <- forM ( collect prog ) $ \ ( name, con ) -> 
+      case con of
         CheckBox val -> do
             cb <- WX.checkBox panel
                [ text := Term.name name , checked := val ]
@@ -28,6 +29,8 @@ create panel prog sink = forM_ ( collect prog ) $ \ ( name, con ) ->
                      c <- get cb checked 
                      sink $ EventBool name c
                ]
+            return $ widget cb
+    set frame [ layout := container panel $ row 5 ws ]
 
 
 collect :: Program.Program -> [ ( Term.Identifier, Control ) ]
