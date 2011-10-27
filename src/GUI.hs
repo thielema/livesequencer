@@ -56,13 +56,17 @@ main :: IO ()
 main = do
     hSetBuffering stderr LineBuffering
     opt <- Option.get
-    p <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
+
+    p0 <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
+    let ctrls = Controls.collect p0
+        m = Controls.controller_module ctrls
+        p = Program.add_module p0 m
 
     input <- newChan
     output <- newChan
     withSequencer "Rewrite-Sequencer" $ \sq ->
         flip finally (stopQueue sq) $ WX.start $ do
-            gui input output p
+            gui ctrls input output p
             void $ forkIO $ machine input output p sq
 
 -- | messages that are sent from GUI to machine
@@ -129,6 +133,14 @@ machine input output prog sq = do
         let running =
                 liftIO . writeChan output . Running
         case action of
+            Control event -> liftIO $ do
+                hPutStrLn stderr $ show event
+                m <- STM.atomically $ do
+                    p <- readTVar program
+                    let p' = Controls.change_controller_module p event
+                    writeTVar program p'
+                    return $ Controls.get_controller_module p'
+                -- hPutStrLn stderr $ show m                
             Execution exec ->
                 case exec of
                     Restart -> do
@@ -269,14 +281,16 @@ notebookSelection =
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
--}
+
 gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> Program -- ^ initial texts for modules
     -> IO ()
-gui input output pack = do
+-}
+
+gui ctrls input output pack = do
     frameError <- WX.frame
         [ text := "errors", visible := False
         ]
@@ -305,9 +319,10 @@ gui input output pack = do
 
     frameControls <- WX.frame [ text := "controls" ]
     panelControls <- WX.panel frameControls []
-    Controls.create frameControls panelControls pack 
-        $ \ e -> writeChan input ( Control e )
 
+    Controls.create frameControls panelControls ctrls
+        $ \ e -> writeChan input ( Control e )
+    
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]

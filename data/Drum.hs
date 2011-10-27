@@ -29,10 +29,10 @@ quad x = concat [x,x,x,x] ;
 drums =
     channel 9 ( concat
         [ emphasize 16 ( note hn 36 )
-        , concat [ ifthenelse ( checkBox "5" True ) ( note en 38 ) ( Wait en )
-                 , ifthenelse ( checkBox "6" False ) ( note en 38 ) ( Wait en )
-                 , ifthenelse ( checkBox "7" False ) ( note en 38 ) ( Wait en )
-                 , ifthenelse ( checkBox "8" True ) ( note en 38 ) ( Wait en )
+        , concat [ ifthenelse ( checkBox B5 True ) ( note en 38 ) [ Wait en ]
+                 , ifthenelse ( checkBox B6 False ) ( note en 38 ) [ Wait en ]
+                 , ifthenelse ( checkBox B7 False ) ( note en 38 ) [ Wait en ]
+                 , ifthenelse ( checkBox B8 True ) ( note en 38 ) [ Wait en ]
                  ]
         ] ) ;
 

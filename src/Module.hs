@@ -5,6 +5,7 @@ module Module where
 import IO
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
+import qualified Rule
 
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Token as Token
@@ -96,6 +97,15 @@ rules :: Module -> [Rule]
 rules m = do
     Rule_Declaration r <- declarations m
     return r
+
+-- | add, or replace (if rule with exact same lhs is already present)
+add_rule m r = 
+    let matches d = case d of
+            Rule_Declaration r' | Rule.lhs r == Rule.lhs r' -> True
+            _ -> False
+        ( pre, post ) = span ( not . matches ) $ declarations m
+        keep = if null post then post else tail post
+    in  m { declarations = pre ++ Rule_Declaration r : keep }
 
 instance Input Module where
   input = do
