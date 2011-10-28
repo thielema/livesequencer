@@ -141,6 +141,7 @@ machine input output prog sq = do
                     writeTVar program p'
                     return $ Controls.get_controller_module p'
                 -- hPutStrLn stderr $ show m                
+                return ()
             Execution exec ->
                 case exec of
                     Restart -> do
