@@ -92,7 +92,7 @@ data Module = Module
                { name :: Identifier
                , imports :: [ Import ]
                , declarations :: [ Declaration ]
-               , function_declarations :: FunctionDeclarations
+               , functions :: FunctionDeclarations
                , source_text :: String
                , source_location :: FilePath
                }
@@ -100,8 +100,8 @@ data Module = Module
 type FunctionDeclarations = M.Map Identifier [Rule]
 
 -- | add, or replace (if rule with exact same lhs is already present)
-add_rule :: Module -> Rule -> Module
-add_rule m rule@(Rule.Rule ident params _rhs) =
+add_rule :: Rule -> Module -> Module
+add_rule rule@(Rule.Rule ident params _rhs) m =
     m { declarations =
             update
                 (\d -> case d of
@@ -111,20 +111,20 @@ add_rule m rule@(Rule.Rule ident params _rhs) =
                     _ -> False)
                 (Rule_Declaration rule) $
             declarations m,
-        function_declarations =
+        functions =
             M.insertWith
                 (\_ -> update ((params ==) . Rule.parameters) rule)
                 ident [rule] $
-            function_declarations m }
+            functions m }
 
 update :: (a -> Bool) -> a -> [a] -> [a]
 update matches x xs =
     let ( pre, post ) = span ( not . matches ) xs
     in  pre ++ x : drop 1 post
 
-make_function_declarations ::
+make_functions ::
     [Declaration] -> M.Map Identifier [Rule]
-make_function_declarations =
+make_functions =
     M.fromListWith (flip (++)) .
     mapMaybe (\decl ->
         case decl of
@@ -142,7 +142,7 @@ instance Input Module where
     ds <- Parsec.many input
     return $ Module {
         name = m , imports = is , declarations = ds,
-        function_declarations = make_function_declarations ds }
+        functions = make_functions ds }
 
 instance Output Module where
   output p = vcat

@@ -2,8 +2,8 @@
 
 import qualified IO
 import Term
-import Module ( Module, source_location, source_text )
 import Program
+import qualified Module
 import qualified Rewrite
 import qualified Option
 
@@ -58,8 +58,8 @@ main = do
 
     p0 <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
     let ctrls = Controls.collect p0
-        m = Controls.controller_module ctrls
-        p = Program.add_module p0 m
+        p = Program.add_module
+                (Controls.controller_module ctrls) p0
 
     input <- newChan
     output <- newChan
@@ -184,11 +184,13 @@ machine input output prog sq = do
                         -- (might happen if user changes the text in the editor)
                         p <- readTVar program
                         let Just previous = M.lookup moduleName $ modules p
-                        let m = m0 { source_location = source_location previous
-                                   , source_text = sourceCode
+                        let m = m0 { Module.source_location =
+                                         Module.source_location previous
+                                   , Module.source_text = sourceCode
+                                   -- for now ignore renaming
+                                   , Module.name = moduleName
                                    }
-                        writeTVar program $
-                            p { modules =  M.insert moduleName m $ modules p })
+                        writeTVar program $ Program.add_module m p)
                         >>
                         writeChan output
                             (Refresh moduleName sourceCode pos)
@@ -397,7 +399,7 @@ gui ctrls input output pack = do
             isRunningKey k =
                 keyKey k == KeyChar '\021' && keyModifiers k == justControl
         set editor
-            [ text := source_text content
+            [ text := Module.source_text content
             , on keyboard :~ \defaultHandler k ->
                  -- print (case keyKey k of KeyChar c -> fromEnum c) >>
                  if' (isRefreshKey k)
@@ -412,7 +414,7 @@ gui ctrls input output pack = do
                              if' running Pause Continue) $
                  defaultHandler k
             ]
-        set highlighter [ text := source_text content ]
+        set highlighter [ text := Module.source_text content ]
         return
            (tab ( show path ) $ container psub $ row 5 $
                map WX.fill $ [widget editor, widget highlighter],
