@@ -22,15 +22,15 @@ data Event = EventBool Term.Identifier Bool
 data Control = CheckBox Bool
 
 
-get_controller_module p = 
+get_controller_module p =
         let Just m = M.lookup ( read "Controls" ) $ Program.modules p
         in  m
 
 change_controller_module p event = case event of
-    EventBool name val -> 
-        let m = get_controller_module p
-            m' = Module.add_rule m $ controller_rule name val
-        in  Program.add_module p m'
+    EventBool name val ->
+        flip Program.add_module p $
+        Module.add_rule ( controller_rule name val ) $
+        get_controller_module p
 
 controller_rule name val =
     Rule.Rule
@@ -47,8 +47,8 @@ controller_module controls =
                  , Module.imports = []
                  , Module.source_text = show m
                  , Module.source_location = "/dev/null"
-                 , Module.function_declarations =
-                      Module.make_function_declarations decls
+                 , Module.functions =
+                      Module.make_functions decls
                  , Module.declarations = decls
                  }
     in  m

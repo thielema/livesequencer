@@ -71,7 +71,7 @@ top t = case t of
         if isConstructor f
           then return t
           else do
-              rs <- lift $ lift $ asks function_declarations
+              rs <- lift $ lift $ asks functions
               eval rs f xs  >>=  top
 
 -- | do one reduction step at the root
