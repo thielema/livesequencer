@@ -152,17 +152,19 @@ instance Show Term where show = render . output
 instance Read Term where readsPrec = parsec_reader
 
 
+parse :: Bool -> Parser Term
+parse atomic =
+        (T.lexeme lexer $ fmap (uncurry Number) $
+         ranged (fmap read $ Parsec.many1 Parsec.digit))
+    <|> do s <- T.stringLiteral lexer
+           return $ String_Literal undefined s
+    <|> T.parens lexer input
+    <|> bracketed_list
+    <|> liftM2 Node input
+            (if atomic then return [] else Parsec.many ( parse True ))
+
 instance Input Term where
-  input = let p atomic =
-                     (T.lexeme lexer $ fmap (uncurry Number) $
-                      ranged (fmap read $ Parsec.many1 Parsec.digit))
-                 <|> do s <- T.stringLiteral lexer 
-                        return $ String_Literal undefined s 
-                 <|> T.parens lexer input
-                 <|> bracketed_list
-                 <|> do f <- input ; args <- if atomic then return [] else Parsec.many ( p True )
-                        return $ Node f args
-          in  Expr.buildExpressionParser table ( p False )
+  input = Expr.buildExpressionParser table ( parse False )
 
 operatorStart, operatorLetter :: CharParser st Char
 operatorStart  = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
