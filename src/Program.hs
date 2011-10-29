@@ -18,6 +18,9 @@ import Control.Monad ( foldM )
 data Program = Program { modules :: M.Map Identifier Module }
     deriving (Show)
 
+add_module :: Program -> Module -> Program
+add_module p m = p { modules = M.insert ( Module.name m ) m $ modules p }
+
 rules :: Program -> [ Rule ]
 rules p = concat $ map Module.rules $ M.elems $ modules p
 
@@ -25,7 +28,7 @@ rules p = concat $ map Module.rules $ M.elems $ modules p
 chase :: [ FilePath ] -> Identifier -> IO Program
 chase dirs n = chaser dirs ( Program { modules = M.empty } )  n
 
--- FIXME: error's should be exceptions in order to handle failed load at runtime
+-- FIXME: errors should be exceptions in order to handle failed load at runtime
 chaser :: [ FilePath ] -> Program -> Identifier -> IO Program
 chaser dirs p n = do
     hPutStrLn stderr $ unwords [ "chasing", "module", show n ]
