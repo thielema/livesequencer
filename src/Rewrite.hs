@@ -11,7 +11,9 @@ import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
+import Data.Maybe.HT ( toMaybe )
 import Data.List ( intercalate )
+
 
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
@@ -21,9 +23,9 @@ data Message = Step { target :: Identifier
 
 type Evaluator = ExceptionalT (Range, String) ( Writer [ Message ] )
 
-exception :: Term -> String -> Evaluator a
-exception t msg =
-    throwT $ (termRange t, msg)
+exception :: Range -> String -> Evaluator a
+exception rng msg =
+    throwT $ (rng, msg)
 
 
 -- | force head of stream:
@@ -39,7 +41,7 @@ force_head p t = do
       Node i [] | name i == "[]" ->
         return $ Node i []
       _ ->
-        exception t' $ "not a list term: " ++ show t
+        exception (termRange t') $ "not a list term: " ++ show t
 
 -- | force full evaluation
 -- (result has only constructors and numbers)
@@ -47,9 +49,8 @@ full :: Program -> Term -> Evaluator Term
 full p x = do
     x' <- top p x
     case x' of
-        Node f args -> do
-            args' <- forM args $ full p
-            return $ Node f args'
+        Node f args ->
+            fmap (Node f) $ forM args $ full p
         Number _ _ -> return x'
 
 -- | evaluate until root symbol is constructor.
@@ -57,15 +58,14 @@ top :: Program -> Term -> Evaluator Term
 top p t = case t of
     Number {} ->
         return t
-    Node f _xs ->
-        if isConstructor f then return t
-        else do
-            e <- eval p (rules p) t
-            top p e
+    Node f xs ->
+        if isConstructor f
+          then return t
+          else eval p (rules p) f xs  >>=  top p
 
--- | to one reduction step at the root
-eval :: Program -> [ Rule ] -> Term -> Evaluator Term
-eval p _ t @ ( Node i xs )
+-- | do one reduction step at the root
+eval :: Program -> [ Rule ] -> Identifier -> [Term] -> Evaluator Term
+eval p _ i xs
   | name i `elem` [ "compare", "<", "-", "+", "*" ] = do
       ys <- forM xs $ top p
       lift $ tell $ [ Step { target = i, rule = Nothing } ]
@@ -85,23 +85,29 @@ eval p _ t @ ( Node i xs )
                   "+" -> return $ Number (range i) $ a + b
                   "*" -> return $ Number (range i) $ a * b
                   opName ->
-                      exception t $ "unknown operation " ++ show opName
-          _ -> exception t $ "wrong number of arguments"
+                      exception (range i) $ "unknown operation " ++ show opName
+          _ -> exception (range i) $ "wrong number of arguments"
 
-eval _p [] t = exception t $ unwords [ "cannot reduce", show t ]
-eval p (r : rs) t = do
-  let Node f xs = lhs r ; Node g ys = t
-  if f == g
-      then do
-        (m, ys') <- match_expand_list p xs ys
-        let t' = Node g ys'
-        case m of
-               Nothing -> eval p rs t'
-               Just sub -> do
-                   lift $ tell [ Step { target =  g
-                                 , rule = Just $ f } ]
-                   return $ apply sub ( rhs r )
-      else eval p rs t
+eval _p [] i xs =
+  exception (range i) $ unwords [ "cannot reduce", show $ Node i xs ]
+eval p (r : rs) g ys =
+    case lhs r of
+        Node f xs ->
+            if f == g
+                then do
+                    (m, ys') <- match_expand_list p xs ys
+                    case m of
+                         Nothing -> eval p rs g ys'
+                         Just sub -> do
+                             lift $ tell [ Step { target =  g
+                                           , rule = Just $ f } ]
+                             return $ apply sub ( rhs r )
+                else eval p rs g ys
+        t ->
+            exception (termRange t) $
+            "left-hand side of a rule must be a function call pattern, but not "
+                ++ show t
+
 
 -- | check whether term matches pattern.
 -- do some reductions if they are necessary to decide about the match.
@@ -110,12 +116,10 @@ match_expand :: Program -> Term -> Term
              -> Evaluator ( Maybe (M.Map Identifier Term) , Term )
 match_expand p pat t = case pat of
   Node f [] | isVariable f -> do
-      return ( Just $ M.fromList [( f, t )], t )
+      return ( Just $ M.singleton f t , t )
   Number _ a -> do
       t' @ ( Number _ b ) <- top p t
-      if a /= b
-          then return  ( Nothing, t' )
-          else return ( Just M.empty, t' )
+      return ( toMaybe (a==b) M.empty, t' )
   Node f xs -> do
       t' @ ( Node g ys ) <- top p t
       if f /= g
@@ -145,14 +149,14 @@ match_expand_list p (x:xs) (y:ys) = do
                              M.unionWithKey (\var t _ -> tell [var] >> t)
                                  (fmap return s) (fmap return s') of
                             (un, []) -> return $ Just un
-                            (_, vars) -> exception y' $
+                            (_, vars) -> exception (termRange y') $
                                 "variables bound more than once in pattern: " ++
                                 intercalate ", " (map name vars)
             return (n',  y' : ys')
 match_expand_list _ (x:_) _ =
-    exception x "too few arguments"
+    exception (termRange x) "too few arguments"
 match_expand_list _ _ (y:_) =
-    exception y "too many arguments"
+    exception (termRange y) "too many arguments"
 
 apply :: M.Map Identifier Term -> Term -> Term
 apply m t = case t of
