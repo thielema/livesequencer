@@ -30,7 +30,6 @@ import Common
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
-import Control.Monad.Trans.Writer ( runWriter )
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
@@ -213,7 +212,8 @@ execute program term output sq = forever $ do
         -- since the program text might have changed in the editor
     ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
         eslog@( es, _log ) <-
-            fmap (runWriter . Exc.runExceptionalT . Rewrite.force_head p) $ takeTMVar term
+            fmap (flip Rewrite.runEval p . Rewrite.force_head) $
+            takeTMVar term
         let returnExc pos =
                 return . Exc.Exception . (,) pos
         fmap ((,) eslog) $
