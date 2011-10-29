@@ -1,7 +1,7 @@
 -- module Console where
 
 import Term
-import Rewrite
+import qualified Rewrite
 import Event
 import Program ( Program (..), chase )
 
@@ -11,9 +11,8 @@ import Common
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
-import Control.Monad.Trans.Writer ( runWriter )
 import Control.Monad.Exception.Synchronous
-          ( runExceptionalT, Exceptional(Success, Exception) )
+          ( Exceptional(Success, Exception) )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forM_ )
 
@@ -37,7 +36,7 @@ execute ::
     MS.StateT Time IO ()
 execute p sq =
     let go t = do
-            let (ms, log) = runWriter $ runExceptionalT $ force_head p t
+            let (ms, log) = Rewrite.runEval (Rewrite.force_head t) p
             liftIO $ forM_ log print
             liftIO $ print ms
             case ms of
