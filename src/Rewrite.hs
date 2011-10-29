@@ -125,18 +125,31 @@ match_expand ::
     Term -> Term ->
     Evaluator ( Maybe (M.Map Identifier Term) , Term )
 match_expand pat t = case pat of
-    Node f [] | isVariable f -> do
+    Node f [] | isVariable f ->
         return ( Just $ M.singleton f t , t )
+    Node f xs | isConstructor f -> do
+        t' <- top t
+        case t' of
+            Node g ys ->
+                if f /= g
+                    then return ( Nothing, t' )
+                    else do
+                         ( m, ys' ) <- match_expand_list xs ys
+                         return ( m, Node f ys' )
+            _ ->
+                exception (termRange t') $
+                "constructor pattern matched against non-constructor term: " ++ show t'
+    Node _ _ ->
+        exception (termRange pat) $
+            "pattern is neither constructor nor number: " ++ show pat
     Number _ a -> do
-        t' @ ( Number _ b ) <- top t
-        return ( toMaybe (a==b) M.empty, t' )
-    Node f xs -> do
-        t' @ ( Node g ys ) <- top t
-        if f /= g
-            then return ( Nothing, t' )
-            else do
-                 ( m, ys' ) <- match_expand_list xs ys
-                 return ( m, Node f ys' )
+        t' <- top t
+        case t' of
+            Number _ b ->
+                return ( toMaybe (a==b) M.empty, t' )
+            _ ->
+                exception (termRange t') $
+                "number pattern matched against non-number term: " ++ show t'
 
 
 match_expand_list ::
