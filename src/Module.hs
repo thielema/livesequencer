@@ -7,6 +7,9 @@ import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
 import qualified Rule
 
+import qualified Data.Map as M
+import Data.Maybe ( mapMaybe )
+
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Token as Token
 import Text.ParserCombinators.Parsec ( (<|>) )
@@ -83,29 +86,50 @@ instance Output Declaration where
 -- their sourceName (as used by Parsec) is the "show"
 -- of the module name (which is an identifier).
 -- So, sourceName is NOT the actual file name.
--- instead, this the actual file name is kept in source_location (defined here)
+-- instead, the actual file name is kept in source_location (defined here)
 
 data Module = Module
                { name :: Identifier
                , imports :: [ Import ]
                , declarations :: [ Declaration ]
+               , function_declarations :: FunctionDeclarations
                , source_text :: String
                , source_location :: FilePath
                }
 
-rules :: Module -> [Rule]
-rules m = do
-    Rule_Declaration r <- declarations m
-    return r
+type FunctionDeclarations = M.Map Identifier [Rule]
 
 -- | add, or replace (if rule with exact same lhs is already present)
-add_rule m r = 
-    let matches d = case d of
-            Rule_Declaration r' | Rule.lhs r == Rule.lhs r' -> True
-            _ -> False
-        ( pre, post ) = span ( not . matches ) $ declarations m
-        keep = if null post then post else tail post
-    in  m { declarations = pre ++ Rule_Declaration r : keep }
+add_rule :: Module -> Rule -> Module
+add_rule m rule@(Rule.Rule ident params _rhs) =
+    m { declarations =
+            update
+                (\d -> case d of
+                    Rule_Declaration r' ->
+                        ident == Rule.name r' &&
+                        params == Rule.parameters r'
+                    _ -> False)
+                (Rule_Declaration rule) $
+            declarations m,
+        function_declarations =
+            M.insertWith
+                (\_ -> update ((params ==) . Rule.parameters) rule)
+                ident [rule] $
+            function_declarations m }
+
+update :: (a -> Bool) -> a -> [a] -> [a]
+update matches x xs =
+    let ( pre, post ) = span ( not . matches ) xs
+    in  pre ++ x : drop 1 post
+
+make_function_declarations ::
+    [Declaration] -> M.Map Identifier [Rule]
+make_function_declarations =
+    M.fromListWith (flip (++)) .
+    mapMaybe (\decl ->
+        case decl of
+            Rule_Declaration rule -> Just (Rule.name rule, [rule])
+            _ -> Nothing)
 
 instance Input Module where
   input = do
@@ -116,7 +140,9 @@ instance Input Module where
         return m
     is <- Parsec.many input
     ds <- Parsec.many input
-    return $ Module { name = m , imports = is , declarations = ds }
+    return $ Module {
+        name = m , imports = is , declarations = ds,
+        function_declarations = make_function_declarations ds }
 
 instance Output Module where
   output p = vcat

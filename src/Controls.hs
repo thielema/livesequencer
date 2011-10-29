@@ -5,10 +5,12 @@
 
 module Controls where
 
-import qualified Program 
+import qualified Program
 import qualified Module
 import qualified Rule
 import qualified Term
+
+import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
 import qualified Data.Map as M
 import Control.Monad ( forM )
@@ -29,24 +31,27 @@ change_controller_module p event = case event of
         let m = get_controller_module p
             m' = Module.add_rule m $ controller_rule name val
         in  Program.add_module p m'
-    
-controller_rule name val = Rule.Rule 
-                             { Rule.lhs = Term.Node ( read "checkBox" )
-                                            [ Term.Node name [] , read "deflt" ]
-                             , Rule.rhs = Term.Node ( read $ show val ) []
-                             }
 
-controller_module controls = 
-    let m = Module.Module { Module.name = read "Controls"
-                 , Module.imports = []  
+controller_rule name val =
+    Rule.Rule
+        ( read "checkBox" )
+        [ Term.Node name [], read "deflt" ]
+        ( Term.Node ( read $ show val ) [] )
+
+controller_module controls =
+    let decls = do
+            ( name, CheckBox deflt ) <- controls
+            return $ Module.Rule_Declaration
+                   $ controller_rule name deflt
+        m = Module.Module { Module.name = read "Controls"
+                 , Module.imports = []
                  , Module.source_text = show m
                  , Module.source_location = "/dev/null"
-                 , Module.declarations = do 
-                      ( name, CheckBox deflt ) <- controls
-                      return $ Module.Rule_Declaration 
-                             $ controller_rule name deflt
+                 , Module.function_declarations =
+                      Module.make_function_declarations decls
+                 , Module.declarations = decls
                  }
-    in  m 
+    in  m
 
 create frame panel controls sink = do
     ws <- forM controls $ \ ( name, con ) -> 

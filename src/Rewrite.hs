@@ -1,8 +1,9 @@
 module Rewrite where
 
 import Term
-import Rule
 import Program
+import qualified Rule
+import qualified Module
 
 import Control.Monad.Trans.Reader ( Reader, runReader, asks )
 import Control.Monad.Trans.Writer ( WriterT, runWriterT, runWriter, tell )
@@ -70,11 +71,11 @@ top t = case t of
         if isConstructor f
           then return t
           else do
-              rs <- lift $ lift $ asks rules
+              rs <- lift $ lift $ asks function_declarations
               eval rs f xs  >>=  top
 
 -- | do one reduction step at the root
-eval :: [ Rule ] -> Identifier -> [Term] -> Evaluator Term
+eval :: Module.FunctionDeclarations -> Identifier -> [Term] -> Evaluator Term
 eval _ i xs
   | name i `elem` [ "compare", "<", "-", "+", "*" ] = do
       ys <- mapM top xs
@@ -98,25 +99,31 @@ eval _ i xs
                       exception (range i) $ "unknown operation " ++ show opName
           _ -> exception (range i) $ "wrong number of arguments"
 
-eval [] i xs =
-    exception (range i) $ unwords [ "cannot reduce", show $ Node i xs ]
-eval (r : rs) g ys =
-    case lhs r of
-        Node f xs ->
-            if f == g
-                then do
-                    (m, ys') <- match_expand_list xs ys
-                    case m of
-                         Nothing -> eval rs g ys'
-                         Just sub -> do
-                             lift $ tell [ Step { target =  g
-                                           , rule = Just $ f } ]
-                             return $ apply sub ( rhs r )
-                else eval rs g ys
-        t ->
-            exception (termRange t) $
-            "left-hand side of a rule must be a function call pattern, but not "
-                ++ show t
+eval funcs g ys =
+    case M.lookup g funcs of
+        Nothing ->
+            exception (range g) $
+            unwords [ "unknown function", show $ Node g ys ]
+        Just rules ->
+            eval_decls g rules ys
+
+
+eval_decls :: Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
+eval_decls g =
+    foldr
+        (\(Rule.Rule f xs rhs) go ys -> do
+            (m, ys') <- match_expand_list xs ys
+            case m of
+                 Nothing -> go ys'
+                 Just sub -> do
+                     lift $ tell [ Step { target = g
+                                   , rule = Just f } ]
+                     return $ apply sub rhs)
+        (\ys ->
+            exception (range g) $
+            unwords [ "no matching pattern for function", show g,
+                      "and arguments", show ys ])
+
 
 -- | check whether term matches pattern.
 -- do some reductions if they are necessary to decide about the match.
@@ -125,18 +132,31 @@ match_expand ::
     Term -> Term ->
     Evaluator ( Maybe (M.Map Identifier Term) , Term )
 match_expand pat t = case pat of
-    Node f [] | isVariable f -> do
+    Node f [] | isVariable f ->
         return ( Just $ M.singleton f t , t )
+    Node f xs | isConstructor f -> do
+        t' <- top t
+        case t' of
+            Node g ys ->
+                if f /= g
+                    then return ( Nothing, t' )
+                    else do
+                         ( m, ys' ) <- match_expand_list xs ys
+                         return ( m, Node f ys' )
+            _ ->
+                exception (termRange t') $
+                "constructor pattern matched against non-constructor term: " ++ show t'
+    Node _ _ ->
+        exception (termRange pat) $
+            "pattern is neither constructor nor number: " ++ show pat
     Number _ a -> do
-        t' @ ( Number _ b ) <- top t
-        return ( toMaybe (a==b) M.empty, t' )
-    Node f xs -> do
-        t' @ ( Node g ys ) <- top t
-        if f /= g
-            then return ( Nothing, t' )
-            else do
-                 ( m, ys' ) <- match_expand_list xs ys
-                 return ( m, Node f ys' )
+        t' <- top t
+        case t' of
+            Number _ b ->
+                return ( toMaybe (a==b) M.empty, t' )
+            _ ->
+                exception (termRange t') $
+                "number pattern matched against non-number term: " ++ show t'
 
 
 match_expand_list ::

@@ -2,8 +2,8 @@ module Program where
 
 import IO
 import Term ( Identifier (..) )
-import Rule
-import Module
+import Module ( Module )
+import qualified Module
 
 import Text.ParserCombinators.Parsec ( parse )
 
@@ -21,8 +21,9 @@ data Program = Program { modules :: M.Map Identifier Module }
 add_module :: Program -> Module -> Program
 add_module p m = p { modules = M.insert ( Module.name m ) m $ modules p }
 
-rules :: Program -> [ Rule ]
-rules p = concat $ map Module.rules $ M.elems $ modules p
+function_declarations :: Program -> Module.FunctionDeclarations
+function_declarations =
+    M.unions . map Module.function_declarations . M.elems . modules
 
 -- | load from disk, with import chasing
 chase :: [ FilePath ] -> Identifier -> IO Program
@@ -44,11 +45,11 @@ chaser dirs p n = do
             case parse input ( Term.name n ) s of
                 Left err -> error $ show err
                 Right m0  -> do
-                    let m = m0 { source_location = ff, source_text = s }
+                    let m = m0 { Module.source_location = ff, Module.source_text = s }
                     hPutStrLn stderr $ show m
                     foldM ( chaser dirs )
                           ( p { modules = M.insert n m $ modules p } )
-                          $ map source $ imports m
+                          $ map Module.source $ Module.imports m
 
 -- | look for file, trying to append its name to the directories in the path,
 -- in turn. Will fail if file is not found.

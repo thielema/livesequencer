@@ -33,7 +33,7 @@ import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forever, forM, forM_ )
-import Text.ParserCombinators.Parsec ( parse )
+import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Error as PErr
 
@@ -140,6 +140,7 @@ machine input output prog sq = do
                     writeTVar program p'
                     return $ Controls.get_controller_module p'
                 -- hPutStrLn stderr $ show m                
+                return ()
             Execution exec ->
                 case exec of
                     Restart -> do
@@ -168,7 +169,7 @@ machine input output prog sq = do
                 hPutStrLn stderr $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
-                case parse IO.input ( show moduleName ) sourceCode of
+                case Parsec.parse IO.input ( show moduleName ) sourceCode of
                     Left err ->
                         writeChan output $
                             Exception ParseException
