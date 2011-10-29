@@ -5,12 +5,13 @@ import Rule
 import Program
 
 import Control.Monad ( forM )
-import Control.Monad.Trans.Writer ( Writer, tell )
+import Control.Monad.Trans.Writer ( Writer, runWriter, tell )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
+import Data.List ( intercalate )
 
 data Message = Step { target :: Identifier
                     , rule :: Maybe Identifier -- ^ Nothing for builtins
@@ -140,11 +141,13 @@ match_expand_list p (x:xs) (y:ys) = do
                 case n of
                     Nothing -> return n
                     Just s' ->
-                        case Trav.sequenceA $
-                             M.unionWith (\_ _ -> Nothing)
-                                 (fmap Just s) (fmap Just s') of
-                            Nothing -> exception y' "non-linear pattern"
-                            Just un -> return $ Just un
+                        case runWriter $ Trav.sequenceA $
+                             M.unionWithKey (\var t _ -> tell [var] >> t)
+                                 (fmap return s) (fmap return s') of
+                            (un, []) -> return $ Just un
+                            (_, vars) -> exception y' $
+                                "variables bound more than once in pattern: " ++
+                                intercalate ", " (map name vars)
             return (n',  y' : ys')
 match_expand_list _ (x:_) _ =
     exception x "too few arguments"
