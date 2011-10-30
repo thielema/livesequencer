@@ -8,6 +8,7 @@ import System.Console.GetOpt
 import System.Environment (getArgs, getProgName, )
 import System.FilePath ( (</>), searchPathSeparator )
 
+import System.Directory ( getCurrentDirectory )
 import qualified System.Exit as Exit
 import qualified System.IO as IO
 
@@ -63,7 +64,11 @@ get = do
     when (not $ null errors) $
         exitFailureMsg (init (concat errors))
 
-    parsedOpts <- foldl (>>=) (return deflt) opts
+    dir <- getCurrentDirectory
+    let defltFullPath =
+            deflt { importPaths = map (dir </>) $ importPaths deflt }
+    parsedOpts <-
+        foldl (>>=) (return defltFullPath) opts
 
     case files of
         [] -> exitFailureMsg "no module specified"

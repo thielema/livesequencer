@@ -47,6 +47,7 @@ import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import Control.Exception ( bracket, finally )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 import qualified System.Exit as Exit
+import qualified System.FilePath as FilePath
 
 import qualified Data.Foldable as Fold
 import qualified Data.Sequence as Seq
@@ -369,9 +370,27 @@ gui ctrls input output pack = do
                         name path /= Pos.sourceName (Term.start errorRng)))
             refreshErrorLog
 
+
     fileMenu <- WX.menuPane [text := "&File"]
 
+    let haskellFilenames =
+            [ ("Haskell modules", ["*.hs"]),
+              ("All files", ["*"]) ]
+
+    saveItem <- WX.menuItem fileMenu
+        [ text := "&Save\tCtrl-S",
+          help :=
+              "overwrite original file with current module content" ]
+    saveAsItem <- WX.menuItem fileMenu
+        [ text := "Save as ...",
+          help :=
+              "save module content to a different or new file " ++
+              "and make this the new file target" ]
+
+    WX.menuLine fileMenu
+
     quitItem <- WX.menuQuit fileMenu []
+
 
     execMenu <- WX.menuPane [text := "&Execution"]
 
@@ -397,6 +416,7 @@ gui ctrls input output pack = do
           checkable := True,
           checked := True,
           help := "pause or continue program execution" ]
+
 
     windowMenu <- WX.menuPane [text := "&Window"]
 
@@ -426,23 +446,66 @@ gui ctrls input output pack = do
 
     nb <- WX.notebook p [ ]
 
-    panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
+    panelsHls <- forM (M.toList $ modules pack) $ \ (moduleName,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
         highlighter <- textCtrlRich psub [ font := fontFixed, wrap := WrapNone, editable := False ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
-        -- TODO: load/save actions
+        -- TODO: load actions
         set editor
             [ text := Module.source_text content ]
         set highlighter [ text := Module.source_text content ]
         return
-           (tab ( show path ) $ container psub $ row 5 $
+           (tab ( show moduleName ) $ container psub $ row 5 $
                map WX.fill $ [widget editor, widget highlighter],
-            (path, editor, highlighter))
+            (moduleName, editor, highlighter))
 
     let panels = map fst panelsHls
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
         editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
+
+
+    reducer <-
+        textCtrl p
+            [ font := fontFixed, editable := False, wrap := WrapNone ]
+
+    status <- WX.statusField
+        [ text := "Welcome to interactive music composition with Haskell" ]
+
+
+    let getCurrentModule = do
+            index <- get nb notebookSelection
+            let (moduleName, editor, _highlighter) = snd $ panelsHls!!index
+            content <- get editor text
+            return
+                (Module.source_location $ snd $
+                 M.elemAt index (modules pack),
+                 moduleName, content)
+        saveModule (path, moduleName, content) = do
+            -- putStrLn path
+            writeFile path content
+            set status [
+                text := "module " ++ show moduleName ++ " saved to " ++ path ]
+
+    set saveItem [
+          on command := do
+              saveModule =<< getCurrentModule
+              {- ToDo: update source_location in module -} ]
+
+    set saveAsItem [
+          on command := do
+              (filepath, moduleName, content) <- getCurrentModule
+              let (path,file) = FilePath.splitFileName filepath
+              -- print (path,file)
+              mfilename <- WX.fileSaveDialog
+                  f False {- change current directory -} True
+                  ("Save module " ++ show moduleName) haskellFilenames path file
+              case mfilename of
+                  Nothing -> return ()
+                  Just filename ->
+                      saveModule (filename, moduleName, content)
+                      {- ToDo: update source_location in module -} ]
+
 
     set refreshItem
         [ on command := do
@@ -457,12 +520,6 @@ gui ctrls input output pack = do
             writeChan input . Execution $
                 if running then Continue else Pause ]
 
-
-    reducer <-
-        textCtrl p
-            [ font := fontFixed, editable := False, wrap := WrapNone ]
-
-    status <- WX.statusField [text := "Welcome to interactive music composition with Haskell"]
 
     set f [
             layout := container p $ margin 5
