@@ -4,12 +4,19 @@ import qualified IO
 import Term
 import Program
 import qualified Module
+import qualified Controls
 import qualified Rewrite
 import qualified Option
 
-import qualified Controls
-
-import Graphics.UI.WX as WX
+import qualified Graphics.UI.WX as WX
+import Graphics.UI.WX.Attributes ( Prop((:=), (:~)), set, get )
+import Graphics.UI.WX.Classes
+import Graphics.UI.WX.Controls
+import Graphics.UI.WX.Events
+import Graphics.UI.WX.Layout
+import Graphics.UI.WX.Types
+           ( Color, rgb, fontFixed, Point2(Point), sz,
+             varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
 import Control.Concurrent.STM.TVar
@@ -37,6 +44,7 @@ import Control.Monad ( forever, forM, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
+import Control.Exception ( bracket, finally )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 import qualified System.Exit as Exit
 
