@@ -371,32 +371,57 @@ gui ctrls input output pack = do
 
     fileMenu <- WX.menuPane [text := "&File"]
 
-    quitButton <- WX.menuQuit fileMenu []
+    quitItem <- WX.menuQuit fileMenu []
 
     execMenu <- WX.menuPane [text := "&Execution"]
 
-    refreshButton <- WX.menuItem execMenu
+    refreshItem <- WX.menuItem execMenu
         [ text := "&Refresh\tCtrl-R",
           help :=
               "parse the edited program and if successful\n" ++
               "replace the executed program" ]
     WX.menuLine execMenu
-    _restartButton <- WX.menuItem execMenu
+    _restartItem <- WX.menuItem execMenu
         [ text := "Res&tart\tCtrl-T",
           on command := writeChan input (Execution Restart),
           help :=
               "stop sound and restart program execution with 'main'" ]
-    _stopButton <- WX.menuItem execMenu
+    _stopItem <- WX.menuItem execMenu
         [ text := "Stop\tCtrl-Z",
           on command := writeChan input (Execution Stop),
           help :=
               "stop program execution and sound\n" ++
               "reset term to 'main'" ]
-    runningButton <- WX.menuItem execMenu
+    runningItem <- WX.menuItem execMenu
         [ text := "running\tCtrl-U",
           checkable := True,
           checked := True,
           help := "pause or continue program execution" ]
+
+    windowMenu <- WX.menuPane [text := "&Window"]
+
+    appRunning <- newIORef True
+    let connectMenuWindow title win = do
+            itm <- WX.menuItem windowMenu
+                [ text := title,
+                  checkable := True,
+                  checked := True ]
+            set itm
+                [ on command := do
+                    b <- get itm checked
+                    set win [ visible := b ] ]
+            set win
+                [ on closing := do
+                    run <- readIORef appRunning
+                    if run
+                      then do
+                        set itm [ checked := False ]
+                        set win [ visible := False ]
+                        -- WXCMZ.closeEventVeto ??? True
+                      else propagateEvent ]
+
+    connectMenuWindow "errors" frameError
+    connectMenuWindow "controls" frameControls
 
 
     nb <- WX.notebook p [ ]
@@ -419,16 +444,16 @@ gui ctrls input output pack = do
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
         editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
 
-    set refreshButton
+    set refreshItem
         [ on command := do
             index <- get nb notebookSelection
             refreshProgram $ snd $ panelsHls !! index
             -- mapM_ (refreshProgram . snd) panelsHls
             ]
 
-    set runningButton
+    set runningItem
         [ on command := do
-            running <- get runningButton checked
+            running <- get runningItem checked
             writeChan input . Execution $
                 if running then Continue else Pause ]
 
@@ -446,7 +471,7 @@ gui ctrls input output pack = do
             , WX.fill $ widget reducer
             ]
             , WX.statusBar := [status]
-            , WX.menuBar   := [fileMenu, execMenu]
+            , WX.menuBar   := [fileMenu, execMenu, windowMenu]
             , visible := True
             , clientSize := sz 500 300
           ]
@@ -485,8 +510,12 @@ gui ctrls input output pack = do
         , clientSize := sz 500 300
         ]
 
-    set quitButton
-        [ on command := close f >> close frameError >> close frameControls ]
+    let closeOther =
+            writeIORef appRunning False >>
+            close frameError >> close frameControls
+    set quitItem [ on command := closeOther >> close f]
+    set f [ on closing := closeOther >> propagateEvent
+        {- 'close f' would trigger the closing handler again -} ]
 
 
     highlights <- varCreate M.empty
@@ -538,7 +567,7 @@ gui ctrls input output pack = do
                 setColorHighlighters previous 255 255 255
 
             Running running -> do
-                set runningButton [ checked := running ]
+                set runningItem [ checked := running ]
 
 textPosFromSourcePos ::
     TextCtrl a -> Pos.SourcePos -> IO Int
