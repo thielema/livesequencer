@@ -275,21 +275,29 @@ registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
 
 -- might be moved to wx package
-cursor :: Attr (TextCtrl a) Int
+cursor :: WX.Attr (TextCtrl a) Int
 cursor =
-    newAttr "cursor"
+    WX.newAttr "cursor"
         WXCMZ.textCtrlGetInsertionPoint
         WXCMZ.textCtrlSetInsertionPoint
 
-editable :: WriteAttr (TextCtrl a) Bool
+editable :: WX.Attr (TextCtrl a) Bool
 editable =
-    writeAttr "editable"
+    WX.newAttr "editable"
+        WXCMZ.textCtrlIsEditable
         WXCMZ.textCtrlSetEditable
 
+_modified :: WX.ReadAttr (TextCtrl a) Bool
+_modified =
+    WX.readAttr "modified"
+        WXCMZ.textCtrlIsModified
+--        WXCMZ.textCtrlDiscardEdits
+--        WXCMZ.textCtrlMarkDirty
 
-notebookSelection :: Attr (Notebook a) Int
+
+notebookSelection :: WX.Attr (Notebook a) Int
 notebookSelection =
-    newAttr "selection"
+    WX.newAttr "selection"
         WXCMZ.notebookGetSelection
         (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
 
