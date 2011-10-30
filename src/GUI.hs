@@ -9,7 +9,7 @@ import qualified Rewrite
 import qualified Option
 
 import qualified Graphics.UI.WX as WX
-import Graphics.UI.WX.Attributes ( Prop((:=), (:~)), set, get )
+import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
 import Graphics.UI.WX.Controls
 import Graphics.UI.WX.Events
@@ -47,6 +47,7 @@ import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import Control.Exception ( bracket, finally )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 import qualified System.Exit as Exit
+import qualified System.FilePath as FilePath
 
 import qualified Data.Foldable as Fold
 import qualified Data.Sequence as Seq
@@ -54,7 +55,6 @@ import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
 import qualified Data.List as List
-import Data.Bool.HT ( if' )
 
 import Prelude hiding ( log )
 
@@ -264,7 +264,8 @@ execute program term output sq = forever $ do
 
 -- | following code taken from http://snipplr.com/view/17538/
 myEventId :: Int
-myEventId = wxID_HIGHEST+1 -- the custom event ID
+myEventId = wxID_HIGHEST+100
+    -- the custom event ID, avoid clash with Graphics.UI.WXCore.Types.varTopId
 
 -- | the custom event is registered as a menu event
 createMyEvent :: IO (WXCore.CommandEvent ())
@@ -369,108 +370,165 @@ gui ctrls input output pack = do
                         name path /= Pos.sourceName (Term.start errorRng)))
             refreshErrorLog
 
-    refreshButton <- WX.button p
-        [ text := "Refresh",
-          tooltip :=
-              "parse the edited program and if successful\n" ++
-              "replace the executed program\n" ++
-              "shortcut: Ctrl-R" ]
-    restartButton <- WX.button p
-        [ text := "Restart",
+
+    fileMenu <- WX.menuPane [text := "&File"]
+
+    let haskellFilenames =
+            [ ("Haskell modules", ["*.hs"]),
+              ("All files", ["*"]) ]
+
+    saveItem <- WX.menuItem fileMenu
+        [ text := "&Save\tCtrl-S",
+          help :=
+              "overwrite original file with current module content" ]
+    saveAsItem <- WX.menuItem fileMenu
+        [ text := "Save as ...",
+          help :=
+              "save module content to a different or new file " ++
+              "and make this the new file target" ]
+
+    WX.menuLine fileMenu
+
+    quitItem <- WX.menuQuit fileMenu []
+
+
+    execMenu <- WX.menuPane [text := "&Execution"]
+
+    refreshItem <- WX.menuItem execMenu
+        [ text := "&Refresh\tCtrl-R",
+          help :=
+              "parse the edited program and if successful " ++
+              "replace the executed program" ]
+    WX.menuLine execMenu
+    _restartItem <- WX.menuItem execMenu
+        [ text := "Res&tart\tCtrl-T",
           on command := writeChan input (Execution Restart),
-          tooltip :=
-              "stop sound and restart program execution with 'main'\n" ++
-              "shortcut: Ctrl-T" ]
-    stopButton <- WX.button p
-        [ text := "Stop",
+          help :=
+              "stop sound and restart program execution with 'main'" ]
+    _stopItem <- WX.menuItem execMenu
+        [ text := "Stop\tCtrl-Z",
           on command := writeChan input (Execution Stop),
-          tooltip :=
-              "stop program execution and sound\n" ++
-              "reset term to 'main'\n" ++
-              "shortcut: Ctrl-Z" ]
-
-    runningButton <- WX.checkBox p
-        [ text := "running",
+          help :=
+              "stop program execution and sound, " ++
+              "reset term to 'main'" ]
+    runningItem <- WX.menuItem execMenu
+        [ text := "running\tCtrl-U",
+          checkable := True,
           checked := True,
-          tooltip :=
-              "pause or continue program execution\n" ++
-              "shortcut: Ctrl-U" ]
+          help := "pause or continue program execution" ]
 
-    quitButton <- WX.button p
-        [ text := "Quit" ]
+
+    windowMenu <- WX.menuPane [text := "&Window"]
+
+    appRunning <- newIORef True
+    let windowMenuItem title win = do
+            itm <- WX.menuItem windowMenu
+                [ text := title,
+                  help := "show or hide " ++ title ++ " window",
+                  checkable := True,
+                  checked := True ]
+            set itm
+                [ on command := do
+                    b <- get itm checked
+                    set win [ visible := b ] ]
+            set win
+                [ on closing := do
+                    run <- readIORef appRunning
+                    if run
+                      then do
+                        set itm [ checked := False ]
+                        set win [ visible := False ]
+                        -- WXCMZ.closeEventVeto ??? True
+                      else propagateEvent ]
+
+    windowMenuItem "errors" frameError
+    windowMenuItem "controls" frameControls
 
 
     nb <- WX.notebook p [ ]
 
-    panelsHls <- forM (M.toList $ modules pack) $ \ (path,content) -> do
+    panelsHls <- forM (M.toList $ modules pack) $ \ (moduleName,content) -> do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
         highlighter <- textCtrlRich psub [ font := fontFixed, wrap := WrapNone, editable := False ]
-        -- TODO: show status (modified in editor, sent to machine, saved to file)
-        -- TODO: load/save actions
-        let isRefreshKey k =
-                -- Ctrl-R
-                keyKey k == KeyChar '\018' && keyModifiers k == justControl
-                -- Alt-R
-                -- keyKey k == KeyChar 'r' && keyModifiers k == justAlt
-            isRestartKey k =
-                keyKey k == KeyChar '\020' && keyModifiers k == justControl
-            isStopKey k =
-                keyKey k == KeyChar '\026' && keyModifiers k == justControl
-            isRunningKey k =
-                keyKey k == KeyChar '\021' && keyModifiers k == justControl
+        -- TODO: load actions
         set editor
-            [ text := Module.source_text content
-            , on keyboard :~ \defaultHandler k ->
-                 -- print (case keyKey k of KeyChar c -> fromEnum c) >>
-                 if' (isRefreshKey k)
-                     (refreshProgram (path, editor, highlighter)) $
-                 if' (isRestartKey k)
-                     (writeChan input (Execution Restart)) $
-                 if' (isStopKey k)
-                     (writeChan input (Execution Stop)) $
-                 if' (isRunningKey k)
-                     (do running <- get runningButton checked
-                         writeChan input . Execution $
-                             if' running Pause Continue) $
-                 defaultHandler k
-            ]
+            [ text := Module.source_text content ]
         set highlighter [ text := Module.source_text content ]
         return
-           (tab ( show path ) $ container psub $ row 5 $
+           (tab ( show moduleName ) $ container psub $ row 5 $
                map WX.fill $ [widget editor, widget highlighter],
-            (path, editor, highlighter))
+            (moduleName, editor, highlighter))
 
     let panels = map fst panelsHls
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
         editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
 
 
-    set refreshButton
-        [ on command := mapM_ (refreshProgram . snd) panelsHls ]
-
-    set runningButton
-        [ on command := do
-              running <- get runningButton checked
-              writeChan input . Execution $
-                  if running then Continue else Pause ]
-
-
     reducer <-
         textCtrl p
             [ font := fontFixed, editable := False, wrap := WrapNone ]
 
+    status <- WX.statusField
+        [ text := "Welcome to interactive music composition with Haskell" ]
 
-    set f [ layout := container p $ margin 5
+
+    let getCurrentModule = do
+            index <- get nb notebookSelection
+            let (moduleName, editor, _highlighter) = snd $ panelsHls!!index
+            content <- get editor text
+            return
+                (Module.source_location $ snd $
+                 M.elemAt index (modules pack),
+                 moduleName, content)
+        saveModule (path, moduleName, content) = do
+            -- putStrLn path
+            writeFile path content
+            set status [
+                text := "module " ++ show moduleName ++ " saved to " ++ path ]
+
+    set saveItem [
+          on command := do
+              saveModule =<< getCurrentModule
+              {- ToDo: update source_location in module -} ]
+
+    set saveAsItem [
+          on command := do
+              (filepath, moduleName, content) <- getCurrentModule
+              let (path,file) = FilePath.splitFileName filepath
+              -- print (path,file)
+              mfilename <- WX.fileSaveDialog
+                  f False {- change current directory -} True
+                  ("Save module " ++ show moduleName) haskellFilenames path file
+              case mfilename of
+                  Nothing -> return ()
+                  Just filename ->
+                      saveModule (filename, moduleName, content)
+                      {- ToDo: update source_location in module -} ]
+
+
+    set refreshItem
+        [ on command := do
+            index <- get nb notebookSelection
+            refreshProgram $ snd $ panelsHls !! index
+            -- mapM_ (refreshProgram . snd) panelsHls
+            ]
+
+    set runningItem
+        [ on command := do
+            running <- get runningItem checked
+            writeChan input . Execution $
+                if running then Continue else Pause ]
+
+
+    set f [
+            layout := container p $ margin 5
             $ column 5
-            [ row 5 $
-                  [widget refreshButton,
-                   widget restartButton, widget stopButton, widget runningButton,
-                   WX.hfill empty,
-                   widget quitButton]
-            , WX.fill $ tabs nb panels
+            [ WX.fill $ tabs nb panels
             , WX.fill $ widget reducer
             ]
+            , WX.statusBar := [status]
+            , WX.menuBar   := [fileMenu, execMenu, windowMenu]
             , visible := True
             , clientSize := sz 500 300
           ]
@@ -509,8 +567,12 @@ gui ctrls input output pack = do
         , clientSize := sz 500 300
         ]
 
-    set quitButton
-        [ on command := close f >> close frameError >> close frameControls ]
+    let closeOther =
+            writeIORef appRunning False >>
+            close frameError >> close frameControls
+    set quitItem [ on command := closeOther >> close f]
+    set f [ on closing := closeOther >> propagateEvent
+        {- 'close f' would trigger the closing handler again -} ]
 
 
     highlights <- varCreate M.empty
@@ -552,17 +614,23 @@ gui ctrls input output pack = do
                 modifyIORef errorList (Seq.|> exc)
 
             -- update highlighter text field only if parsing was successful
-            Refresh path s pos -> do
+            Refresh moduleName s pos -> do
                 maybe (return ())
                     (\h -> set h [ text := s, cursor := pos ])
-                    (M.lookup path highlighters)
+                    (M.lookup moduleName highlighters)
+                set status [ text :=
+                    "module " ++ show moduleName ++ " reloaded into interpreter" ]
 
             ResetDisplay -> do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
             Running running -> do
-                set runningButton [ checked := running ]
+                set status [ text :=
+                    if running
+                      then "interpreter started"
+                      else "interpreter stopped" ]
+                set runningItem [ checked := running ]
 
 textPosFromSourcePos ::
     TextCtrl a -> Pos.SourcePos -> IO Int

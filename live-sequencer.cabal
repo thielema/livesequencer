@@ -24,7 +24,7 @@ Description:
    this should give you an ongoing stream
    of notes
    .
-   then change one of the numbers 
+   then change one of the numbers
    that appear in the lines like
    @mid = note 300 (c 4)@
    .
@@ -112,7 +112,9 @@ Executable live-sequencer-gui
     Rule
     Step
     Term
-  GHC-Options: -Wall -threaded
+  GHC-Options: -threaded -Wall
+  If impl(ghc>=7.0)
+    GHC-Options: -fwarn-tabs -fwarn-incomplete-uni-patterns
   Build-Depends:
     wx >=0.12.1 && <0.13,
     wxcore >=0.12.1 && <0.13,
