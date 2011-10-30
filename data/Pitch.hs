@@ -1,5 +1,9 @@
 module Pitch where
 
+{- cf.
+http://en.wikipedia.org/wiki/Scientific_pitch_notation
+http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
+-}
 pitch cls octave = cls + (octave+1)*12 ;
 
 cb =  0 ; c o = pitch cb o ; cs o = pitch (cb+1) o ; cf o = pitch (cb-1) o ;
