@@ -379,13 +379,14 @@ gui ctrls input output pack = do
         [ text := "Restart",
           on command := writeChan input (Execution Restart),
           tooltip :=
-              "restart program execution with 'main'\n" ++
+              "stop sound and restart program execution with 'main'\n" ++
               "shortcut: Ctrl-T" ]
     stopButton <- WX.button p
         [ text := "Stop",
           on command := writeChan input (Execution Stop),
           tooltip :=
-              "stop program execution\n" ++
+              "stop program execution and sound\n" ++
+              "reset term to 'main'\n" ++
               "shortcut: Ctrl-Z" ]
 
     runningButton <- WX.checkBox p
