@@ -49,8 +49,8 @@ withRangeCheck typ fromInt0 toInt0 (Number rng x) =
                               " is greater than maximum value " ++ show (toInt maxb))]) $
             f (fromInt $ fromInteger x)
     in  aux fromInt0 toInt0 minBound maxBound
-withRangeCheck typ _ _ (Node ident _t) =
-    \ _f -> return [(range ident, typ ++ " argument is not a number")]
+withRangeCheck typ _ _ t =
+    \ _f -> return [(termRange t, typ ++ " argument is not a number")]
 
 
 newtype ControllerValue = ControllerValue {fromControllerValue :: Int}
