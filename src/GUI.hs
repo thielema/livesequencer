@@ -9,7 +9,7 @@ import qualified Rewrite
 import qualified Option
 
 import qualified Graphics.UI.WX as WX
-import Graphics.UI.WX.Attributes ( Prop((:=), (:~)), set, get )
+import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
 import Graphics.UI.WX.Controls
 import Graphics.UI.WX.Events
@@ -54,7 +54,6 @@ import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
 import qualified Data.List as List
-import Data.Bool.HT ( if' )
 
 import Prelude hiding ( log )
 
@@ -264,7 +263,8 @@ execute program term output sq = forever $ do
 
 -- | following code taken from http://snipplr.com/view/17538/
 myEventId :: Int
-myEventId = wxID_HIGHEST+1 -- the custom event ID
+myEventId = wxID_HIGHEST+100
+    -- the custom event ID, avoid clash with Graphics.UI.WXCore.Types.varTopId
 
 -- | the custom event is registered as a menu event
 createMyEvent :: IO (WXCore.CommandEvent ())
@@ -369,35 +369,34 @@ gui ctrls input output pack = do
                         name path /= Pos.sourceName (Term.start errorRng)))
             refreshErrorLog
 
-    refreshButton <- WX.button p
-        [ text := "Refresh",
-          tooltip :=
+    fileMenu <- WX.menuPane [text := "&File"]
+
+    quitButton <- WX.menuQuit fileMenu []
+
+    execMenu <- WX.menuPane [text := "&Execution"]
+
+    refreshButton <- WX.menuItem execMenu
+        [ text := "&Refresh\tCtrl-R",
+          help :=
               "parse the edited program and if successful\n" ++
-              "replace the executed program\n" ++
-              "shortcut: Ctrl-R" ]
-    restartButton <- WX.button p
-        [ text := "Restart",
+              "replace the executed program" ]
+    WX.menuLine execMenu
+    _restartButton <- WX.menuItem execMenu
+        [ text := "Res&tart\tCtrl-T",
           on command := writeChan input (Execution Restart),
-          tooltip :=
-              "stop sound and restart program execution with 'main'\n" ++
-              "shortcut: Ctrl-T" ]
-    stopButton <- WX.button p
-        [ text := "Stop",
+          help :=
+              "stop sound and restart program execution with 'main'" ]
+    _stopButton <- WX.menuItem execMenu
+        [ text := "Stop\tCtrl-Z",
           on command := writeChan input (Execution Stop),
-          tooltip :=
+          help :=
               "stop program execution and sound\n" ++
-              "reset term to 'main'\n" ++
-              "shortcut: Ctrl-Z" ]
-
-    runningButton <- WX.checkBox p
-        [ text := "running",
+              "reset term to 'main'" ]
+    runningButton <- WX.menuItem execMenu
+        [ text := "running\tCtrl-U",
+          checkable := True,
           checked := True,
-          tooltip :=
-              "pause or continue program execution\n" ++
-              "shortcut: Ctrl-U" ]
-
-    quitButton <- WX.button p
-        [ text := "Quit" ]
+          help := "pause or continue program execution" ]
 
 
     nb <- WX.notebook p [ ]
@@ -408,33 +407,8 @@ gui ctrls input output pack = do
         highlighter <- textCtrlRich psub [ font := fontFixed, wrap := WrapNone, editable := False ]
         -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load/save actions
-        let isRefreshKey k =
-                -- Ctrl-R
-                keyKey k == KeyChar '\018' && keyModifiers k == justControl
-                -- Alt-R
-                -- keyKey k == KeyChar 'r' && keyModifiers k == justAlt
-            isRestartKey k =
-                keyKey k == KeyChar '\020' && keyModifiers k == justControl
-            isStopKey k =
-                keyKey k == KeyChar '\026' && keyModifiers k == justControl
-            isRunningKey k =
-                keyKey k == KeyChar '\021' && keyModifiers k == justControl
         set editor
-            [ text := Module.source_text content
-            , on keyboard :~ \defaultHandler k ->
-                 -- print (case keyKey k of KeyChar c -> fromEnum c) >>
-                 if' (isRefreshKey k)
-                     (refreshProgram (path, editor, highlighter)) $
-                 if' (isRestartKey k)
-                     (writeChan input (Execution Restart)) $
-                 if' (isStopKey k)
-                     (writeChan input (Execution Stop)) $
-                 if' (isRunningKey k)
-                     (do running <- get runningButton checked
-                         writeChan input . Execution $
-                             if' running Pause Continue) $
-                 defaultHandler k
-            ]
+            [ text := Module.source_text content ]
         set highlighter [ text := Module.source_text content ]
         return
            (tab ( show path ) $ container psub $ row 5 $
@@ -445,32 +419,34 @@ gui ctrls input output pack = do
         highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
         editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
 
-
     set refreshButton
-        [ on command := mapM_ (refreshProgram . snd) panelsHls ]
+        [ on command := do
+            index <- get nb notebookSelection
+            refreshProgram $ snd $ panelsHls !! index
+            -- mapM_ (refreshProgram . snd) panelsHls
+            ]
 
     set runningButton
         [ on command := do
-              running <- get runningButton checked
-              writeChan input . Execution $
-                  if running then Continue else Pause ]
+            running <- get runningButton checked
+            writeChan input . Execution $
+                if running then Continue else Pause ]
 
 
     reducer <-
         textCtrl p
             [ font := fontFixed, editable := False, wrap := WrapNone ]
 
+    status <- WX.statusField [text := "Welcome to interactive music composition with Haskell"]
 
-    set f [ layout := container p $ margin 5
+    set f [
+            layout := container p $ margin 5
             $ column 5
-            [ row 5 $
-                  [widget refreshButton,
-                   widget restartButton, widget stopButton, widget runningButton,
-                   WX.hfill empty,
-                   widget quitButton]
-            , WX.fill $ tabs nb panels
+            [ WX.fill $ tabs nb panels
             , WX.fill $ widget reducer
             ]
+            , WX.statusBar := [status]
+            , WX.menuBar   := [fileMenu, execMenu]
             , visible := True
             , clientSize := sz 500 300
           ]
