@@ -305,15 +305,14 @@ notebookSelection =
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
-
-gui :: Chan Action -- ^  the gui writes here
+-}
+gui :: [(Identifier, Controls.Control)]
+    -> Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> Program -- ^ initial texts for modules
     -> IO ()
--}
-
 gui ctrls input output pack = do
     frameError <- WX.frame
         [ text := "errors", visible := False
@@ -346,7 +345,7 @@ gui ctrls input output pack = do
 
     Controls.create frameControls panelControls ctrls
         $ \ e -> writeChan input ( Control e )
-    
+
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]
