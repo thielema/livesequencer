@@ -12,9 +12,12 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Exception.Synchronous
-          ( Exceptional(Success, Exception) )
+          ( Exceptional(Success, Exception), resolveT )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad ( forM_ )
+
+import qualified System.IO as IO
+import qualified System.Exit as Exit
 
 import Prelude hiding ( log )
 
@@ -23,7 +26,9 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     opt <- Option.get
-    p <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
+    p <-
+        resolveT (\e -> IO.hPutStrLn IO.stderr (show e) >> Exit.exitFailure) $
+        Program.chase (Option.importPaths opt) $ Option.moduleName opt
     withSequencer "Rewrite-Sequencer" $ \sq -> do
         startQueue sq
         MS.evalStateT ( execute p sq ( read "main" ) ) 0
