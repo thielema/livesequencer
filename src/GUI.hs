@@ -4,12 +4,19 @@ import qualified IO
 import Term
 import Program
 import qualified Module
+import qualified Controls
 import qualified Rewrite
 import qualified Option
 
-import qualified Controls
-
-import Graphics.UI.WX as WX
+import qualified Graphics.UI.WX as WX
+import Graphics.UI.WX.Attributes ( Prop((:=), (:~)), set, get )
+import Graphics.UI.WX.Classes
+import Graphics.UI.WX.Controls
+import Graphics.UI.WX.Events
+import Graphics.UI.WX.Layout
+import Graphics.UI.WX.Types
+           ( Color, rgb, fontFixed, Point2(Point), sz,
+             varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
 import Control.Concurrent.STM.TVar
@@ -37,6 +44,7 @@ import Control.Monad ( forever, forM, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
+import Control.Exception ( bracket, finally )
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 import qualified System.Exit as Exit
 
@@ -267,21 +275,29 @@ registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
 
 -- might be moved to wx package
-cursor :: Attr (TextCtrl a) Int
+cursor :: WX.Attr (TextCtrl a) Int
 cursor =
-    newAttr "cursor"
+    WX.newAttr "cursor"
         WXCMZ.textCtrlGetInsertionPoint
         WXCMZ.textCtrlSetInsertionPoint
 
-editable :: WriteAttr (TextCtrl a) Bool
+editable :: WX.Attr (TextCtrl a) Bool
 editable =
-    writeAttr "editable"
+    WX.newAttr "editable"
+        WXCMZ.textCtrlIsEditable
         WXCMZ.textCtrlSetEditable
 
+_modified :: WX.ReadAttr (TextCtrl a) Bool
+_modified =
+    WX.readAttr "modified"
+        WXCMZ.textCtrlIsModified
+--        WXCMZ.textCtrlDiscardEdits
+--        WXCMZ.textCtrlMarkDirty
 
-notebookSelection :: Attr (Notebook a) Int
+
+notebookSelection :: WX.Attr (Notebook a) Int
 notebookSelection =
-    newAttr "selection"
+    WX.newAttr "selection"
         WXCMZ.notebookGetSelection
         (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
 
@@ -289,15 +305,14 @@ notebookSelection =
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
-
-gui :: Chan Action -- ^  the gui writes here
+-}
+gui :: [(Identifier, Controls.Control)]
+    -> Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> Program -- ^ initial texts for modules
     -> IO ()
--}
-
 gui ctrls input output pack = do
     frameError <- WX.frame
         [ text := "errors", visible := False
@@ -330,7 +345,7 @@ gui ctrls input output pack = do
 
     Controls.create frameControls panelControls ctrls
         $ \ e -> writeChan input ( Control e )
-    
+
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]
@@ -364,13 +379,14 @@ gui ctrls input output pack = do
         [ text := "Restart",
           on command := writeChan input (Execution Restart),
           tooltip :=
-              "restart program execution with 'main'\n" ++
+              "stop sound and restart program execution with 'main'\n" ++
               "shortcut: Ctrl-T" ]
     stopButton <- WX.button p
         [ text := "Stop",
           on command := writeChan input (Execution Stop),
           tooltip :=
-              "stop program execution\n" ++
+              "stop program execution and sound\n" ++
+              "reset term to 'main'\n" ++
               "shortcut: Ctrl-Z" ]
 
     runningButton <- WX.checkBox p

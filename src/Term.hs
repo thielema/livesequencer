@@ -216,6 +216,7 @@ type Position = [ Int ]
 termRange :: Term -> Range
 termRange (Node i _) = range i
 termRange (Number rng _) = rng
+termRange (String_Literal rng _) = rng
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of
