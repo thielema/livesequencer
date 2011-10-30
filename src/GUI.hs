@@ -397,7 +397,7 @@ gui ctrls input output pack = do
     refreshItem <- WX.menuItem execMenu
         [ text := "&Refresh\tCtrl-R",
           help :=
-              "parse the edited program and if successful\n" ++
+              "parse the edited program and if successful " ++
               "replace the executed program" ]
     WX.menuLine execMenu
     _restartItem <- WX.menuItem execMenu
@@ -409,7 +409,7 @@ gui ctrls input output pack = do
         [ text := "Stop\tCtrl-Z",
           on command := writeChan input (Execution Stop),
           help :=
-              "stop program execution and sound\n" ++
+              "stop program execution and sound, " ++
               "reset term to 'main'" ]
     runningItem <- WX.menuItem execMenu
         [ text := "running\tCtrl-U",
@@ -421,9 +421,10 @@ gui ctrls input output pack = do
     windowMenu <- WX.menuPane [text := "&Window"]
 
     appRunning <- newIORef True
-    let connectMenuWindow title win = do
+    let windowMenuItem title win = do
             itm <- WX.menuItem windowMenu
                 [ text := title,
+                  help := "show or hide " ++ title ++ " window",
                   checkable := True,
                   checked := True ]
             set itm
@@ -440,8 +441,8 @@ gui ctrls input output pack = do
                         -- WXCMZ.closeEventVeto ??? True
                       else propagateEvent ]
 
-    connectMenuWindow "errors" frameError
-    connectMenuWindow "controls" frameControls
+    windowMenuItem "errors" frameError
+    windowMenuItem "controls" frameControls
 
 
     nb <- WX.notebook p [ ]
@@ -450,7 +451,6 @@ gui ctrls input output pack = do
         psub <- panel nb []
         editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
         highlighter <- textCtrlRich psub [ font := fontFixed, wrap := WrapNone, editable := False ]
-        -- TODO: show status (modified in editor, sent to machine, saved to file)
         -- TODO: load actions
         set editor
             [ text := Module.source_text content ]
@@ -614,16 +614,22 @@ gui ctrls input output pack = do
                 modifyIORef errorList (Seq.|> exc)
 
             -- update highlighter text field only if parsing was successful
-            Refresh path s pos -> do
+            Refresh moduleName s pos -> do
                 maybe (return ())
                     (\h -> set h [ text := s, cursor := pos ])
-                    (M.lookup path highlighters)
+                    (M.lookup moduleName highlighters)
+                set status [ text :=
+                    "module " ++ show moduleName ++ " reloaded into interpreter" ]
 
             ResetDisplay -> do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
             Running running -> do
+                set status [ text :=
+                    if running
+                      then "interpreter started"
+                      else "interpreter stopped" ]
                 set runningItem [ checked := running ]
 
 textPosFromSourcePos ::
