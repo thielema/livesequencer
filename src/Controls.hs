@@ -10,11 +10,17 @@ import qualified Module
 import qualified Rule
 import qualified Term
 
-import qualified Text.ParserCombinators.Parsec.Pos as Pos
+import qualified Control.Monad.Exception.Synchronous as Exc
 
 import qualified Data.Map as M
 import Control.Monad ( forM )
-import Graphics.UI.WX as WX
+
+import qualified Graphics.UI.WX as WX
+import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
+import Graphics.UI.WX.Classes
+import Graphics.UI.WX.Events
+import Graphics.UI.WX.Layout
+
 
 data Event = EventBool Term.Identifier Bool
     deriving Show
@@ -22,22 +28,31 @@ data Event = EventBool Term.Identifier Bool
 data Control = CheckBox Bool
 
 
+get_controller_module :: Program.Program -> Module.Module
 get_controller_module p =
         let Just m = M.lookup ( read "Controls" ) $ Program.modules p
         in  m
 
+change_controller_module ::
+    Program.Program ->
+    Controls.Event ->
+    Exc.Exceptional (Term.Range, String) Program.Program
 change_controller_module p event = case event of
     EventBool name val ->
         flip Program.add_module p $
         Module.add_rule ( controller_rule name val ) $
         get_controller_module p
 
+controller_rule ::
+    Show a =>
+    Term.Identifier -> a -> Rule.Rule
 controller_rule name val =
     Rule.Rule
         ( read "checkBox" )
         [ Term.Node name [], read "deflt" ]
         ( Term.Node ( read $ show val ) [] )
 
+controller_module :: [(Term.Identifier, Control)] -> Module.Module
 controller_module controls =
     let decls = do
             ( name, CheckBox deflt ) <- controls
@@ -53,15 +68,22 @@ controller_module controls =
                  }
     in  m
 
+create ::
+    Form w =>
+    w ->
+    WX.Window a ->
+    [(Term.Identifier, Control)] ->
+    (Controls.Event -> IO ()) ->
+    IO ()
 create frame panel controls sink = do
-    ws <- forM controls $ \ ( name, con ) -> 
+    ws <- forM controls $ \ ( name, con ) ->
       case con of
         CheckBox val -> do
             cb <- WX.checkBox panel
                [ text := Term.name name , checked := val ]
-            set cb 
+            set cb
                [ on command := do
-                     c <- get cb checked 
+                     c <- get cb checked
                      sink $ EventBool name c
                ]
             return $ widget cb
@@ -74,7 +96,7 @@ collect p = do
     Module.Rule_Declaration rule <- Module.declarations contents
     ( pos, t @ ( Term.Node f args ) ) <- Term.subterms $ Rule.rhs rule
     case ( Term.name f, args ) of
-        ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) -> 
+        ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
               return ( tag
                      , CheckBox $ read ( Term.name val )
                      )

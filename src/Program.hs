@@ -1,22 +1,29 @@
 module Program where
 
 import IO
-import Term ( Range (start), Identifier (..) )
+import Term ( Range (Range, start), Identifier (..) )
 import Module ( Module )
 import qualified Module
 
 import qualified Control.Monad.Exception.Synchronous as Exc
+import Control.Monad.Trans.Class ( lift )
+
+import qualified Control.Exception as ExcBase
 
 import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
+import qualified Text.ParserCombinators.Parsec.Error as PErr
 
 import System.Directory ( doesFileExist )
 import System.IO ( hPutStrLn, stderr )
 import System.FilePath ( (</>) )
+import qualified System.IO.Error as Err
+import qualified System.FilePath as FP
 
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
 import Control.Monad ( foldM )
+import Data.List.HT ( chop )
 
 
 data Program = Program
@@ -25,17 +32,18 @@ data Program = Program
      }
     deriving (Show)
 
-add_module :: Module -> Program -> Program
+add_module ::
+    Module -> Program ->
+    Exc.Exceptional (Range, String) Program
 add_module m p =
-    let funcs =
-            M.difference
-                (functions p)
-                (M.findWithDefault M.empty ( Module.name m )
-                    ( fmap Module.functions $ modules p ))
-    in  p { modules = M.insert ( Module.name m ) m $ modules p,
-            functions =
-                Exc.resolve (error . show) $
-                union_functions funcs $ Module.functions m }
+    fmap (\newFuncs ->
+        p { modules = M.insert ( Module.name m ) m $ modules p,
+            functions = newFuncs }) $
+    union_functions ( Module.functions m ) $
+    M.difference
+        (functions p)
+        (M.findWithDefault M.empty ( Module.name m )
+            ( fmap Module.functions $ modules p ))
 
 union_functions ::
     Module.FunctionDeclarations ->
@@ -54,42 +62,68 @@ union_functions m0 m1 =
         (f m0) (f m1)
 
 -- | load from disk, with import chasing
-chase :: [ FilePath ] -> Identifier -> IO Program
+chase ::
+    [ FilePath ] -> Identifier ->
+    Exc.ExceptionalT (Range, String) IO Program
 chase dirs n =
     chaser dirs ( Program { modules = M.empty, functions = M.empty } )  n
 
--- FIXME: errors should be exceptions in order to handle failed load at runtime
-chaser :: [ FilePath ] -> Program -> Identifier -> IO Program
+chaser ::
+    [ FilePath ] -> Program -> Identifier ->
+    Exc.ExceptionalT (Range, String) IO Program
 chaser dirs p n = do
-    hPutStrLn stderr $ unwords [ "chasing", "module", show n ]
+    lift $ hPutStrLn stderr $ unwords [ "chasing", "module", show n ]
     case M.lookup n ( modules p ) of
-        Just _ -> do
+        Just _ -> lift $ do
             hPutStrLn stderr $ "module is already loaded"
             return p
         Nothing -> do
-            let f = map ( \ c -> if c == '.' then '/' else c ) ( Term.name n )
-                  ++ ".hs"
+            let f = FP.addExtension (FP.joinPath $ chop ('.'==) $ Term.name n) "hs"
             ff <- chaseFile dirs f
-            s <- readFile ff
-            case parse input ( Term.name n ) s of
-                Left err -> error $ show err
-                Right m0  -> do
-                    let m = m0 { Module.source_location = ff, Module.source_text = s }
-                    hPutStrLn stderr $ show m
-                    foldM ( chaser dirs )
-                          ( add_module m p )
-                          $ map Module.source $ Module.imports m
+            (parseResult, content) <-
+                Exc.mapExceptionT (\e -> (dummyRange ff, Err.ioeGetErrorString e)) $
+                Exc.fromEitherT $ ExcBase.try $
+                fmap (\s -> (parse input ( Term.name n ) s, s)) $ readFile ff
+            case parseResult of
+                Left err -> Exc.throwT (messageFromParserError err)
+                Right m0 -> do
+                    let m = m0 { Module.source_location = ff,
+                                 Module.source_text = content }
+                    lift $ hPutStrLn stderr $ show m
+                    pNew <- Exc.ExceptionalT $ return $ add_module m p
+                    foldM ( chaser dirs ) pNew $
+                        map Module.source $ Module.imports m
 
 -- | look for file, trying to append its name to the directories in the path,
 -- in turn. Will fail if file is not found.
--- FIXME: Opening the file may fail nevertheless, thus we should merge chasing and opening files.
-chaseFile :: [FilePath] -> FilePath -> IO String
-chaseFile [] f = do
-    error $ unwords [ "module", "not", "found:", f ]
-chaseFile (dir:dirs) f = do
-    let ff = dir </> f
-    e <- doesFileExist ff
-    if e then do
-           hPutStrLn stderr $ unwords [ "found at location", ff ]
-           return ff
-         else chaseFile dirs f
+chaseFile ::
+    [FilePath] -> FilePath ->
+    Exc.ExceptionalT (Range, String) IO String
+chaseFile dirs f =
+    foldr
+        (\dir go -> do
+            let ff = dir </> f
+            e <- lift $ doesFileExist ff
+            if e
+              then lift $ do
+                hPutStrLn stderr $ unwords [ "found at location", ff ]
+                return ff
+              else go)
+        (Exc.throwT (dummyRange f,
+                     unwords [ "module", "not", "found:", f ]))
+        dirs
+
+dummyRange :: String -> Range
+dummyRange f =
+    let pos = Pos.initialPos f
+    in  Range pos pos
+
+messageFromParserError :: PErr.ParseError -> (Range, String)
+messageFromParserError err =
+    (let p = PErr.errorPos err
+     in  Range p (Pos.updatePosChar p ' ')
+     ,
+     PErr.showErrorMessages
+         "or" "unknown parse error"
+         "expecting" "unexpected" "end of input" $
+     PErr.errorMessages err)

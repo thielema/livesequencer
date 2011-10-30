@@ -32,12 +32,13 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
+import Control.Monad.Trans.Class ( lift )
 import Control.Monad ( forever, forM, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
-import qualified Text.ParserCombinators.Parsec.Error as PErr
 
 import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
+import qualified System.Exit as Exit
 
 import qualified Data.Foldable as Fold
 import qualified Data.Sequence as Seq
@@ -56,10 +57,13 @@ main = do
     hSetBuffering stderr LineBuffering
     opt <- Option.get
 
-    p0 <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
-    let ctrls = Controls.collect p0
-        p = Program.add_module
-                (Controls.controller_module ctrls) p0
+    (p,ctrls) <-
+        Exc.resolveT (\e -> hPutStrLn stderr (show e) >> Exit.exitFailure) $ do
+            p0 <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
+            let ctrls = Controls.collect p0
+            p1 <- Exc.ExceptionalT $ return $
+                Program.add_module (Controls.controller_module ctrls) p0
+            return (p1, ctrls)
 
     input <- newChan
     output <- newChan
@@ -134,13 +138,17 @@ machine input output prog sq = do
         case action of
             Control event -> liftIO $ do
                 hPutStrLn stderr $ show event
-                m <- STM.atomically $ do
-                    p <- readTVar program
-                    let p' = Controls.change_controller_module p event
-                    writeTVar program p'
-                    return $ Controls.get_controller_module p'
-                -- hPutStrLn stderr $ show m                
-                return ()
+                Exc.resolveT
+                    (writeChan output .
+                     uncurry (Exception ParseException)) $
+                    Exc.mapExceptionalT STM.atomically $ do
+                        p <- lift $ readTVar program
+                        p' <-
+                            Exc.ExceptionalT $ return $
+                            Controls.change_controller_module p event
+                        lift $ writeTVar program p'
+                        -- return $ Controls.get_controller_module p'
+                -- hPutStrLn stderr $ show m
             Execution exec ->
                 case exec of
                     Restart -> do
@@ -169,20 +177,17 @@ machine input output prog sq = do
                 hPutStrLn stderr $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
-                case Parsec.parse IO.input ( show moduleName ) sourceCode of
-                    Left err ->
-                        writeChan output $
-                            Exception ParseException
-                                (let p = PErr.errorPos err
-                                 in  Range p (Pos.updatePosChar p ' ')) $
-                            PErr.showErrorMessages
-                                "or" "unknown parse error"
-                                "expecting" "unexpected" "end of input" $
-                            PErr.errorMessages err
-                    Right m0 -> (STM.atomically $ do
+                Exc.resolveT
+                    (writeChan output .
+                     uncurry (Exception ParseException)) $ do
+                    m0 <-
+                        Exc.mapExceptionT Program.messageFromParserError $
+                        Exc.fromEitherT $ return $
+                        Parsec.parse IO.input ( show moduleName ) sourceCode
+                    Exc.mapExceptionalT STM.atomically $ do
                         -- TODO: handle the case that the module changed its name
                         -- (might happen if user changes the text in the editor)
-                        p <- readTVar program
+                        p <- lift $ readTVar program
                         let Just previous = M.lookup moduleName $ modules p
                         let m = m0 { Module.source_location =
                                          Module.source_location previous
@@ -190,12 +195,12 @@ machine input output prog sq = do
                                    -- for now ignore renaming
                                    , Module.name = moduleName
                                    }
-                        writeTVar program $ Program.add_module m p)
-                        >>
-                        writeChan output
-                            (Refresh moduleName sourceCode pos)
-                        >>
-                        hPutStrLn stderr "parsed and modified OK"
+                        lift . writeTVar program =<<
+                            (Exc.ExceptionalT $ return $
+                             Program.add_module m p)
+                    lift $ writeChan output
+                        (Refresh moduleName sourceCode pos)
+                    lift $ hPutStrLn stderr "parsed and modified OK"
 
     startQueue sq
     MS.evalStateT
