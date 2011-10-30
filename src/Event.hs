@@ -30,6 +30,11 @@ termException msg s =
 runIO :: (MonadIO m) => IO () -> m [(Range, String)]
 runIO action = liftIO action >> return []
 
+{-
+FIXME:
+minBound for Velocity is zero.
+This is not very helpful, because zero velocity is treated as NoteOff.
+-}
 withRangeCheck ::
     (Bounded a, Monad m) =>
     String -> (Int -> a) -> (a -> Int) ->
