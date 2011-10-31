@@ -65,10 +65,9 @@ get = do
         exitFailureMsg (init (concat errors))
 
     dir <- getCurrentDirectory
-    let defltFullPath =
-            deflt { importPaths = map (dir </>) $ importPaths deflt }
     parsedOpts <-
-        foldl (>>=) (return defltFullPath) opts
+        fmap (\o -> o { importPaths = map (dir </>) $ importPaths o } ) $
+        foldl (>>=) (return deflt) opts
 
     case files of
         [] -> exitFailureMsg "no module specified"
