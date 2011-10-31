@@ -22,7 +22,7 @@ import Graphics.UI.WX.Classes
 import Graphics.UI.WX.Events
 import Graphics.UI.WX.Layout ( layout, container, row, widget )
 
-import Common ( void )
+import Utility ( void )
 
 
 data Event = EventBool Term.Identifier Bool

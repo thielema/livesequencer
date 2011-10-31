@@ -2,11 +2,13 @@
 
 import qualified IO
 import Term
-import Program
+import Program ( Program, modules )
+import qualified Program
 import qualified Module
 import qualified Controls
 import qualified Rewrite
 import qualified Option
+import Utility ( void )
 
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
@@ -32,8 +34,8 @@ import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 
 import Graphics.UI.WXCore.Events
 import Event
-import Common
 
+import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
@@ -75,9 +77,9 @@ main = do
     input <- newChan
     output <- newChan
     writeChan output $ Register p ctrls
-    withSequencer "Rewrite-Sequencer" $ \sq -> do
-        parseAndConnect sq ( Option.connectTo opt )
-        flip finally (stopQueue sq) $ WX.start $ do
+    ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
+        ALSA.parseAndConnect sq ( Option.connectTo opt )
+        flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
 
@@ -156,7 +158,7 @@ machine :: Chan Action -- ^ machine reads program text from here
                    -- (log message (for highlighting), current term)
         -> [FilePath]
         -> Program -- ^ initial program
-        -> Sequencer SndSeq.DuplexMode
+        -> ALSA.Sequencer SndSeq.DuplexMode
         -> IO ()
 machine input output importPaths progInit sq = do
     program <- newTVarIO progInit
@@ -184,22 +186,22 @@ machine input output importPaths progInit sq = do
                     Restart -> do
                         running True
                         MS.put mainName
-                        liftIO $ quietContinueQueue sq
+                        liftIO $ ALSA.quietContinueQueue sq
                         liftIO $ void $ STM.atomically $ writeTMVar term mainName
                     Stop -> do
                         running False
-                        liftIO $ stopQueue sq
+                        liftIO $ ALSA.stopQueue sq
                         liftIO $ void $ STM.atomically $ tryTakeTMVar term
                         MS.put mainName
                     Pause -> do
                         running False
-                        liftIO $ pauseQueue sq
+                        liftIO $ ALSA.pauseQueue sq
                         MS.put .
                             maybe mainName id
                             =<< (liftIO $ STM.atomically $ tryTakeTMVar term)
                     Continue -> do
                         running True
-                        liftIO $ continueQueue sq
+                        liftIO $ ALSA.continueQueue sq
                         liftIO . STM.atomically . writeTMVar term
                             =<< MS.get
                         MS.put mainName
@@ -237,15 +239,15 @@ machine input output importPaths progInit sq = do
                         prepareProgram =<<
                         Program.load importPaths Program.empty filePath
                     lift $ do
-                        stopQueue sq
+                        ALSA.stopQueue sq
                         STM.atomically $ do
                             writeTVar program p
                             writeTMVar term mainName
-                        continueQueue sq
+                        ALSA.continueQueue sq
                         writeChan output $ Register p ctrls
                         hPutStrLn stderr "chased and parsed OK"
 
-    startQueue sq
+    ALSA.startQueue sq
     MS.evalStateT
         ( execute program term ( writeChan output ) sq ) 0
 
@@ -254,7 +256,7 @@ execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
-        -> Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
+        -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program term output sq = forever $ do
     -- hPutStrLn stderr "execute"
@@ -285,7 +287,7 @@ execute program term output sq = forever $ do
 
     case result of
         Exc.Exception (rng,msg) -> liftIO $ do
-            stopQueue sq
+            ALSA.stopQueue sq
             output $ Exception TermException rng msg
             output $ Running False
         Exc.Success x -> do

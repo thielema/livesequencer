@@ -1,7 +1,8 @@
 module Event where
 
 import Term
-import Common ( Sequencer(Sequencer), sendEvent, Time, void )
+import ALSA ( Sequencer(Sequencer), sendEvent )
+import Utility ( void )
 
 import qualified Sound.MIDI.Message.Channel as CM
 import qualified Sound.MIDI.ALSA as MidiAlsa
@@ -20,6 +21,9 @@ import Control.Monad ( when )
 import Data.Bool.HT ( if' )
 
 -- import Control.Concurrent ( threadDelay )
+
+
+type Time = Integer
 
 
 termException :: String -> Term -> (Range, String)

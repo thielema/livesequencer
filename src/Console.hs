@@ -6,7 +6,7 @@ import Event
 import Program ( Program (..), chase )
 
 import qualified Option
-import Common
+import qualified ALSA
 
 import qualified Sound.ALSA.Sequencer as SndSeq
 
@@ -29,15 +29,15 @@ main = do
     p <-
         resolveT (\e -> IO.hPutStrLn IO.stderr (show e) >> Exit.exitFailure) $
         Program.chase (Option.importPaths opt) $ Option.moduleName opt
-    withSequencer "Rewrite-Sequencer" $ \sq -> do
-        parseAndConnect sq ( Option.connectTo opt )
-        startQueue sq
+    ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
+        ALSA.parseAndConnect sq ( Option.connectTo opt )
+        ALSA.startQueue sq
         MS.evalStateT ( execute p sq ( read "main" ) ) 0
 
 
 execute ::
     Program ->
-    Sequencer SndSeq.DuplexMode ->
+    ALSA.Sequencer SndSeq.DuplexMode ->
     Term ->
     MS.StateT Time IO ()
 execute p sq =
