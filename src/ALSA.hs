@@ -1,4 +1,4 @@
-module Common where
+module ALSA where
 
 import qualified Sound.ALSA.Sequencer.Address as Addr
 import qualified Sound.ALSA.Sequencer.Client as Client
@@ -14,13 +14,11 @@ import qualified Sound.MIDI.ALSA as MIDI
 import qualified System.IO as IO
 
 import Control.Monad ( (<=<) )
+import Utility ( void )
 
 
 data Sequencer mode =
    Sequencer (SndSeq.T mode) Port.T Queue.T
-
-
-type Time = Integer
 
 
 sendEvent ::
@@ -106,8 +104,3 @@ withSequencer name act =
                   Port.capWrite, Port.capSubsWrite]) Port.typeApplication $ \ port -> do
    Queue.with h $ \queue -> do
    act $ Sequencer h port queue
-
-
--- | for compatibility with GHC-6.12, is in Control.Monad since GHC-7
-void :: Functor f => f a -> f ()
-void = fmap (const ())

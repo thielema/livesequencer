@@ -72,7 +72,8 @@ Executable live-sequencer
   Hs-Source-Dirs: src
   Main-is: Console.hs
   Other-Modules:
-    Common
+    ALSA
+    Utility
     Event
     IO
     Module
@@ -102,7 +103,8 @@ Executable live-sequencer-gui
   Hs-Source-Dirs: src
   Main-is: GUI.hs
   Other-Modules:
-    Common
+    ALSA
+    Utility
     Event
     IO
     Module

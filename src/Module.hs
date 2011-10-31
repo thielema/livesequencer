@@ -16,7 +16,7 @@ import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
 import Text.PrettyPrint.HughesPJ ((<+>), ($$), empty, hsep, punctuate, render, text, vcat )
 
-import Common ( void )
+import Utility ( void )
 
 
 data Import = Import { qualified :: Bool

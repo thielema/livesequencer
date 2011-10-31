@@ -1,7 +1,7 @@
 module Term where
 
 import IO
-import Common ( void )
+import Utility ( void )
 
 import qualified Text.ParserCombinators.Parsec.Token as T
 import qualified Text.ParserCombinators.Parsec.Language as L
