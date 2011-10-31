@@ -514,22 +514,26 @@ gui input output = do
 
     set saveItem [
           on command := do
-              saveModule =<< getCurrentModule
-              {- ToDo: update source_location in module -} ]
+              saveModule =<< getCurrentModule ]
 
     set saveAsItem [
           on command := do
-              (filepath, moduleName, content) <- getCurrentModule
-              let (path,file) = FilePath.splitFileName filepath
+              (filePath, moduleName, content) <- getCurrentModule
+              let (path,file) = FilePath.splitFileName filePath
               -- print (path,file)
               mfilename <- WX.fileSaveDialog
                   f False {- change current directory -} True
                   ("Save module " ++ show moduleName) haskellFilenames path file
               case mfilename of
                   Nothing -> return ()
-                  Just filename ->
-                      saveModule (filename, moduleName, content)
-                      {- ToDo: update source_location in module -} ]
+                  Just fileName -> do
+                      saveModule (fileName, moduleName, content)
+                      modifyIORef program $ \prg ->
+                          prg { Program.modules =
+                              M.adjust
+                                  (\modu -> modu { Module.source_location = fileName })
+                                  moduleName (Program.modules prg) }
+          ]
 
 
     let refreshProgram (moduleName, (_panel, editor, _highlighter)) = do
