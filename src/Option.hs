@@ -20,14 +20,16 @@ import Data.List ( intercalate )
 
 data Option = Option {
         moduleName :: Identifier,
-        importPaths :: [FilePath]
+        importPaths :: [FilePath],
+        connectTo :: Maybe String
     }
 
 deflt :: Option
 deflt =
     Option {
         moduleName = error "no module specified",
-        importPaths = [ ".", "data", "data" </> "prelude" ]
+        importPaths = [ ".", "data", "data" </> "prelude" ],
+        connectTo = Nothing
     }
 
 
@@ -54,6 +56,10 @@ description =
             return $ flags{importPaths = chop (searchPathSeparator==) str})
         ("colon separated import paths,\ndefault " ++
          intercalate ":" (importPaths deflt)) :
+    Opt.Option ['p'] ["connect-to"]
+        (flip ReqArg "ALSA-PORT" $ \str flags ->
+            return $ flags{connectTo = Just str})
+        ("connect to an ALSA port at startup") :
     []
 
 

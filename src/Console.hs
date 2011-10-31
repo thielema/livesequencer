@@ -30,6 +30,7 @@ main = do
         resolveT (\e -> IO.hPutStrLn IO.stderr (show e) >> Exit.exitFailure) $
         Program.chase (Option.importPaths opt) $ Option.moduleName opt
     withSequencer "Rewrite-Sequencer" $ \sq -> do
+        parseAndConnect sq ( Option.connectTo opt )
         startQueue sq
         MS.evalStateT ( execute p sq ( read "main" ) ) 0
 
