@@ -16,10 +16,13 @@ import qualified Data.Map as M
 import Control.Monad ( forM )
 
 import qualified Graphics.UI.WX as WX
+import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
 import Graphics.UI.WX.Events
-import Graphics.UI.WX.Layout
+import Graphics.UI.WX.Layout ( layout, container, row, widget )
+
+import Common ( void )
 
 
 data Event = EventBool Term.Identifier Bool
@@ -69,13 +72,13 @@ controller_module controls =
     in  m
 
 create ::
-    Form w =>
-    w ->
-    WX.Window a ->
+    WX.Frame b ->
     [(Term.Identifier, Control)] ->
     (Controls.Event -> IO ()) ->
     IO ()
-create frame panel controls sink = do
+create frame controls sink = do
+    void $ WXCMZ.windowDestroyChildren frame
+    panel <- WX.panel frame []
     ws <- forM controls $ \ ( name, con ) ->
       case con of
         CheckBox val -> do
@@ -92,9 +95,9 @@ create frame panel controls sink = do
 
 collect :: Program.Program -> [ ( Term.Identifier, Control ) ]
 collect p = do
-    ( mod, contents ) <- M.toList $ Program.modules p
+    ( _mod, contents ) <- M.toList $ Program.modules p
     Module.Rule_Declaration rule <- Module.declarations contents
-    ( pos, t @ ( Term.Node f args ) ) <- Term.subterms $ Rule.rhs rule
+    ( _pos, ( Term.Node f args ) ) <- Term.subterms $ Rule.rhs rule
     case ( Term.name f, args ) of
         ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
               return ( tag
