@@ -238,7 +238,8 @@ machine input output importPaths progInit sq = do
                 exceptionToGUI output $ do
                     (p,ctrls) <-
                         prepareProgram =<<
-                        Program.load importPaths Program.empty filePath
+                        Program.load importPaths Program.empty
+                            (FilePath.takeBaseName filePath) filePath
                     lift $ do
                         ALSA.stopQueue sq
                         STM.atomically $ do
