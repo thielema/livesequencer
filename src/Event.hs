@@ -116,15 +116,13 @@ wait ::
 wait (Sequencer h p q) t = do
     c <- liftIO $ Client.getId h
     {-
-    liftIO $ putStr "wait, current time "
-    liftIO . print =<< MS.get
+    liftIO $ Log.put . ("wait, current time " ++) . show =<< MS.get
     -}
     MS.modify (t+)
     targetTime <- MS.get
 
     {-
-    liftIO $ putStr "wait, send echo for "
-    liftIO . print =<< MS.get
+    liftIO $ Log.put . ("wait, send echo for " ++) . show =<< MS.get
     -}
     void $ liftIO $ Event.output h $
        (Event.simple
@@ -142,9 +140,9 @@ wait (Sequencer h p q) t = do
     void $ liftIO $ Event.drainOutput h
 
     let loop = do
-            -- putStrLn "wait, wait for echo"
+            -- Log.put "wait, wait for echo"
             ev <- Event.input h
-            -- putStr "wait, get message " >> print ev
+            -- Log.put $ "wait, get message " ++ show ev
             let myEcho =
                    case Event.body ev of
                       Event.CustomEv Event.Echo _ ->

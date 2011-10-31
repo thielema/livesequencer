@@ -8,6 +8,7 @@ import qualified Module
 import qualified Controls
 import qualified Rewrite
 import qualified Option
+import qualified Log
 import Utility ( void )
 
 import qualified Graphics.UI.WX as WX
@@ -47,7 +48,7 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
 import Control.Exception ( bracket, finally )
-import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
+import qualified System.IO as IO
 import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
@@ -66,11 +67,11 @@ import Prelude hiding ( log )
 -- | read rules files, should contain definition for "main"
 main :: IO ()
 main = do
-    hSetBuffering stderr LineBuffering
+    IO.hSetBuffering IO.stderr IO.LineBuffering
     opt <- Option.get
 
     (p,ctrls) <-
-        Exc.resolveT (\e -> hPutStrLn stderr (show e) >> Exit.exitFailure) $
+        Exc.resolveT (\e -> IO.hPutStrLn IO.stderr (show e) >> Exit.exitFailure) $
             prepareProgram =<<
             Program.chase (Option.importPaths opt) ( Option.moduleName opt )
 
@@ -171,7 +172,7 @@ machine input output importPaths progInit sq = do
                 liftIO . writeChan output . Running
         case action of
             Control event -> liftIO $ do
-                hPutStrLn stderr $ show event
+                Log.put $ show event
                 exceptionToGUI output $
                     Exc.mapExceptionalT STM.atomically $ do
                         p <- lift $ readTVar program
@@ -180,7 +181,7 @@ machine input output importPaths progInit sq = do
                             Controls.change_controller_module p event
                         lift $ writeTVar program p'
                         -- return $ Controls.get_controller_module p'
-                -- hPutStrLn stderr $ show m
+                -- Log.put $ show m
             Execution exec ->
                 case exec of
                     Restart -> do
@@ -206,7 +207,7 @@ machine input output importPaths progInit sq = do
                             =<< MS.get
                         MS.put mainName
             Modification moduleName sourceCode pos -> liftIO $ do
-                hPutStrLn stderr $
+                Log.put $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
                 exceptionToGUI output $ do
@@ -230,9 +231,9 @@ machine input output importPaths progInit sq = do
                              Program.add_module m p)
                     lift $ writeChan output
                         (Refresh moduleName sourceCode pos)
-                    lift $ hPutStrLn stderr "parsed and modified OK"
+                    lift $ Log.put "parsed and modified OK"
             Load filePath -> liftIO $ do
-                hPutStrLn stderr $
+                Log.put $
                     "load " ++ filePath ++ " and all its depenencies"
                 exceptionToGUI output $ do
                     (p,ctrls) <-
@@ -245,7 +246,7 @@ machine input output importPaths progInit sq = do
                             writeTMVar term mainName
                         ALSA.continueQueue sq
                         writeChan output $ Register p ctrls
-                        hPutStrLn stderr "chased and parsed OK"
+                        Log.put "chased and parsed OK"
 
     ALSA.startQueue sq
     MS.evalStateT
@@ -259,7 +260,7 @@ execute :: TVar Program
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program term output sq = forever $ do
-    -- hPutStrLn stderr "execute"
+    -- Log.put "execute"
     p <- liftIO $ readTVarIO program
         -- this happens anew at each click
         -- since the program text might have changed in the editor
@@ -510,7 +511,7 @@ gui input output = do
                  M.elemAt index (modules prg),
                  moduleName, content)
         saveModule (path, moduleName, content) = do
-            -- putStrLn path
+            -- Log.put path
             writeFile path content
             set status [
                 text := "module " ++ show moduleName ++ " saved to " ++ path ]

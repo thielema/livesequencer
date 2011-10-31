@@ -4,6 +4,7 @@ import IO
 import Term ( Range (Range, start), Identifier (..) )
 import Module ( Module )
 import qualified Module
+import qualified Log
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
@@ -15,7 +16,6 @@ import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Error as PErr
 
 import System.Directory ( doesFileExist )
-import System.IO ( hPutStrLn, stderr )
 import System.FilePath ( (</>) )
 import qualified System.IO.Error as Err
 import qualified System.FilePath as FP
@@ -76,10 +76,10 @@ chaser ::
     [ FilePath ] -> Program -> Identifier ->
     Exc.ExceptionalT (Range, String) IO Program
 chaser dirs p n = do
-    lift $ hPutStrLn stderr $ unwords [ "chasing", "module", show n ]
+    lift $ Log.put $ unwords [ "chasing", "module", show n ]
     case M.lookup n ( modules p ) of
         Just _ -> lift $ do
-            hPutStrLn stderr $ "module is already loaded"
+            Log.put $ "module is already loaded"
             return p
         Nothing ->
             load dirs p =<<
@@ -98,7 +98,7 @@ load dirs p ff = do
         Right m0 -> do
             let m = m0 { Module.source_location = ff,
                          Module.source_text = content }
-            lift $ hPutStrLn stderr $ show m
+            lift $ Log.put $ show m
             pNew <- Exc.ExceptionalT $ return $ add_module m p
             foldM ( chaser dirs ) pNew $
                 map Module.source $ Module.imports m
@@ -115,7 +115,7 @@ chaseFile dirs f =
             e <- lift $ doesFileExist ff
             if e
               then lift $ do
-                hPutStrLn stderr $ unwords [ "found at location", ff ]
+                Log.put $ unwords [ "found at location", ff ]
                 return ff
               else go)
         (Exc.throwT (dummyRange f,
