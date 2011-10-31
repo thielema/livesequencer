@@ -82,17 +82,18 @@ chaser dirs p n = do
             Log.put $ "module is already loaded"
             return p
         Nothing ->
-            load dirs p =<<
-                chaseFile dirs ( FP.addExtension (FP.joinPath $ chop ('.'==) $ Term.name n) "hs" )
+            load dirs p (show n) =<<
+            chaseFile dirs
+                ( FP.addExtension (FP.joinPath $ chop ('.'==) $ Term.name n) "hs" )
 
 load ::
-    [ FilePath ] -> Program -> FilePath ->
+    [ FilePath ] -> Program -> String -> FilePath ->
     Exc.ExceptionalT (Range, String) IO Program
-load dirs p ff = do
+load dirs p n ff = do
     (parseResult, content) <-
         Exc.mapExceptionT (\e -> (dummyRange ff, Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $
-        fmap (\s -> (parse input ff s, s)) $ readFile ff
+        fmap (\s -> (parse input n s, s)) $ readFile ff
     case parseResult of
         Left err -> Exc.throwT (messageFromParserError err)
         Right m0 -> do
