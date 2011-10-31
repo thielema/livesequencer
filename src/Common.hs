@@ -13,6 +13,8 @@ import qualified Sound.MIDI.ALSA as MIDI
 
 import qualified System.IO as IO
 
+import Control.Monad ( (<=<) )
+
 
 data Sequencer mode =
    Sequencer (SndSeq.T mode) Port.T Queue.T
@@ -83,6 +85,12 @@ allNotesOff (Sequencer h p _) = do
            Event.CtrlEv Event.Controller .
            flip MIDI.modeEvent ModeMsg.AllNotesOff)
          [minBound .. maxBound]
+
+parseAndConnect ::
+   (SndSeq.AllowOutput mode) =>
+   Sequencer mode -> Maybe String -> IO ()
+parseAndConnect (Sequencer h p _) =
+   maybe (return ()) (SndSeq.connectTo h p <=< Addr.parse h)
 
 
 withSequencer ::

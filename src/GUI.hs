@@ -75,7 +75,8 @@ main = do
     input <- newChan
     output <- newChan
     writeChan output $ Register p ctrls
-    withSequencer "Rewrite-Sequencer" $ \sq ->
+    withSequencer "Rewrite-Sequencer" $ \sq -> do
+        parseAndConnect sq ( Option.connectTo opt )
         flip finally (stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
