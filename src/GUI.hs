@@ -26,9 +26,9 @@ import qualified Control.Monad.STM as STM
 import Data.IORef ( newIORef, readIORef, writeIORef, modifyIORef )
 
 import qualified Graphics.UI.WXCore as WXCore
+import qualified Graphics.UI.WXCore.WxcClassesAL as WXCAL
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
-import Graphics.UI.WXCore.WxcClassesAL ( commandEventCreate, evtHandlerAddPendingEvent )
 
 import Graphics.UI.WXCore.Events
 import Event
@@ -40,7 +40,7 @@ import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( forever, forM, forM_ )
+import Control.Monad ( forever, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
@@ -49,12 +49,14 @@ import System.IO ( hPutStrLn, hSetBuffering, BufferMode(..), stderr )
 import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
+import qualified Data.Traversable as Trav
 import qualified Data.Foldable as Fold
 import qualified Data.Sequence as Seq
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
 import qualified Data.List as List
+import Data.Tuple.HT ( fst3 )
 
 import Prelude hiding ( log )
 
@@ -66,25 +68,24 @@ main = do
     opt <- Option.get
 
     (p,ctrls) <-
-        Exc.resolveT (\e -> hPutStrLn stderr (show e) >> Exit.exitFailure) $ do
-            p0 <- Program.chase (Option.importPaths opt) $ Option.moduleName opt
-            let ctrls = Controls.collect p0
-            p1 <- Exc.ExceptionalT $ return $
-                Program.add_module (Controls.controller_module ctrls) p0
-            return (p1, ctrls)
+        Exc.resolveT (\e -> hPutStrLn stderr (show e) >> Exit.exitFailure) $
+            prepareProgram =<<
+            Program.chase (Option.importPaths opt) ( Option.moduleName opt )
 
     input <- newChan
     output <- newChan
+    writeChan output $ Register p ctrls
     withSequencer "Rewrite-Sequencer" $ \sq ->
         flip finally (stopQueue sq) $ WX.start $ do
-            gui ctrls input output p
-            void $ forkIO $ machine input output p sq
+            gui input output
+            void $ forkIO $ machine input output (Option.importPaths opt) p sq
 
 -- | messages that are sent from GUI to machine
 data Action =
      Modification Identifier String Int -- ^ modulename, sourcetext, position
    | Execution Execution
    | Control Controls.Event
+   | Load FilePath
 
 data Execution = Restart | Stop | Pause | Continue
 
@@ -96,6 +97,7 @@ data ExceptionType = ParseException | TermException
 data GuiUpdate =
      Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
    | Exception { _excType :: ExceptionType, _range :: Range, _message :: String }
+   | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | Running Bool
    | ResetDisplay
@@ -115,10 +117,30 @@ lineFromExceptionItem (typ, rng, descr) =
             descr :
             []
 
+exceptionToGUI ::
+    Chan GuiUpdate ->
+    Exc.ExceptionalT (Range, String) IO () ->
+    IO ()
+exceptionToGUI output =
+    Exc.resolveT
+        (writeChan output .
+         uncurry (Exception ParseException))
+
+prepareProgram ::
+    (Monad m) =>
+    Program ->
+    Exc.ExceptionalT (Range, String) m
+        (Program, [(Identifier, Controls.Control)])
+prepareProgram p0 = do
+    let ctrls = Controls.collect p0
+    p1 <- Exc.ExceptionalT $ return $
+        Program.add_module (Controls.controller_module ctrls) p0
+    return (p1, ctrls)
 
 writeTMVar :: TMVar a -> a -> STM.STM ()
 writeTMVar var a =
     tryTakeTMVar var >> putTMVar var a
+
 
 {-
 This runs concurrently
@@ -131,11 +153,12 @@ machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> Chan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
+        -> [FilePath]
         -> Program -- ^ initial program
         -> Sequencer SndSeq.DuplexMode
         -> IO ()
-machine input output prog sq = do
-    program <- newTVarIO prog
+machine input output importPaths progInit sq = do
+    program <- newTVarIO progInit
     let mainName = read "main"
     term <- newTMVarIO mainName
 
@@ -146,9 +169,7 @@ machine input output prog sq = do
         case action of
             Control event -> liftIO $ do
                 hPutStrLn stderr $ show event
-                Exc.resolveT
-                    (writeChan output .
-                     uncurry (Exception ParseException)) $
+                exceptionToGUI output $
                     Exc.mapExceptionalT STM.atomically $ do
                         p <- lift $ readTVar program
                         p' <-
@@ -185,9 +206,7 @@ machine input output prog sq = do
                 hPutStrLn stderr $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
-                Exc.resolveT
-                    (writeChan output .
-                     uncurry (Exception ParseException)) $ do
+                exceptionToGUI output $ do
                     m0 <-
                         Exc.mapExceptionT Program.messageFromParserError $
                         Exc.fromEitherT $ return $
@@ -209,6 +228,21 @@ machine input output prog sq = do
                     lift $ writeChan output
                         (Refresh moduleName sourceCode pos)
                     lift $ hPutStrLn stderr "parsed and modified OK"
+            Load filePath -> liftIO $ do
+                hPutStrLn stderr $
+                    "load " ++ filePath ++ " and all its depenencies"
+                exceptionToGUI output $ do
+                    (p,ctrls) <-
+                        prepareProgram =<<
+                        Program.load importPaths Program.empty filePath
+                    lift $ do
+                        stopQueue sq
+                        STM.atomically $ do
+                            writeTVar program p
+                            writeTMVar term mainName
+                        continueQueue sq
+                        writeChan output $ Register p ctrls
+                        hPutStrLn stderr "chased and parsed OK"
 
     startQueue sq
     MS.evalStateT
@@ -269,7 +303,8 @@ myEventId = wxID_HIGHEST+100
 
 -- | the custom event is registered as a menu event
 createMyEvent :: IO (WXCore.CommandEvent ())
-createMyEvent = commandEventCreate WXCMZ.wxEVT_COMMAND_MENU_SELECTED myEventId
+createMyEvent =
+    WXCAL.commandEventCreate WXCMZ.wxEVT_COMMAND_MENU_SELECTED myEventId
 
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
@@ -300,24 +335,29 @@ notebookSelection :: WX.Attr (Notebook a) Int
 notebookSelection =
     WX.newAttr "selection"
         WXCMZ.notebookGetSelection
-        (\nb -> fmap (const ()) . WXCMZ.notebookSetSelection nb)
+        (\nb -> void . WXCMZ.notebookSetSelection nb)
+
 
 
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
 -}
-gui :: [(Identifier, Controls.Control)]
-    -> Chan Action -- ^  the gui writes here
+gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> Chan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
-    -> Program -- ^ initial texts for modules
     -> IO ()
-gui ctrls input output pack = do
-    frameError <- WX.frame
-        [ text := "errors", visible := False
-        ]
+gui input output = do
+    program <- newIORef Program.empty
+    controls <- newIORef []
+    panels <- newIORef M.empty
+
+    let highlighters = fmap ( \ (_pnl,_,h) -> h )
+        editors = fmap ( \ (_pnl,e,_) -> e )
+
+
+    frameError <- WX.frame [ text := "errors" ]
 
     panelError <- WX.panel frameError [ ]
 
@@ -342,10 +382,6 @@ gui ctrls input output pack = do
               writeIORef errorList Seq.empty >> refreshErrorLog ]
 
     frameControls <- WX.frame [ text := "controls" ]
-    panelControls <- WX.panel frameControls []
-
-    Controls.create frameControls panelControls ctrls
-        $ \ e -> writeChan input ( Control e )
 
     f <- WX.frame
         [ text := "live-sequencer", visible := False
@@ -355,20 +391,9 @@ gui ctrls input output pack = do
 
     void $ forkIO $ forever $ do
         writeChan out =<< readChan output
-        evtHandlerAddPendingEvent f =<< createMyEvent
+        WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
-
-    let refreshProgram (path, editor, _highlighter) = do
-            s <- get editor text
-            pos <- get editor cursor
-            writeChan input $ Modification path s pos
-
-            modifyIORef errorList
-                (Seq.filter
-                    (\(_, errorRng, _) ->
-                        name path /= Pos.sourceName (Term.start errorRng)))
-            refreshErrorLog
 
 
     fileMenu <- WX.menuPane [text := "&File"]
@@ -377,6 +402,11 @@ gui ctrls input output pack = do
             [ ("Haskell modules", ["*.hs"]),
               ("All files", ["*"]) ]
 
+    loadItem <- WX.menuItem fileMenu
+        [ text := "L&oad ...\tCtrl-O",
+          help :=
+              "flush all modules " ++
+              "and load a new program with all its dependencies" ]
     saveItem <- WX.menuItem fileMenu
         [ text := "&Save\tCtrl-S",
           help :=
@@ -447,23 +477,6 @@ gui ctrls input output pack = do
 
     nb <- WX.notebook p [ ]
 
-    panelsHls <- forM (M.toList $ modules pack) $ \ (moduleName,content) -> do
-        psub <- panel nb []
-        editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
-        highlighter <- textCtrlRich psub [ font := fontFixed, wrap := WrapNone, editable := False ]
-        -- TODO: load actions
-        set editor
-            [ text := Module.source_text content ]
-        set highlighter [ text := Module.source_text content ]
-        return
-           (tab ( show moduleName ) $ container psub $ row 5 $
-               map WX.fill $ [widget editor, widget highlighter],
-            (moduleName, editor, highlighter))
-
-    let panels = map fst panelsHls
-        highlighters = M.fromList $ map ( \ (_,(pnl,_,h)) -> (pnl, h) ) panelsHls
-        editors = M.fromList $ map ( \ (_,(pnl,e,_)) -> (pnl, e) ) panelsHls
-
 
     reducer <-
         textCtrl p
@@ -473,13 +486,25 @@ gui ctrls input output pack = do
         [ text := "Welcome to interactive music composition with Haskell" ]
 
 
+    set loadItem [
+          on command := do
+              mfilename <- WX.fileOpenDialog
+                  f False {- change current directory -} True
+                  "Load Haskell program" haskellFilenames "" ""
+              case mfilename of
+                  Nothing -> return ()
+                  Just filename ->
+                      writeChan input $ Load filename ]
+
     let getCurrentModule = do
             index <- get nb notebookSelection
-            let (moduleName, editor, _highlighter) = snd $ panelsHls!!index
+            (moduleName, (_panel, editor, _highlighter)) <-
+                fmap ( M.elemAt index ) $ readIORef panels
             content <- get editor text
+            prg <- readIORef program
             return
                 (Module.source_location $ snd $
-                 M.elemAt index (modules pack),
+                 M.elemAt index (modules prg),
                  moduleName, content)
         saveModule (path, moduleName, content) = do
             -- putStrLn path
@@ -507,11 +532,21 @@ gui ctrls input output pack = do
                       {- ToDo: update source_location in module -} ]
 
 
+    let refreshProgram (moduleName, (_panel, editor, _highlighter)) = do
+            s <- get editor text
+            pos <- get editor cursor
+            writeChan input $ Modification moduleName s pos
+
+            modifyIORef errorList
+                (Seq.filter
+                    (\(_, errorRng, _) ->
+                        name moduleName /= Pos.sourceName (Term.start errorRng)))
+            refreshErrorLog
+
     set refreshItem
         [ on command := do
-            index <- get nb notebookSelection
-            refreshProgram $ snd $ panelsHls !! index
-            -- mapM_ (refreshProgram . snd) panelsHls
+            refreshProgram =<< getFromNotebook nb =<< readIORef panels
+            -- mapM_ refreshProgram pnls
             ]
 
     set runningItem
@@ -524,7 +559,7 @@ gui ctrls input output pack = do
     set f [
             layout := container p $ margin 5
             $ column 5
-            [ WX.fill $ tabs nb panels
+            [ WX.fill $ tabs nb []
             , WX.fill $ widget reducer
             ]
             , WX.statusBar := [status]
@@ -541,13 +576,13 @@ gui ctrls input output pack = do
                       errors <- readIORef errorList
                       let (typ, errorRng, _descr) = Seq.index errors n
                           moduleIdent = read $ Pos.sourceName $ Term.start errorRng
-                      case List.elemIndex moduleIdent $ M.keys highlighters of
-                          Nothing -> return ()
-                          Just i -> set nb [ notebookSelection := i ]
+                      pnls <- readIORef panels
+                      set nb [ notebookSelection :=
+                                   M.findIndex moduleIdent pnls ]
                       let textField =
                               case typ of
-                                  ParseException -> editors
-                                  TermException -> highlighters
+                                  ParseException -> editors pnls
+                                  TermException -> highlighters pnls
                       case M.lookup moduleIdent textField of
                           Nothing -> return ()
                           Just h -> do
@@ -563,7 +598,6 @@ gui ctrls input output pack = do
               $ column 5 $
                  [ WX.fill $ widget errorLog,
                    WX.hfloatLeft $ widget clearLog ]
-        , visible := True
         , clientSize := sz 500 300
         ]
 
@@ -573,6 +607,7 @@ gui ctrls input output pack = do
     set quitItem [ on command := closeOther >> close f]
     set f [ on closing := closeOther >> propagateEvent
         {- 'close f' would trigger the closing handler again -} ]
+    focusOn f
 
 
     highlights <- varCreate M.empty
@@ -581,8 +616,9 @@ gui ctrls input output pack = do
         msg <- readChan out
         let setColorHighlighters ::
                 M.Map Identifier [Identifier] -> Int -> Int -> Int -> IO ()
-            setColorHighlighters m r g b =
-                set_color nb highlighters m ( rgb r g b )
+            setColorHighlighters m r g b = do
+                pnls <- readIORef panels
+                set_color nb ( highlighters pnls ) m ( rgb r g b )
         case msg of
             Term steps sr -> do
                 set reducer [ text := sr, cursor := 0 ]
@@ -615,11 +651,27 @@ gui ctrls input output pack = do
 
             -- update highlighter text field only if parsing was successful
             Refresh moduleName s pos -> do
+                pnls <- readIORef panels
                 maybe (return ())
                     (\h -> set h [ text := s, cursor := pos ])
-                    (M.lookup moduleName highlighters)
+                    (M.lookup moduleName $ highlighters pnls)
                 set status [ text :=
                     "module " ++ show moduleName ++ " reloaded into interpreter" ]
+
+            Register prg ctrls -> do
+                writeIORef program prg
+                writeIORef controls ctrls
+
+                void $ WXCMZ.notebookDeleteAllPages nb
+                pnls <- displayModules input
+                            frameControls ctrls nb prg
+                writeIORef panels pnls
+                Fold.forM_ (M.mapWithKey (,) $ fmap fst3 pnls) $ \(moduleName,sub) ->
+                    WXCMZ.notebookAddPage nb sub (show moduleName) False (-1)
+                set status [ text :=
+                    "modules loaded: " ++
+                    (List.intercalate ", " $ map show $
+                     M.keys $ Program.modules prg) ]
 
             ResetDisplay -> do
                 previous <- varSwap highlights M.empty
@@ -631,6 +683,34 @@ gui ctrls input output pack = do
                       then "interpreter started"
                       else "interpreter stopped" ]
                 set runningItem [ checked := running ]
+
+displayModules ::
+    Chan Action ->
+    WX.Frame c ->
+    [(Identifier, Controls.Control)] ->
+    WXCore.Window b ->
+    Program ->
+    IO (M.Map Identifier (Panel (), TextCtrl (), TextCtrl ()))
+displayModules input frameControls ctrls nb prog = do
+    Controls.create frameControls ctrls
+        $ \ e -> writeChan input ( Control e )
+
+    Trav.forM (modules prog) $ \ content -> do
+        psub <- panel nb []
+        editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
+        highlighter <- textCtrlRich psub
+            [ font := fontFixed, wrap := WrapNone, editable := False ]
+        set editor [ text := Module.source_text content ]
+        set highlighter [ text := Module.source_text content ]
+        set psub [ layout := (row 5 $
+            map WX.fill $ [widget editor, widget highlighter]) ]
+        return (psub, editor, highlighter)
+
+
+getFromNotebook ::
+    Notebook b -> M.Map k a -> IO (k, a)
+getFromNotebook nb m =
+    fmap (flip M.elemAt m) $ get nb notebookSelection
 
 textPosFromSourcePos ::
     TextCtrl a -> Pos.SourcePos -> IO Int
@@ -647,8 +727,7 @@ set_color ::
     Color ->
     IO ()
 set_color nb highlighters positions hicolor = void $ do
-    index <- get nb notebookSelection
-    let (p, highlighter) = M.toList highlighters !! index
+    (p, highlighter) <- getFromNotebook nb highlighters
     attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
     bracket
         (WXCMZ.textAttrGetBackgroundColour attr)
