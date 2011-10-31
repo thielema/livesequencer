@@ -35,7 +35,7 @@ startQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
 startQueue (Sequencer h _ q) = do
-   -- putStrLn "start queue"
+   -- Log.put "start queue"
    Queue.control h q Event.QueueStart 0 Nothing
    void $ Event.drainOutput h
 
@@ -43,7 +43,7 @@ stopQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
 stopQueue sq@(Sequencer h _ q) = do
-   -- putStrLn "stop queue"
+   -- Log.put "stop queue"
    mapM_ (Event.output h) =<< allNotesOff sq
    Queue.control h q Event.QueueStop 0 Nothing
    void $ Event.drainOutput h
@@ -52,7 +52,7 @@ pauseQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
 pauseQueue (Sequencer h _ q) = do
-   -- putStrLn "pause queue"
+   -- Log.put "pause queue"
    Queue.control h q Event.QueueStop 0 Nothing
    void $ Event.drainOutput h
 
@@ -60,7 +60,7 @@ continueQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
 continueQueue (Sequencer h _ q) = do
-   -- putStrLn "continue queue"
+   -- Log.put "continue queue"
    Queue.control h q Event.QueueContinue 0 Nothing
    void $ Event.drainOutput h
 
@@ -68,7 +68,7 @@ quietContinueQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
 quietContinueQueue sq@(Sequencer h _ q) = do
-   -- putStrLn "continue queue"
+   -- Log.put "continue queue"
    mapM_ (Event.output h) =<< allNotesOff sq
    Queue.control h q Event.QueueContinue 0 Nothing
    void $ Event.drainOutput h

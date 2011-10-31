@@ -47,12 +47,13 @@ execute p sq =
             liftIO $ print ms
             case ms of
                 Exception (pos, msg) ->
-                    liftIO $ print pos >> putStrLn msg
+                    liftIO $ IO.hPutStrLn IO.stderr $ show pos ++ " " ++ msg
                 Success s ->
                     case s of
                         Node i [] | name i == "[]" -> return ()
                         Node i [x, xs] | name i == ":" -> do
                             liftIO . mapM_ print =<< play_event x sq
                             go xs
-                        _ -> liftIO $ putStrLn $ "do not know how to handle term\n" ++ show s
+                        _ -> liftIO $ IO.hPutStrLn IO.stderr $
+                             "do not know how to handle term\n" ++ show s
     in  go

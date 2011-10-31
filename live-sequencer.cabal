@@ -83,6 +83,7 @@ Executable live-sequencer
     Rule
     Step
     Term
+    Log
   GHC-Options: -Wall -threaded
   Build-Depends:
     transformers >=0.2.2 && <0.3,
@@ -114,6 +115,7 @@ Executable live-sequencer-gui
     Rule
     Step
     Term
+    Log
   GHC-Options: -threaded -Wall
   If impl(ghc>=7.0)
     GHC-Options: -fwarn-tabs -fwarn-incomplete-uni-patterns
