@@ -133,7 +133,12 @@ messageFromParserError err =
     (let p = PErr.errorPos err
      in  Range p (Pos.updatePosChar p ' ')
      ,
+     removeLeadingNewline $
      PErr.showErrorMessages
          "or" "unknown parse error"
          "expecting" "unexpected" "end of input" $
      PErr.errorMessages err)
+
+removeLeadingNewline :: String -> String
+removeLeadingNewline ('\n':str) = str
+removeLeadingNewline str = str
