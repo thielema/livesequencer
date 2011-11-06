@@ -14,6 +14,7 @@ import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
 import Data.Maybe.HT ( toMaybe )
+import Data.Tuple.HT ( mapSnd )
 import Data.List ( intercalate )
 
 
@@ -112,7 +113,7 @@ eval_decls :: Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
 eval_decls g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
-            (m, ys') <- match_expand_list xs ys
+            (m, ys') <- match_expand_list M.empty xs ys
             case m of
                  Nothing -> go ys'
                  Just sub -> do
@@ -141,7 +142,7 @@ match_expand pat t = case pat of
                 if f /= g
                     then return ( Nothing, t' )
                     else do
-                         ( m, ys' ) <- match_expand_list xs ys
+                         ( m, ys' ) <- match_expand_list M.empty xs ys
                          return ( m, Node f ys' )
             _ ->
                 exception (termRange t') $
@@ -160,31 +161,29 @@ match_expand pat t = case pat of
 
 
 match_expand_list ::
+    M.Map Identifier Term ->
     [Term] ->
     [Term] ->
     Evaluator (Maybe (M.Map Identifier Term), [Term])
-match_expand_list [] [] = return ( Just M.empty, [] )
-match_expand_list (x:xs) (y:ys) = do
+match_expand_list s [] [] = return ( Just s, [] )
+match_expand_list s (x:xs) (y:ys) = do
     (m, y') <- match_expand x y
     case m of
         Nothing -> return ( m, y' : ys )
-        Just s  -> do
-            (n, ys') <- match_expand_list xs ys
-            n' <-
-                case n of
-                    Nothing -> return n
-                    Just s' ->
-                        case runWriter $ Trav.sequenceA $
-                             M.unionWithKey (\var t _ -> tell [var] >> t)
-                                 (fmap return s) (fmap return s') of
-                            (un, []) -> return $ Just un
-                            (_, vars) -> exception (termRange y') $
-                                "variables bound more than once in pattern: " ++
-                                intercalate ", " (map name vars)
-            return (n',  y' : ys')
-match_expand_list (x:_) _ =
+        Just s' -> do
+            s'' <-
+                case runWriter $ Trav.sequenceA $
+                     M.unionWithKey (\var t _ -> tell [var] >> t)
+                         (fmap return s) (fmap return s') of
+                    (un, []) -> return $ un
+                    (_, vars) -> exception (termRange y') $
+                        "variables bound more than once in pattern: " ++
+                        intercalate ", " (map name vars)
+            fmap (mapSnd (y':)) $
+                match_expand_list s'' xs ys
+match_expand_list _ (x:_) _ =
     exception (termRange x) "too few arguments"
-match_expand_list _ (y:_) =
+match_expand_list _ _ (y:_) =
     exception (termRange y) "too many arguments"
 
 apply :: M.Map Identifier Term -> Term -> Term

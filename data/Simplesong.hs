@@ -6,7 +6,7 @@ import List
 import Prelude ( (*) )
 
 
-main = repeat ( merge voice1 voice2 ) ;
+main = cycle ( merge voice1 voice2 ) ;
 
 qn = 600 ;
 hn = 2 * qn ;

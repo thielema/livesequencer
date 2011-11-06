@@ -3,26 +3,20 @@ module Chords where
 import Midi
 import List
 
-major delta base =
-   merge (note delta base)
-       (merge (note delta (base + 4))
-           (merge (note delta (base + 7))
-                  ( note delta (base + 12))))  ;
+chord4 dur p0 p1 p2 p3 =
+   merge (note dur p0)
+       ( merge (note dur p1)
+           ( merge (note dur p2)
+                   (note dur p3) ) ) ;
 
-major7 delta base =
-   merge (note delta base)
-       (merge (note delta (base + 4))
-           (merge (note delta (base + 7))
-                  ( note delta (base + 10))))  ;
+major dur base =
+   chord4 dur base (base + 4) (base + 7) (base + 12) ;
 
-minor delta base =
-   merge (note delta base)
-       (merge (note delta (base + 3))
-           (merge (note delta (base + 7))
-                  ( note delta (base + 12))))  ;
+major7 dur base =
+   chord4 dur base (base + 4) (base + 7) (base + 10) ;
 
-minor7 delta base =
-   merge (note delta base)
-       (merge (note delta (base + 3))
-           (merge (note delta (base + 7))
-                  ( note delta (base + 10))))  ;
+minor dur base =
+   chord4 dur base (base + 3) (base + 7) (base + 12) ;
+
+minor7 dur base =
+   chord4 dur base (base + 3) (base + 7) (base + 10) ;

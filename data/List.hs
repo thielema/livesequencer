@@ -7,7 +7,9 @@ import Prelude ( (-), compare, Ordering(LT,EQ,GT) )
 replicate 0 x = [] ;
 replicate n x = x : replicate ( n - 1 ) x  ;
 
-repeat s = append s (repeat s) ;
+repeat s = s : repeat s ;
+
+cycle s = append s (cycle s) ;
 
 append [] ys = ys ;
 append (x : xs) ys = x : append xs ys ;
