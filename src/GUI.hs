@@ -584,21 +584,24 @@ gui input output = do
                   ListItemSelected n -> do
                       errors <- readIORef errorList
                       let (typ, errorRng, _descr) = Seq.index errors n
-                          moduleIdent = read $ Pos.sourceName $ Term.start errorRng
-                      pnls <- readIORef panels
-                      set nb [ notebookSelection :=
-                                   M.findIndex moduleIdent pnls ]
-                      let textField =
-                              case typ of
-                                  ParseException -> editors pnls
-                                  TermException -> highlighters pnls
-                      case M.lookup moduleIdent textField of
-                          Nothing -> return ()
-                          Just h -> do
-                              i <- textPosFromSourcePos h $ Term.start errorRng
-                              j <- textPosFromSourcePos h $ Term.end errorRng
-                              set h [ cursor := i ]
-                              WXCMZ.textCtrlSetSelection h i j
+                      case Parsec.parse IO.input "" $
+                           Pos.sourceName $ Term.start errorRng of
+                          Left _ -> return ()
+                          Right moduleIdent -> do
+                              pnls <- readIORef panels
+                              set nb [ notebookSelection :=
+                                           M.findIndex moduleIdent pnls ]
+                              let textField =
+                                      case typ of
+                                          ParseException -> editors pnls
+                                          TermException -> highlighters pnls
+                              case M.lookup moduleIdent textField of
+                                  Nothing -> return ()
+                                  Just h -> do
+                                      i <- textPosFromSourcePos h $ Term.start errorRng
+                                      j <- textPosFromSourcePos h $ Term.end errorRng
+                                      set h [ cursor := i ]
+                                      WXCMZ.textCtrlSetSelection h i j
                   _ -> return ()
         ]
 
