@@ -2,7 +2,7 @@ module List where
 
 import Midi
 import Tuple
-import Prelude ( (-), compare, Ordering(LT,EQ,GT) )
+import Prelude ( (-), (<), Bool(False,True) )
 
 
 replicate n x = take n ( repeat x ) ;
@@ -37,17 +37,24 @@ consFirst x (Pair xs ys) = Pair (x : xs) ys ;
 
 
 merge (Wait a : xs) (Wait b : ys) =
-  mergehelper (compare a b) a xs b ys ;
+  mergeWait (a<b) (a-b) a xs b ys ;
 merge (Wait a : xs) (y : ys) =
   y : merge (Wait a : xs) ys ;
-merge (x : xs) (Wait b : ys) =
-  x : merge xs (Wait b : ys) ;
 merge (x : xs) ys = x : merge xs ys ;
 merge [] ys = ys ;
 
-mergehelper LT  a xs b ys =
-  Wait a : merge xs (Wait (b - a) : ys) ;
-mergehelper EQ  a xs b ys =
+{-
+This looks a bit cumbersome,
+but it is necessary for avoiding stacks of unevaluated subtractions.
+We use or abuse the way of how the interpreter performs pattern matching.
+By matching against 0 we force the evaluation of the difference d.
+The evaluated difference is hold throughout the matching of all patterns.
+It is important that the match against 0 is really performed
+and is not shadowed by a failing preceding match, say, against the result of (a<b).
+-}
+mergeWait eq 0 a xs b ys =
   Wait a : merge xs ys ;
-mergehelper GT a xs b ys =
-  Wait b : merge (Wait (a - b) : xs) ys ;
+mergeWait True d a xs b ys =
+  Wait a : merge xs (Wait (0-d) : ys) ;
+mergeWait False d a xs b ys =
+  Wait b : merge (Wait d : xs) ys ;
