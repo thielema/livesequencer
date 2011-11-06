@@ -58,3 +58,6 @@ mergeWait True d a xs b ys =
   Wait a : merge xs (Wait (negate d) : ys) ;
 mergeWait False d a xs b ys =
   Wait b : merge (Wait d : xs) ys ;
+
+mergeMany [] = [] ;
+mergeMany (x : xs) = merge x (mergeMany xs) ;
