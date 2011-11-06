@@ -390,15 +390,16 @@ gui input output = do
               []
         ]
     errorList <- newIORef Seq.empty
-    let refreshErrorLog = do
+    let updateErrorLog f = do
             errors <- readIORef errorList
+            let newErrors = f errors
+            writeIORef errorList newErrors
             set errorLog [ items :=
-                  map lineFromExceptionItem $ Fold.toList errors ]
+                  map lineFromExceptionItem $ Fold.toList newErrors ]
 
     clearLog <- WX.button panelError
         [ text := "Clear",
-          on command :=
-              writeIORef errorList Seq.empty >> refreshErrorLog ]
+          on command := updateErrorLog (const Seq.empty) ]
 
     frameControls <- WX.frame [ text := "controls" ]
 
@@ -560,11 +561,9 @@ gui input output = do
             pos <- get editor cursor
             writeChan input $ Modification moduleName s pos
 
-            modifyIORef errorList
-                (Seq.filter
-                    (\(_, errorRng, _) ->
-                        name moduleName /= Pos.sourceName (Term.start errorRng)))
-            refreshErrorLog
+            updateErrorLog $ Seq.filter $
+                \(_, errorRng, _) ->
+                    name moduleName /= Pos.sourceName (Term.start errorRng)
 
     set refreshItem
         [ on command := do
@@ -693,8 +692,12 @@ gui input output = do
                 pnls <- displayModules input
                             frameControls ctrls nb prg
                 writeIORef panels pnls
-                Fold.forM_ (M.mapWithKey (,) $ fmap fst3 pnls) $ \(moduleName,sub) ->
-                    WXCMZ.notebookAddPage nb sub (show moduleName) False (-1)
+                Fold.forM_ (M.mapWithKey (,) $ fmap fst3 pnls) $
+                    \(moduleName,sub) ->
+                        WXCMZ.notebookAddPage nb sub (show moduleName) False (-1)
+
+                updateErrorLog (const Seq.empty)
+
                 set status [ text :=
                     "modules loaded: " ++
                     (List.intercalate ", " $ map show $
