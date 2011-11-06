@@ -2,7 +2,7 @@ module List where
 
 import Midi
 import Tuple
-import Prelude ( (-), (<), Bool(False,True) )
+import Prelude ( (-), (<), negate, Bool(False,True) )
 
 
 replicate n x = take n ( repeat x ) ;
@@ -55,6 +55,6 @@ and is not shadowed by a failing preceding match, say, against the result of (a<
 mergeWait eq 0 a xs b ys =
   Wait a : merge xs ys ;
 mergeWait True d a xs b ys =
-  Wait a : merge xs (Wait (0-d) : ys) ;
+  Wait a : merge xs (Wait (negate d) : ys) ;
 mergeWait False d a xs b ys =
   Wait b : merge (Wait d : xs) ys ;
