@@ -20,6 +20,10 @@ take 0 xs = [] ;
 take n [] = [] ;
 take n (x : xs) = x : take (n-1) xs ;
 
+drop 0 xs = xs ;
+drop n [] = [] ;
+drop n (x : xs) = drop (n-1) xs ;
+
 merge (Wait a : xs) (Wait b : ys) =
   mergehelper (compare a b) a xs b ys ;
 merge (Wait a : xs) (y : ys) =
