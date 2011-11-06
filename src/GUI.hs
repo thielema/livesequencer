@@ -110,16 +110,30 @@ data GuiUpdate =
 type ExceptionItem = (ExceptionType, Range, String)
 
 lineFromExceptionItem :: ExceptionItem -> [String]
-lineFromExceptionItem (typ, rng, descr) =
-    case rng of
-        Range pos _ ->
-            Pos.sourceName pos :
-            show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
-            (case typ of
-                ParseException -> "parse error"
-                TermException -> "term error") :
-            descr :
-            []
+lineFromExceptionItem (typ, Range pos _, descr) =
+    Pos.sourceName pos :
+    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
+    stringFromExceptionType typ :
+    flattenMultiline descr :
+    []
+
+statusFromExceptionItem :: ExceptionItem -> String
+statusFromExceptionItem (typ, Range pos _, descr) =
+    stringFromExceptionType typ ++ " - " ++
+    Pos.sourceName pos ++ ':' :
+    show (Pos.sourceLine pos) ++ ':' :
+    show (Pos.sourceColumn pos) ++ "  " ++
+    flattenMultiline descr
+
+stringFromExceptionType :: ExceptionType -> String
+stringFromExceptionType typ =
+    case typ of
+        ParseException -> "parse error"
+        TermException -> "term error"
+
+flattenMultiline :: String -> String
+flattenMultiline =
+    List.intercalate "; " . lines
 
 exceptionToGUI ::
     Chan GuiUpdate ->
@@ -660,6 +674,7 @@ gui input output = do
                 let exc = (typ, pos, descr)
                 itemAppend errorLog $ lineFromExceptionItem exc
                 modifyIORef errorList (Seq.|> exc)
+                set status [ text := statusFromExceptionItem exc ]
 
             -- update highlighter text field only if parsing was successful
             Refresh moduleName s pos -> do
