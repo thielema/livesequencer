@@ -574,7 +574,7 @@ gui input output = do
             , WX.statusBar := [status]
             , WX.menuBar   := [fileMenu, execMenu, windowMenu]
             , visible := True
-            , clientSize := sz 500 300
+            , clientSize := sz 1280 720
           ]
 
 
