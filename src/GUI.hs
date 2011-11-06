@@ -4,6 +4,7 @@ import qualified IO
 import Term
 import Program ( Program, modules )
 import qualified Program
+import qualified Exception
 import qualified Module
 import qualified Controls
 import qualified Rewrite
@@ -40,6 +41,7 @@ import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
+import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
@@ -47,8 +49,9 @@ import Control.Monad ( forever, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
-import Control.Exception ( bracket, finally )
+import Control.Exception ( bracket, finally, try )
 import qualified System.IO as IO
+import qualified System.IO.Error as Err
 import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
@@ -71,9 +74,12 @@ main = do
     opt <- Option.get
 
     (p,ctrls) <-
-        Exc.resolveT (\e -> IO.hPutStrLn IO.stderr (show e) >> Exit.exitFailure) $
+        Exc.resolveT
+            (\e ->
+                IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
+                Exit.exitFailure) $
             prepareProgram =<<
-            Program.chase (Option.importPaths opt) ( Option.moduleName opt )
+            Program.chase (Option.importPaths opt) (Option.moduleName opt)
 
     input <- newChan
     output <- newChan
@@ -94,60 +100,27 @@ data Action =
 data Execution = Restart | Stop | Pause | Continue
 
 
-data ExceptionType = ParseException | TermException
-    deriving (Show, Eq, Ord, Enum)
-
 -- | messages that are sent from machine to GUI
 data GuiUpdate =
      Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
-   | Exception { _excType :: ExceptionType, _range :: Range, _message :: String }
+   | Exception { _message :: Exception.Message }
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | Running Bool
    | ResetDisplay
 
 
-type ExceptionItem = (ExceptionType, Range, String)
-
-lineFromExceptionItem :: ExceptionItem -> [String]
-lineFromExceptionItem (typ, Range pos _, descr) =
-    Pos.sourceName pos :
-    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
-    stringFromExceptionType typ :
-    flattenMultiline descr :
-    []
-
-statusFromExceptionItem :: ExceptionItem -> String
-statusFromExceptionItem (typ, Range pos _, descr) =
-    stringFromExceptionType typ ++ " - " ++
-    Pos.sourceName pos ++ ':' :
-    show (Pos.sourceLine pos) ++ ':' :
-    show (Pos.sourceColumn pos) ++ "  " ++
-    flattenMultiline descr
-
-stringFromExceptionType :: ExceptionType -> String
-stringFromExceptionType typ =
-    case typ of
-        ParseException -> "parse error"
-        TermException -> "term error"
-
-flattenMultiline :: String -> String
-flattenMultiline =
-    List.intercalate "; " . lines
-
 exceptionToGUI ::
     Chan GuiUpdate ->
-    Exc.ExceptionalT (Range, String) IO () ->
+    Exc.ExceptionalT Exception.Message IO () ->
     IO ()
 exceptionToGUI output =
-    Exc.resolveT
-        (writeChan output .
-         uncurry (Exception ParseException))
+    Exc.resolveT (writeChan output . Exception)
 
 prepareProgram ::
     (Monad m) =>
     Program ->
-    Exc.ExceptionalT (Range, String) m
+    Exc.ExceptionalT Exception.Message m
         (Program, [(Identifier, Controls.Control)])
 prepareProgram p0 = do
     let ctrls = Controls.collect p0
@@ -304,10 +277,11 @@ execute program term output sq = forever $ do
     case result of
         Exc.Exception (rng,msg) -> liftIO $ do
             ALSA.stopQueue sq
-            output $ Exception TermException rng msg
+            output $ Exception $ Exception.Message Exception.Term rng msg
             output $ Running False
         Exc.Success x -> do
-            mapM_ (liftIO . output . uncurry (Exception TermException))
+            mapM_ (liftIO . output . Exception .
+                   uncurry (Exception.Message Exception.Term))
                 =<< play_event x sq
             case x of
                 Node j _ | name j == "Wait" -> liftIO $
@@ -395,7 +369,7 @@ gui input output = do
             let newErrors = f errors
             writeIORef errorList newErrors
             set errorLog [ items :=
-                  map lineFromExceptionItem $ Fold.toList newErrors ]
+                  map Exception.lineFromMessage $ Fold.toList newErrors ]
 
     clearLog <- WX.button panelError
         [ text := "Clear",
@@ -423,16 +397,21 @@ gui input output = do
               ("All files", ["*"]) ]
 
     loadItem <- WX.menuItem fileMenu
-        [ text := "L&oad ...\tCtrl-O",
+        [ text := "L&oad and check program ...\tCtrl-O",
           help :=
               "flush all modules " ++
               "and load a new program with all its dependencies" ]
+    reloadItem <- WX.menuItem fileMenu
+        [ text := "&Reload module",
+          help :=
+              "reload a module from its original file, " ++
+              "but do not pass it to the interpreter" ]
     saveItem <- WX.menuItem fileMenu
-        [ text := "&Save\tCtrl-S",
+        [ text := "&Save module\tCtrl-S",
           help :=
               "overwrite original file with current module content" ]
     saveAsItem <- WX.menuItem fileMenu
-        [ text := "Save as ...",
+        [ text := "Save module &as ...",
           help :=
               "save module content to a different or new file " ++
               "and make this the new file target" ]
@@ -506,6 +485,16 @@ gui input output = do
         [ text := "Welcome to interactive music composition with Haskell" ]
 
 
+    let handleException moduleName act = do
+            result <- try act
+            case result of
+                Left err ->
+                    writeChan output $
+                    Exception $ Exception.Message Exception.InOut
+                        (Program.dummyRange (show moduleName))
+                        (Err.ioeGetErrorString err)
+                Right () -> return ()
+
     set loadItem [
           on command := do
               mfilename <- WX.fileOpenDialog
@@ -515,6 +504,23 @@ gui input output = do
                   Nothing -> return ()
                   Just filename ->
                       writeChan input $ Load filename ]
+
+    set reloadItem [
+          on command := do
+              index <- get nb notebookSelection
+              (moduleName, (_panel, editor, _highlighter)) <-
+                  fmap ( M.elemAt index ) $ readIORef panels
+              prg <- readIORef program
+              let path =
+                      Module.source_location $ snd $
+                      M.elemAt index (modules prg)
+
+              handleException moduleName $ do
+                  content <- readFile path
+                  set editor [ text := content ]
+                  set status [
+                      text := "module " ++ show moduleName ++ " reloaded from " ++ path ]
+          ]
 
     let getCurrentModule = do
             index <- get nb notebookSelection
@@ -526,11 +532,12 @@ gui input output = do
                 (Module.source_location $ snd $
                  M.elemAt index (modules prg),
                  moduleName, content)
-        saveModule (path, moduleName, content) = do
-            -- Log.put path
-            writeFile path content
-            set status [
-                text := "module " ++ show moduleName ++ " saved to " ++ path ]
+        saveModule (path, moduleName, content) =
+            handleException moduleName $ do
+                -- Log.put path
+                writeFile path content
+                set status [
+                    text := "module " ++ show moduleName ++ " saved to " ++ path ]
 
     set saveItem [
           on command := do
@@ -562,7 +569,7 @@ gui input output = do
             writeChan input $ Modification moduleName s pos
 
             updateErrorLog $ Seq.filter $
-                \(_, errorRng, _) ->
+                \(Exception.Message _ errorRng _) ->
                     name moduleName /= Pos.sourceName (Term.start errorRng)
 
     set refreshItem
@@ -592,30 +599,31 @@ gui input output = do
 
 
     set errorLog
-        [ on listEvent := \ev ->
-              case ev of
-                  ListItemSelected n -> do
-                      errors <- readIORef errorList
-                      let (typ, errorRng, _descr) = Seq.index errors n
-                      case Parsec.parse IO.input "" $
-                           Pos.sourceName $ Term.start errorRng of
-                          Left _ -> return ()
-                          Right moduleIdent -> do
-                              pnls <- readIORef panels
-                              set nb [ notebookSelection :=
-                                           M.findIndex moduleIdent pnls ]
-                              let textField =
-                                      case typ of
-                                          ParseException -> editors pnls
-                                          TermException -> highlighters pnls
-                              case M.lookup moduleIdent textField of
-                                  Nothing -> return ()
-                                  Just h -> do
-                                      i <- textPosFromSourcePos h $ Term.start errorRng
-                                      j <- textPosFromSourcePos h $ Term.end errorRng
-                                      set h [ cursor := i ]
-                                      WXCMZ.textCtrlSetSelection h i j
-                  _ -> return ()
+        [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
+              ListItemSelected n <- return ev
+              errors <- liftIO $ readIORef errorList
+              let (Exception.Message typ errorRng _descr) =
+                      Seq.index errors n
+              Right moduleIdent <- return $
+                  Parsec.parse IO.input "" $
+                  Pos.sourceName $ Term.start errorRng
+              pnls <- liftIO $ readIORef panels
+              pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
+              liftIO $ set nb [ notebookSelection := pnl ]
+              let activateText textField = do
+                      h <- MaybeT.MaybeT $ return $
+                           M.lookup moduleIdent textField
+                      i <- liftIO $ textPosFromSourcePos h $ Term.start errorRng
+                      j <- liftIO $ textPosFromSourcePos h $ Term.end errorRng
+                      liftIO $ set h [ cursor := i ]
+                      liftIO $ WXCMZ.textCtrlSetSelection h i j
+              case typ of
+                  Exception.Parse ->
+                      activateText $ editors pnls
+                  Exception.Term ->
+                      activateText $ highlighters pnls
+                  Exception.InOut ->
+                      return ()
         ]
 
     set frameError
@@ -669,11 +677,10 @@ gui input output = do
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 200 200 0
 
-            Exception typ pos descr -> do
-                let exc = (typ, pos, descr)
-                itemAppend errorLog $ lineFromExceptionItem exc
+            Exception exc -> do
+                itemAppend errorLog $ Exception.lineFromMessage exc
                 modifyIORef errorList (Seq.|> exc)
-                set status [ text := statusFromExceptionItem exc ]
+                set status [ text := Exception.statusFromMessage exc ]
 
             -- update highlighter text field only if parsing was successful
             Refresh moduleName s pos -> do
