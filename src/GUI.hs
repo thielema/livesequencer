@@ -47,8 +47,9 @@ import Control.Monad ( forever, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
-import Control.Exception ( bracket, finally )
+import Control.Exception ( bracket, finally, try )
 import qualified System.IO as IO
+import qualified System.IO.Error as Err
 import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
@@ -94,7 +95,7 @@ data Action =
 data Execution = Restart | Stop | Pause | Continue
 
 
-data ExceptionType = ParseException | TermException
+data ExceptionType = ParseException | TermException | InOutException
     deriving (Show, Eq, Ord, Enum)
 
 -- | messages that are sent from machine to GUI
@@ -130,6 +131,7 @@ stringFromExceptionType typ =
     case typ of
         ParseException -> "parse error"
         TermException -> "term error"
+        InOutException -> "in/out error"
 
 flattenMultiline :: String -> String
 flattenMultiline =
@@ -511,6 +513,16 @@ gui input output = do
         [ text := "Welcome to interactive music composition with Haskell" ]
 
 
+    let handleException moduleName act = do
+            result <- try act
+            case result of
+                Left err ->
+                    writeChan output $
+                    Exception InOutException
+                        (Program.dummyRange (show moduleName))
+                        (Err.ioeGetErrorString err)
+                Right () -> return ()
+
     set loadItem [
           on command := do
               mfilename <- WX.fileOpenDialog
@@ -531,11 +543,11 @@ gui input output = do
                       Module.source_location $ snd $
                       M.elemAt index (modules prg)
 
-              content <- readFile path
-              set editor [ text := content ]
-
-              set status [
-                  text := "module " ++ show moduleName ++ " reloaded from " ++ path ]
+              handleException moduleName $ do
+                  content <- readFile path
+                  set editor [ text := content ]
+                  set status [
+                      text := "module " ++ show moduleName ++ " reloaded from " ++ path ]
           ]
 
     let getCurrentModule = do
@@ -548,11 +560,12 @@ gui input output = do
                 (Module.source_location $ snd $
                  M.elemAt index (modules prg),
                  moduleName, content)
-        saveModule (path, moduleName, content) = do
-            -- Log.put path
-            writeFile path content
-            set status [
-                text := "module " ++ show moduleName ++ " saved to " ++ path ]
+        saveModule (path, moduleName, content) =
+            handleException moduleName $ do
+                -- Log.put path
+                writeFile path content
+                set status [
+                    text := "module " ++ show moduleName ++ " saved to " ++ path ]
 
     set saveItem [
           on command := do
@@ -626,17 +639,21 @@ gui input output = do
                               pnls <- readIORef panels
                               set nb [ notebookSelection :=
                                            M.findIndex moduleIdent pnls ]
-                              let textField =
-                                      case typ of
-                                          ParseException -> editors pnls
-                                          TermException -> highlighters pnls
-                              case M.lookup moduleIdent textField of
-                                  Nothing -> return ()
-                                  Just h -> do
-                                      i <- textPosFromSourcePos h $ Term.start errorRng
-                                      j <- textPosFromSourcePos h $ Term.end errorRng
-                                      set h [ cursor := i ]
-                                      WXCMZ.textCtrlSetSelection h i j
+                              let activateText textField =
+                                      case M.lookup moduleIdent textField of
+                                          Nothing -> return ()
+                                          Just h -> do
+                                              i <- textPosFromSourcePos h $ Term.start errorRng
+                                              j <- textPosFromSourcePos h $ Term.end errorRng
+                                              set h [ cursor := i ]
+                                              WXCMZ.textCtrlSetSelection h i j
+                              case typ of
+                                  ParseException ->
+                                      activateText $ editors pnls
+                                  TermException ->
+                                      activateText $ highlighters pnls
+                                  InOutException ->
+                                      return ()
                   _ -> return ()
         ]
 
