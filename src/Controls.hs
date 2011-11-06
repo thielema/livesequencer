@@ -9,6 +9,7 @@ import qualified Program
 import qualified Module
 import qualified Rule
 import qualified Term
+import qualified Exception
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 
@@ -39,7 +40,7 @@ get_controller_module p =
 change_controller_module ::
     Program.Program ->
     Controls.Event ->
-    Exc.Exceptional (Term.Range, String) Program.Program
+    Exc.Exceptional Exception.Message Program.Program
 change_controller_module p event = case event of
     EventBool name val ->
         flip Program.add_module p $

@@ -1,9 +1,10 @@
 -- module Console where
 
 import Term
-import qualified Rewrite
 import Event
 import Program ( Program (..), chase )
+import qualified Rewrite
+import qualified Exception
 
 import qualified Option
 import qualified ALSA
@@ -27,7 +28,9 @@ main :: IO ()
 main = do
     opt <- Option.get
     p <-
-        resolveT (\e -> IO.hPutStrLn IO.stderr (show e) >> Exit.exitFailure) $
+        resolveT (\e ->
+            IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
+            Exit.exitFailure) $
         Program.chase (Option.importPaths opt) $ Option.moduleName opt
     ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
         ALSA.parseAndConnect sq ( Option.connectTo opt )

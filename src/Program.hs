@@ -5,6 +5,7 @@ import Term ( Range (Range, start), Identifier (..) )
 import Module ( Module )
 import qualified Module
 import qualified Log
+import qualified Exception
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
@@ -38,7 +39,7 @@ empty =
 
 add_module ::
     Module -> Program ->
-    Exc.Exceptional (Range, String) Program
+    Exc.Exceptional Exception.Message Program
 add_module m p =
     fmap (\newFuncs ->
         p { modules = M.insert ( Module.name m ) m $ modules p,
@@ -52,15 +53,15 @@ add_module m p =
 union_functions ::
     Module.FunctionDeclarations ->
     Module.FunctionDeclarations ->
-    Exc.Exceptional (Range, String) Module.FunctionDeclarations
+    Exc.Exceptional Exception.Message Module.FunctionDeclarations
 union_functions m0 m1 =
     let f = M.mapWithKey (\nm rs -> (nm, Exc.Success rs))
     in  Trav.sequenceA . fmap snd $
         M.unionWith (\(n0,_) (n1,_) ->
             (n0,
-             Exc.Exception
-                 (range n0,
-                  "duplicate definition of " ++ show n0 ++
+             Exc.Exception $ Exception.Message Exception.Parse
+                 (range n0)
+                 ("duplicate definition of " ++ show n0 ++
                   " in " ++ (show $ Pos.sourceName $ start $ range n0) ++
                   " and " ++ (show $ Pos.sourceName $ start $ range n1))))
         (f m0) (f m1)
@@ -68,13 +69,13 @@ union_functions m0 m1 =
 -- | load from disk, with import chasing
 chase ::
     [ FilePath ] -> Identifier ->
-    Exc.ExceptionalT (Range, String) IO Program
+    Exc.ExceptionalT Exception.Message IO Program
 chase dirs n =
     chaser dirs empty  n
 
 chaser ::
     [ FilePath ] -> Program -> Identifier ->
-    Exc.ExceptionalT (Range, String) IO Program
+    Exc.ExceptionalT Exception.Message IO Program
 chaser dirs p n = do
     lift $ Log.put $ unwords [ "chasing", "module", show n ]
     case M.lookup n ( modules p ) of
@@ -88,10 +89,12 @@ chaser dirs p n = do
 
 load ::
     [ FilePath ] -> Program -> String -> FilePath ->
-    Exc.ExceptionalT (Range, String) IO Program
+    Exc.ExceptionalT Exception.Message IO Program
 load dirs p n ff = do
     (parseResult, content) <-
-        Exc.mapExceptionT (\e -> (dummyRange ff, Err.ioeGetErrorString e)) $
+        Exc.mapExceptionT
+            (\e -> Exception.Message
+                Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $
         fmap (\s -> (parse input n s, s)) $ readFile ff
     case parseResult of
@@ -108,7 +111,7 @@ load dirs p n ff = do
 -- in turn. Will fail if file is not found.
 chaseFile ::
     [FilePath] -> FilePath ->
-    Exc.ExceptionalT (Range, String) IO FilePath
+    Exc.ExceptionalT Exception.Message IO FilePath
 chaseFile dirs f =
     foldr
         (\dir go -> do
@@ -119,8 +122,9 @@ chaseFile dirs f =
                 Log.put $ unwords [ "found at location", ff ]
                 return ff
               else go)
-        (Exc.throwT (dummyRange f,
-                     unwords [ "module", "not", "found:", f ]))
+        (Exc.throwT $ Exception.Message Exception.InOut
+             (dummyRange f)
+             (unwords [ "module", "not", "found:", f ]))
         dirs
 
 dummyRange :: String -> Range
@@ -128,12 +132,12 @@ dummyRange f =
     let pos = Pos.initialPos f
     in  Range pos pos
 
-messageFromParserError :: PErr.ParseError -> (Range, String)
-messageFromParserError err =
+messageFromParserError :: PErr.ParseError -> Exception.Message
+messageFromParserError err = Exception.Message
+    Exception.Parse
     (let p = PErr.errorPos err
-     in  Range p (Pos.updatePosChar p ' ')
-     ,
-     removeLeadingNewline $
+     in  Range p (Pos.updatePosChar p ' '))
+    (removeLeadingNewline $
      PErr.showErrorMessages
          "or" "unknown parse error"
          "expecting" "unexpected" "end of input" $
