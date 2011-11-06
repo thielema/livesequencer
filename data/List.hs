@@ -1,6 +1,7 @@
 module List where
 
 import Midi
+import Tuple
 import Prelude ( (-), compare, Ordering(LT,EQ,GT) )
 
 
@@ -23,6 +24,17 @@ take n (x : xs) = x : take (n-1) xs ;
 drop 0 xs = xs ;
 drop n [] = [] ;
 drop n (x : xs) = drop (n-1) xs ;
+
+{-
+This does not work well and fails for infinite lists,
+because consFirst matches strictly on Pair.
+-}
+splitAt 0 xs = Pair [] xs ;
+splitAt n [] = Pair [] [] ;
+splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
+
+consFirst x (Pair xs ys) = Pair (x : xs) ys ;
+
 
 merge (Wait a : xs) (Wait b : ys) =
   mergehelper (compare a b) a xs b ys ;
