@@ -248,14 +248,17 @@ execute :: TVar Program
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
 execute program term output sq = forever $ do
-    -- Log.put "execute"
-    p <- liftIO $ readTVarIO program
-        -- this happens anew at each click
-        -- since the program text might have changed in the editor
     ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
-        eslog@( es, _log ) <-
-            fmap (flip Rewrite.runEval p . Rewrite.force_head) $
-            takeTMVar term
+        eslog@( es, _log ) <- do
+            t <- takeTMVar term
+                {- this might cause a long wait,
+                   since if execution is stopped, then the term TMVar is empty -}
+            p <- readTVar program
+                {- this happens anew at each click
+                   since the program text might have changed in the editor -}
+            return $
+                flip Rewrite.runEval p $
+                Rewrite.force_head t
         let returnExc pos =
                 return . Exc.Exception . (,) pos
         fmap ((,) eslog) $
