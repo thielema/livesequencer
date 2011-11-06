@@ -110,16 +110,30 @@ data GuiUpdate =
 type ExceptionItem = (ExceptionType, Range, String)
 
 lineFromExceptionItem :: ExceptionItem -> [String]
-lineFromExceptionItem (typ, rng, descr) =
-    case rng of
-        Range pos _ ->
-            Pos.sourceName pos :
-            show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
-            (case typ of
-                ParseException -> "parse error"
-                TermException -> "term error") :
-            descr :
-            []
+lineFromExceptionItem (typ, Range pos _, descr) =
+    Pos.sourceName pos :
+    show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
+    stringFromExceptionType typ :
+    flattenMultiline descr :
+    []
+
+statusFromExceptionItem :: ExceptionItem -> String
+statusFromExceptionItem (typ, Range pos _, descr) =
+    stringFromExceptionType typ ++ " - " ++
+    Pos.sourceName pos ++ ':' :
+    show (Pos.sourceLine pos) ++ ':' :
+    show (Pos.sourceColumn pos) ++ "  " ++
+    flattenMultiline descr
+
+stringFromExceptionType :: ExceptionType -> String
+stringFromExceptionType typ =
+    case typ of
+        ParseException -> "parse error"
+        TermException -> "term error"
+
+flattenMultiline :: String -> String
+flattenMultiline =
+    List.intercalate "; " . lines
 
 exceptionToGUI ::
     Chan GuiUpdate ->
@@ -574,7 +588,7 @@ gui input output = do
             , WX.statusBar := [status]
             , WX.menuBar   := [fileMenu, execMenu, windowMenu]
             , visible := True
-            , clientSize := sz 500 300
+            , clientSize := sz 1280 720
           ]
 
 
@@ -584,21 +598,24 @@ gui input output = do
                   ListItemSelected n -> do
                       errors <- readIORef errorList
                       let (typ, errorRng, _descr) = Seq.index errors n
-                          moduleIdent = read $ Pos.sourceName $ Term.start errorRng
-                      pnls <- readIORef panels
-                      set nb [ notebookSelection :=
-                                   M.findIndex moduleIdent pnls ]
-                      let textField =
-                              case typ of
-                                  ParseException -> editors pnls
-                                  TermException -> highlighters pnls
-                      case M.lookup moduleIdent textField of
-                          Nothing -> return ()
-                          Just h -> do
-                              i <- textPosFromSourcePos h $ Term.start errorRng
-                              j <- textPosFromSourcePos h $ Term.end errorRng
-                              set h [ cursor := i ]
-                              WXCMZ.textCtrlSetSelection h i j
+                      case Parsec.parse IO.input "" $
+                           Pos.sourceName $ Term.start errorRng of
+                          Left _ -> return ()
+                          Right moduleIdent -> do
+                              pnls <- readIORef panels
+                              set nb [ notebookSelection :=
+                                           M.findIndex moduleIdent pnls ]
+                              let textField =
+                                      case typ of
+                                          ParseException -> editors pnls
+                                          TermException -> highlighters pnls
+                              case M.lookup moduleIdent textField of
+                                  Nothing -> return ()
+                                  Just h -> do
+                                      i <- textPosFromSourcePos h $ Term.start errorRng
+                                      j <- textPosFromSourcePos h $ Term.end errorRng
+                                      set h [ cursor := i ]
+                                      WXCMZ.textCtrlSetSelection h i j
                   _ -> return ()
         ]
 
@@ -657,6 +674,7 @@ gui input output = do
                 let exc = (typ, pos, descr)
                 itemAppend errorLog $ lineFromExceptionItem exc
                 modifyIORef errorList (Seq.|> exc)
+                set status [ text := statusFromExceptionItem exc ]
 
             -- update highlighter text field only if parsing was successful
             Refresh moduleName s pos -> do
