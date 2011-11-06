@@ -14,7 +14,7 @@ wn = 2000 ;
 voice =
     append
         ( program 4 )
-        ( repeat
+        ( cycle
             ( concat [
                 chord4 wn (c 4) (e 4) (g 4) (c 5),
                 chord4 wn (b 3) (e 4) (g 4) (b 4),
@@ -22,7 +22,7 @@ voice =
 
 cutoff = 70 ;
 
-control = controlCurve 50 cutoff ( repeat triangle ) ;
+control = controlCurve 50 cutoff ( cycle triangle ) ;
 
 triangle = append ( rampUp 0 ) ( rampDown 127 ) ;
 

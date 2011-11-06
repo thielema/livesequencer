@@ -7,7 +7,7 @@ import List
 import Prelude ( (*) )
 
 
-main = merge ( repeat song ) ( repeat drums ) ;
+main = merge ( cycle song ) ( cycle drums ) ;
 
 en = 100 ;
 qn = 2*en ;

@@ -6,7 +6,7 @@ import Midi
 import List
 import Prelude ( (*) )
 
-main = merge ( repeat chords ) ( repeat drums ) ;
+main = merge ( cycle chords ) ( cycle drums ) ;
 
 en = 100 ;
 qn = 2 * en ;
