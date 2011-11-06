@@ -23,6 +23,9 @@ rest duration =
 program n =
   [ Event ( PgmChange n ) ] ;
 
+controller cc x =
+  [ Event ( Controller cc x ) ] ;
+
 -- this is just (map (channelEvent chan))
 channel chan [] = [] ;
 channel chan (x : xs) =
