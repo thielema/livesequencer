@@ -4,8 +4,7 @@ import Midi
 import Prelude ( (-), compare, Ordering(LT,EQ,GT) )
 
 
-replicate 0 x = [] ;
-replicate n x = x : replicate ( n - 1 ) x  ;
+replicate n x = take n ( repeat x ) ;
 
 repeat s = s : repeat s ;
 
@@ -16,6 +15,10 @@ append (x : xs) ys = x : append xs ys ;
 
 concat [] = [] ;
 concat (x : xs) = append x (concat xs) ;
+
+take 0 xs = [] ;
+take n [] = [] ;
+take n (x : xs) = x : take (n-1) xs ;
 
 merge (Wait a : xs) (Wait b : ys) =
   mergehelper (compare a b) a xs b ys ;
