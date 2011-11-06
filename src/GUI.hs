@@ -423,16 +423,21 @@ gui input output = do
               ("All files", ["*"]) ]
 
     loadItem <- WX.menuItem fileMenu
-        [ text := "L&oad ...\tCtrl-O",
+        [ text := "L&oad and check program ...\tCtrl-O",
           help :=
               "flush all modules " ++
               "and load a new program with all its dependencies" ]
+    reloadItem <- WX.menuItem fileMenu
+        [ text := "&Reload module",
+          help :=
+              "reload a module from its original file, " ++
+              "but do not pass it to the interpreter" ]
     saveItem <- WX.menuItem fileMenu
-        [ text := "&Save\tCtrl-S",
+        [ text := "&Save module\tCtrl-S",
           help :=
               "overwrite original file with current module content" ]
     saveAsItem <- WX.menuItem fileMenu
-        [ text := "Save as ...",
+        [ text := "Save module &as ...",
           help :=
               "save module content to a different or new file " ++
               "and make this the new file target" ]
@@ -515,6 +520,23 @@ gui input output = do
                   Nothing -> return ()
                   Just filename ->
                       writeChan input $ Load filename ]
+
+    set reloadItem [
+          on command := do
+              index <- get nb notebookSelection
+              (moduleName, (_panel, editor, _highlighter)) <-
+                  fmap ( M.elemAt index ) $ readIORef panels
+              prg <- readIORef program
+              let path =
+                      Module.source_location $ snd $
+                      M.elemAt index (modules prg)
+
+              content <- readFile path
+              set editor [ text := content ]
+
+              set status [
+                  text := "module " ++ show moduleName ++ " reloaded from " ++ path ]
+          ]
 
     let getCurrentModule = do
             index <- get nb notebookSelection
