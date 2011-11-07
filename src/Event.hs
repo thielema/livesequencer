@@ -1,8 +1,9 @@
 module Event where
 
 import Term
-import ALSA ( Sequencer(Sequencer), sendEvent )
+import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
 import Utility ( void )
+-- import qualified Log
 
 import qualified Sound.MIDI.Message.Channel as CM
 import qualified Sound.MIDI.ALSA as MidiAlsa
@@ -113,8 +114,8 @@ play_event x sq = case x of
 wait ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
     Sequencer mode -> Time -> MS.StateT Time IO ()
-wait (Sequencer h p q) t = do
-    c <- liftIO $ Client.getId h
+wait sq t = do
+    c <- liftIO $ Client.getId (handle sq)
     {-
     liftIO $ Log.put . ("wait, current time " ++) . show =<< MS.get
     -}
@@ -124,29 +125,34 @@ wait (Sequencer h p q) t = do
     {-
     liftIO $ Log.put . ("wait, send echo for " ++) . show =<< MS.get
     -}
-    void $ liftIO $ Event.output h $
+    let dest =
+            Addr.Cons {
+               Addr.client = c,
+               Addr.port = privatePort sq
+            }
+    {-
+    liftIO $ Log.put $ "send echo message to " ++ show dest
+    -}
+    void $ liftIO $ Event.output (handle sq) $
        (Event.simple
           (Addr.Cons c Port.unknown)
           (Event.CustomEv Event.Echo (Event.Custom 0 0 0)))
-          { Event.queue = q
+          { Event.queue = queue sq
           , Event.timestamp =
                Event.RealTime $ RealTime.fromInteger targetTime
-          , Event.dest = Addr.Cons {
-               Addr.client = c,
-               Addr.port = p
-            }
+          , Event.dest = dest
           }
 
-    void $ liftIO $ Event.drainOutput h
+    void $ liftIO $ Event.drainOutput (handle sq)
 
     let loop = do
             -- Log.put "wait, wait for echo"
-            ev <- Event.input h
+            ev <- Event.input (handle sq)
             -- Log.put $ "wait, get message " ++ show ev
             let myEcho =
                    case Event.body ev of
                       Event.CustomEv Event.Echo _ ->
-                         c == Addr.client (Event.source ev)
+                         dest == Event.dest ev
                       _ -> False
             when (not myEcho) loop
     liftIO loop
@@ -160,6 +166,6 @@ sendNote ::
     CM.Pitch ->
     CM.Velocity ->
     IO ()
-sendNote h onoff chan pitch velocity =
-    sendEvent h $
+sendNote sq onoff chan pitch velocity =
+    sendEvent sq $
     Event.NoteEv onoff $ MidiAlsa.noteEvent chan pitch velocity velocity 0
