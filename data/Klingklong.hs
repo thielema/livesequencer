@@ -4,7 +4,7 @@ import Chords
 import Pitch
 import Midi
 import List
-import Prelude ( (*) )
+import Prelude ( (*), (+), (-) )
 
 
 main = [] ;
@@ -16,7 +16,7 @@ loop0 = append ( patternChannel ( note qn (c 4) ) ) loop0 ;
 
 loop0_1 =
     append ( patternChannel (
-        append ( program 0 ) ( note qn (c 4) )
+        append ping ( note qn (c 4) )
     ) ) loop0_1 ;
 
 
@@ -65,12 +65,12 @@ loop2b = append pattern2b loop1 ;
 -- * pad
 
 padSimple = padChannel ( concat [
-  program 4,
+  pad,
   controller volumeCC 90, controller brightnessCC 60,
   chord4 wn2 (c 4) (e 4) (g 4) (c 5) ] ) ;
 
 pad1 = padChannel ( concat [
-  program 4,
+  pad,
   controller volumeCC 90,
   chord4 wn2 (c 4) (e 4) (g 4) (c 5),
   chord4 wn2 (c 4) (d 4) (g 4) (c 5),
@@ -78,7 +78,7 @@ pad1 = padChannel ( concat [
   chord4 wn2 (c 4) (e 4) (g 4) (c 5) ] ) ;
 
 pad2 = padChannel ( concat [
-  program 4,
+  pad,
   controller volumeCC 90,
   chord4 wn2 (c 4) (e 4) (a 4) (c 5),
   chord4 wn2 (b 3) (e 4) (g 4) (b 4),
@@ -92,7 +92,7 @@ pad2 = padChannel ( concat [
   chord4 hn  (b 3) (d 4) (g 4) (b 4) ] ) ;
 
 pad3 = padChannel ( concat [
-  program 4,
+  pad,
   controller volumeCC 90, controller brightnessCC 70,
   chord4 wn2 (c 4) (f 4) (a 4) (c 5),
   chord4 wn2 (e 4) (a 4) (c 5) (e 5),
@@ -107,12 +107,12 @@ bassControl =
     (take 64 (cycle [0,31,62,93,124] ) ) ;
 
 bassNote p = bassChannel ( concat [
-  program 9,
+  bass,
   controller volumeCC 100,
   merge ( note (4*2*wn) p ) bassControl ] ) ;
 
 bass3 = bassChannel ( concat [
-  program 9,
+  bass,
   controller volumeCC 100,
   merge ( concat [ note wn2 (f 2), note wn2 (f 2),
                    note wn2 (g 2), note wn2 (a 2) ] )
@@ -212,6 +212,14 @@ hn = 2 * qn ;
 wn = 2 * hn ;
 dwn = wn + hn ;
 wn2 = 2 * wn ;
+
+
+-- * MIDI program
+
+ping = program 0 ;
+slap = program 2 ;
+pad  = program 4 ;
+bass = program 9 ;
 
 
 -- * MIDI channels
