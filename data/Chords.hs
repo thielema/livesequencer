@@ -4,10 +4,12 @@ import Midi
 import List
 
 chord4 dur p0 p1 p2 p3 =
-   merge (note dur p0)
-       ( merge (note dur p1)
-           ( merge (note dur p2)
-                   (note dur p3) ) ) ;
+   mergeMany [
+      note dur p0,
+      note dur p1,
+      note dur p2,
+      note dur p3
+   ] ;
 
 major dur base =
    chord4 dur base (base + 4) (base + 7) (base + 12) ;

@@ -108,6 +108,7 @@ Executable live-sequencer-gui
     Utility
     Event
     IO
+    Exception
     Module
     Option
     Program

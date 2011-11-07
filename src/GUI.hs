@@ -1,8 +1,7 @@
 -- module GUI where
 
 import qualified IO
-import Term
-import Program ( Program, modules )
+import qualified Term
 import qualified Program
 import qualified Exception
 import qualified Module
@@ -10,6 +9,8 @@ import qualified Controls
 import qualified Rewrite
 import qualified Option
 import qualified Log
+import Program ( Program, modules )
+import Term ( Term(..), Identifier )
 import Utility ( void )
 
 import qualified Graphics.UI.WX as WX
@@ -128,10 +129,14 @@ prepareProgram p0 = do
         Program.add_module (Controls.controller_module ctrls) p0
     return (p1, ctrls)
 
+
 writeTMVar :: TMVar a -> a -> STM.STM ()
 writeTMVar var a =
-    tryTakeTMVar var >> putTMVar var a
+    clearTMVar var >> putTMVar var a
 
+clearTMVar :: TMVar a -> STM.STM ()
+clearTMVar var =
+    void $ tryTakeTMVar var
 
 {-
 This runs concurrently
@@ -152,13 +157,22 @@ machine input output importPaths progInit sq = do
     program <- newTVarIO progInit
     let mainName = read "main"
     term <- newTMVarIO mainName
+    runningVar <- newTMVarIO ()
 
-    void $ forkIO $ flip MS.evalStateT mainName $ forever $ do
-        action <- liftIO $ readChan input
-        let running =
-                liftIO . writeChan output . Running
+    void $ forkIO $ forever $ do
+        action <- readChan input
+        let start transaction = do
+                writeChan output $ Running True
+                STM.atomically $
+                    writeTMVar runningVar () >>
+                    transaction
+            stop transaction = do
+                writeChan output $ Running False
+                STM.atomically $
+                    clearTMVar runningVar >>
+                    transaction
         case action of
-            Control event -> liftIO $ do
+            Control event -> do
                 Log.put $ show event
                 exceptionToGUI output $
                     Exc.mapExceptionalT STM.atomically $ do
@@ -172,28 +186,18 @@ machine input output importPaths progInit sq = do
             Execution exec ->
                 case exec of
                     Restart -> do
-                        running True
-                        MS.put mainName
-                        liftIO $ ALSA.quietContinueQueue sq
-                        liftIO $ void $ STM.atomically $ writeTMVar term mainName
+                        ALSA.quietContinueQueue sq
+                        start $ writeTMVar term mainName
                     Stop -> do
-                        running False
-                        liftIO $ ALSA.stopQueue sq
-                        liftIO $ void $ STM.atomically $ tryTakeTMVar term
-                        MS.put mainName
+                        ALSA.stopQueue sq
+                        stop $ writeTMVar term mainName
                     Pause -> do
-                        running False
-                        liftIO $ ALSA.pauseQueue sq
-                        MS.put .
-                            maybe mainName id
-                            =<< (liftIO $ STM.atomically $ tryTakeTMVar term)
+                        ALSA.pauseQueue sq
+                        stop $ return ()
                     Continue -> do
-                        running True
-                        liftIO $ ALSA.continueQueue sq
-                        liftIO . STM.atomically . writeTMVar term
-                            =<< MS.get
-                        MS.put mainName
-            Modification moduleName sourceCode pos -> liftIO $ do
+                        ALSA.continueQueue sq
+                        start $ return ()
+            Modification moduleName sourceCode pos -> do
                 Log.put $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
@@ -219,7 +223,7 @@ machine input output importPaths progInit sq = do
                     lift $ writeChan output
                         (Refresh moduleName sourceCode pos)
                     lift $ Log.put "parsed and modified OK"
-            Load filePath -> liftIO $ do
+            Load filePath -> do
                 Log.put $
                     "load " ++ filePath ++ " and all its depenencies"
                 exceptionToGUI output $ do
@@ -229,7 +233,7 @@ machine input output importPaths progInit sq = do
                             (FilePath.takeBaseName filePath) filePath
                     lift $ do
                         ALSA.stopQueue sq
-                        STM.atomically $ do
+                        start $ do
                             writeTVar program p
                             writeTMVar term mainName
                         ALSA.continueQueue sq
@@ -238,24 +242,29 @@ machine input output importPaths progInit sq = do
 
     ALSA.startQueue sq
     MS.evalStateT
-        ( execute program term ( writeChan output ) sq ) 0
+        ( execute program runningVar term ( writeChan output ) sq ) 0
 
 
 execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
+        -> TMVar () -- ^ the variable is set, if the interpreter is running
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> MS.StateT Time IO ()
-execute program term output sq = forever $ do
-    -- Log.put "execute"
-    p <- liftIO $ readTVarIO program
-        -- this happens anew at each click
-        -- since the program text might have changed in the editor
+execute program running term output sq = forever $ do
+    let mainName = read "main"
     ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
-        eslog@( es, _log ) <-
-            fmap (flip Rewrite.runEval p . Rewrite.force_head) $
-            takeTMVar term
+        void $ takeTMVar running
+            {- this might cause a long wait,
+               since if execution is stopped, then the term TMVar is empty -}
+        t <- takeTMVar term
+        p <- readTVar program
+            {- this happens anew at each click
+               since the program text might have changed in the editor -}
+        let eslog@( es, _log ) =
+                flip Rewrite.runEval p $
+                Rewrite.force_head t
         let returnExc pos =
                 return . Exc.Exception . (,) pos
         fmap ((,) eslog) $
@@ -263,14 +272,17 @@ execute program term output sq = forever $ do
                 Exc.Exception (pos,msg) -> returnExc pos msg
                 Exc.Success s ->
                     case s of
-                        Node i [x, xs] | name i == ":" -> do
+                        Node i [x, xs] | Term.name i == ":" -> do
+                            putTMVar running ()
                             putTMVar term xs
                             return $ Exc.Success x
-                        Node i [] | name i == "[]" ->
+                        Node i [] | Term.name i == "[]" -> do
+                            putTMVar term mainName
                             returnExc (Term.range i) "finished."
-                        _ ->
+                        _ -> do
+                            putTMVar term mainName
                             returnExc (Term.termRange s) $
-                            "I do not know how to handle this term: " ++ show s
+                                "I do not know how to handle this term: " ++ show s
 
     liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
 
@@ -284,7 +296,7 @@ execute program term output sq = forever $ do
                    uncurry (Exception.Message Exception.Term))
                 =<< play_event x sq
             case x of
-                Node j _ | name j == "Wait" -> liftIO $
+                Node j _ | Term.name j == "Wait" -> liftIO $
                     output ResetDisplay
                 _ -> return ()
 
@@ -570,7 +582,7 @@ gui input output = do
 
             updateErrorLog $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
-                    name moduleName /= Pos.sourceName (Term.start errorRng)
+                    Term.name moduleName /= Pos.sourceName (Term.start errorRng)
 
     set refreshItem
         [ on command := do
