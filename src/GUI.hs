@@ -447,7 +447,7 @@ gui input output = do
           help :=
               "stop sound and restart program execution with 'main'" ]
     _stopItem <- WX.menuItem execMenu
-        [ text := "Stop\tCtrl-Z",
+        [ text := "Stop\tCtrl-Space",
           on command := writeChan input (Execution Stop),
           help :=
               "stop program execution and sound, " ++
