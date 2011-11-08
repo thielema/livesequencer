@@ -39,7 +39,7 @@ main = do
         Program.chase (Option.importPaths opt) $ Option.moduleName opt
     ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
         waitChan <- newChan
-        void $ forkIO $ Event.listen sq waitChan
+        void $ forkIO $ Event.listen sq print waitChan
         ALSA.parseAndConnect sq ( Option.connectTo opt )
         ALSA.startQueue sq
         MS.evalStateT ( execute p sq waitChan ( read "main" ) ) 0
