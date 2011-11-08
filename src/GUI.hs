@@ -40,6 +40,7 @@ import Event
 
 import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
+import qualified Sound.ALSA.Sequencer.Event as SeqEvent
 
 import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Trans.Maybe as MaybeT
@@ -256,9 +257,11 @@ machine input output importPaths progInit sq = do
                         writeChan output $ Register p ctrls
                         Log.put "chased and parsed OK"
 
+    waitChan <- newChan
+    void $ forkIO $ Event.listen sq waitChan
     ALSA.startQueue sq
     MS.evalStateT
-        ( execute program runningVar term ( writeChan output ) sq ) 0
+        ( execute program runningVar term ( writeChan output ) sq waitChan ) 0
 
 
 execute :: TVar Program
@@ -267,8 +270,9 @@ execute :: TVar Program
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
+        -> Chan SeqEvent.TimeStamp
         -> MS.StateT Time IO ()
-execute program running term output sq = forever $ do
+execute program running term output sq waitChan = forever $ do
     let mainName = read "main"
     ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
         void $ takeTMVar running
@@ -310,7 +314,7 @@ execute program running term output sq = forever $ do
         Exc.Success x -> do
             mapM_ (liftIO . output . Exception .
                    uncurry (Exception.Message Exception.Term))
-                =<< play_event x sq
+                =<< play_event sq waitChan x
             case x of
                 Node j _ | Term.name j == "Wait" -> liftIO $
                     output ResetDisplay
