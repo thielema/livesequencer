@@ -99,11 +99,20 @@ allNotesOff sq = do
          [minBound .. maxBound]
 
 parseAndConnect ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Maybe String -> IO ()
-parseAndConnect sq =
+   (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
+   Sequencer mode ->
+   Maybe String -> Maybe String -> IO ()
+parseAndConnect sq from to = do
    maybe (return ())
-      (SndSeq.connectTo (handle sq) (publicPort sq) <=< Addr.parse (handle sq))
+      (SndSeq.connectFrom (handle sq) (publicPort sq)
+       <=<
+       Addr.parse (handle sq))
+      from
+   maybe (return ())
+      (SndSeq.connectTo (handle sq) (publicPort sq)
+       <=<
+       Addr.parse (handle sq))
+      to
 
 
 withSequencer ::

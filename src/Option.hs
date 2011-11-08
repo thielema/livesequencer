@@ -21,7 +21,7 @@ import Data.List ( intercalate )
 data Option = Option {
         moduleName :: Identifier,
         importPaths :: [FilePath],
-        connectTo :: Maybe String
+        connectTo, connectFrom :: Maybe String
     }
 
 deflt :: Option
@@ -29,7 +29,8 @@ deflt =
     Option {
         moduleName = error "no module specified",
         importPaths = [ ".", "data", "data" </> "prelude" ],
-        connectTo = Nothing
+        connectTo = Nothing,
+        connectFrom = Nothing
     }
 
 
@@ -60,6 +61,10 @@ description =
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectTo = Just str})
         ("connect to an ALSA port at startup") :
+    Opt.Option [] ["connect-from"]
+        (flip ReqArg "ALSA-PORT" $ \str flags ->
+            return $ flags{connectFrom = Just str})
+        ("connect from an ALSA port at startup") :
     []
 
 

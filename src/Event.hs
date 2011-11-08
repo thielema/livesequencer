@@ -6,6 +6,7 @@ import Utility ( void )
 import qualified Log
 
 import qualified Sound.MIDI.Message.Channel as CM
+import qualified Sound.MIDI.Message.Channel.Voice as VM
 import qualified Sound.MIDI.ALSA as MidiAlsa
 
 import qualified Sound.ALSA.Sequencer.Address as Addr
@@ -18,6 +19,8 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
+
+import Data.Accessor.Basic ((^.), )
 
 import Data.Bool.HT ( if' )
 
@@ -166,8 +169,10 @@ and distributes them to who they might concern.
 -}
 listen ::
     (SndSeq.AllowInput mode) =>
-    Sequencer mode -> Chan Event.TimeStamp -> IO ()
-listen sq waitChan = do
+    Sequencer mode ->
+    (VM.Pitch -> IO ()) ->
+    Chan Event.TimeStamp -> IO ()
+listen sq noteInput waitChan = do
     Log.put "listen to ALSA port"
     c <- Client.getId (handle sq)
 
@@ -181,14 +186,14 @@ listen sq waitChan = do
         Log.put "wait, wait for echo"
         ev <- Event.input (handle sq)
         Log.put $ "wait, get message " ++ show ev
-        let myEcho =
-               case Event.body ev of
-                  Event.CustomEv Event.Echo _ ->
-                     dest == Event.dest ev
-                  _ -> False
-        when myEcho $ do
-            Log.put "write waitChan"
-            writeChan waitChan (Event.timestamp ev)
+        case Event.body ev of
+            Event.NoteEv Event.NoteOn note ->
+                noteInput $ note ^. MidiAlsa.notePitch
+            Event.CustomEv Event.Echo _ ->
+                when (dest == Event.dest ev) $ do
+                    Log.put "write waitChan"
+                    writeChan waitChan (Event.timestamp ev)
+            _ -> return ()
 
 
 sendNote ::

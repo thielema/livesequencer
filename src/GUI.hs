@@ -38,16 +38,20 @@ import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 import Graphics.UI.WXCore.Events
 import Event
 
+import Foreign.Storable ( peek )
+import Foreign.Marshal.Alloc ( alloca )
+
 import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Sound.ALSA.Sequencer.Event as SeqEvent
+import qualified Sound.MIDI.Message.Channel.Voice as VM
 
 import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( forever, forM_ )
+import Control.Monad ( liftM2, forever, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Token as Token
@@ -89,7 +93,8 @@ main = do
     output <- newChan
     writeChan output $ Register p ctrls
     ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
-        ALSA.parseAndConnect sq ( Option.connectTo opt )
+        ALSA.parseAndConnect sq
+            ( Option.connectFrom opt ) ( Option.connectTo opt )
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
@@ -111,6 +116,7 @@ data GuiUpdate =
    | Exception { _message :: Exception.Message }
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
+   | InsertText { _insertedText :: String }
    | Running Bool
    | ResetDisplay
 
@@ -132,6 +138,26 @@ prepareProgram p0 = do
     p1 <- Exc.ExceptionalT $ return $
         Program.add_module (Controls.controller_module ctrls) p0
     return (p1, ctrls)
+
+formatPitch :: VM.Pitch -> String
+formatPitch p =
+    let (oct,cls) = divMod (VM.fromPitch p) 12
+        name =
+            case cls of
+                00 -> "c"
+                01 -> "cs"
+                02 -> "d"
+                03 -> "ds"
+                04 -> "e"
+                05 -> "f"
+                06 -> "fs"
+                07 -> "g"
+                08 -> "gs"
+                09 -> "a"
+                10 -> "as"
+                11 -> "b"
+                _ -> error "pitch class must be a number from 0 to 11"
+    in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
 
 
 writeTMVar :: TMVar a -> a -> STM.STM ()
@@ -258,7 +284,9 @@ machine input output importPaths progInit sq = do
                         Log.put "chased and parsed OK"
 
     waitChan <- newChan
-    void $ forkIO $ Event.listen sq waitChan
+    void $ forkIO $
+        Event.listen sq
+            ( writeChan output . InsertText . formatPitch ) waitChan
     ALSA.startQueue sq
     MS.evalStateT
         ( execute program runningVar term ( writeChan output ) sq waitChan ) 0
@@ -624,8 +652,14 @@ gui input output = do
             expr <-
                 if null marked
                   then do
+                      (i,line) <-
+                          textColumnRowFromPos editor
+                              =<< get editor cursor
+                      content <- WXCMZ.textCtrlGetLineText editor line
+{- simpler but inefficient
                       content <- get editor text
                       i <- get editor cursor
+-}
                       case splitAt i content of
                           (prefix,suffix) ->
                               return $
@@ -747,6 +781,12 @@ gui input output = do
                     (M.lookup moduleName $ highlighters pnls)
                 set status [ text :=
                     "module " ++ show moduleName ++ " reloaded into interpreter" ]
+            InsertText str -> do
+                (_moduleName, (_panel, editor, _highlighter)) <-
+                    getFromNotebook nb =<< readIORef panels
+                WXCMZ.textCtrlWriteText editor str
+                set status [ text :=
+                    "inserted note from external controller" ]
 
             Register prg ctrls -> do
                 writeIORef program prg
@@ -808,10 +848,20 @@ getFromNotebook nb m =
 
 textPosFromSourcePos ::
     TextCtrl a -> Pos.SourcePos -> IO Int
-textPosFromSourcePos highlighter pos =
-    WXCMZ.textCtrlXYToPosition highlighter
+textPosFromSourcePos textArea pos =
+    WXCMZ.textCtrlXYToPosition textArea
        $ Point (Pos.sourceColumn pos - 1)
                (Pos.sourceLine   pos - 1)
+
+textColumnRowFromPos ::
+    TextCtrl a -> Int -> IO (Int, Int)
+textColumnRowFromPos textArea pos =
+    alloca $ \rowPtr ->
+    alloca $ \columnPtr -> do
+        void $ WXCMZ.textCtrlPositionToXY textArea pos columnPtr rowPtr
+        liftM2 (,)
+            (fmap fromIntegral $ peek columnPtr)
+            (fmap fromIntegral $ peek rowPtr)
 
 set_color ::
     (Ord k) =>
