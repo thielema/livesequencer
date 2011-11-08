@@ -651,8 +651,14 @@ gui input output = do
             expr <-
                 if null marked
                   then do
+                      (i,line) <-
+                          textColumnRowFromPos editor
+                              =<< get editor cursor
+                      content <- WXCMZ.textCtrlGetLineText editor line
+{- simpler but inefficient
                       content <- get editor text
                       i <- get editor cursor
+-}
                       case splitAt i content of
                           (prefix,suffix) ->
                               return $
@@ -841,10 +847,20 @@ getFromNotebook nb m =
 
 textPosFromSourcePos ::
     TextCtrl a -> Pos.SourcePos -> IO Int
-textPosFromSourcePos highlighter pos =
-    WXCMZ.textCtrlXYToPosition highlighter
+textPosFromSourcePos textArea pos =
+    WXCMZ.textCtrlXYToPosition textArea
        $ Point (Pos.sourceColumn pos - 1)
                (Pos.sourceLine   pos - 1)
+
+textColumnRowFromPos ::
+    TextCtrl a -> Int -> IO (Int, Int)
+textColumnRowFromPos textArea pos =
+    alloca $ \rowPtr ->
+    alloca $ \columnPtr -> do
+        void $ WXCMZ.textCtrlPositionToXY textArea pos columnPtr rowPtr
+        liftM2 (,)
+            (fmap fromIntegral $ peek columnPtr)
+            (fmap fromIntegral $ peek rowPtr)
 
 set_color ::
     (Ord k) =>
