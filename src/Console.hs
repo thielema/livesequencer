@@ -3,6 +3,7 @@
 import Term
 import Event
 import Program ( Program (..), chase )
+import Utility ( void )
 import qualified Rewrite
 import qualified Exception
 
@@ -10,6 +11,10 @@ import qualified Option
 import qualified ALSA
 
 import qualified Sound.ALSA.Sequencer as SndSeq
+import qualified Sound.ALSA.Sequencer.Event as SeqEvent
+
+import Control.Concurrent ( forkIO )
+import Control.Concurrent.Chan
 
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Exception.Synchronous
@@ -33,17 +38,20 @@ main = do
             Exit.exitFailure) $
         Program.chase (Option.importPaths opt) $ Option.moduleName opt
     ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
+        waitChan <- newChan
+        void $ forkIO $ Event.listen sq waitChan
         ALSA.parseAndConnect sq ( Option.connectTo opt )
         ALSA.startQueue sq
-        MS.evalStateT ( execute p sq ( read "main" ) ) 0
+        MS.evalStateT ( execute p sq waitChan ( read "main" ) ) 0
 
 
 execute ::
     Program ->
     ALSA.Sequencer SndSeq.DuplexMode ->
+    Chan SeqEvent.TimeStamp ->
     Term ->
     MS.StateT Time IO ()
-execute p sq =
+execute p sq waitChan =
     let go t = do
             let (ms, log) = Rewrite.runEval (Rewrite.force_head t) p
             liftIO $ forM_ log print
@@ -55,7 +63,7 @@ execute p sq =
                     case s of
                         Node i [] | name i == "[]" -> return ()
                         Node i [x, xs] | name i == ":" -> do
-                            liftIO . mapM_ print =<< play_event x sq
+                            liftIO . mapM_ print =<< play_event sq waitChan x
                             go xs
                         _ -> liftIO $ IO.hPutStrLn IO.stderr $
                              "do not know how to handle term\n" ++ show s

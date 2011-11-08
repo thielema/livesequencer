@@ -1,8 +1,9 @@
 module Event where
 
 import Term
-import ALSA ( Sequencer(Sequencer), sendEvent )
+import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
 import Utility ( void )
+import qualified Log
 
 import qualified Sound.MIDI.Message.Channel as CM
 import qualified Sound.MIDI.ALSA as MidiAlsa
@@ -16,10 +17,11 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad ( when )
+import Control.Monad ( when, forever )
 
 import Data.Bool.HT ( if' )
 
+import Control.Concurrent.Chan
 -- import Control.Concurrent ( threadDelay )
 
 
@@ -71,13 +73,14 @@ instance Bounded ControllerValue where
 
 play_event ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
-    Term ->
     Sequencer mode ->
+    Chan Event.TimeStamp ->
+    Term ->
     MS.StateT Time IO [ (Range, String) ]
-play_event x sq = case x of
+play_event sq waitChan x = case x of
     Node i [Number _ n] | name i == "Wait" ->
 --        threadDelay (fromIntegral n * 1000)
-        wait sq (10^(6::Int) * n)
+        wait sq waitChan (10^(6::Int) * n)
         >>
         return []
     Node ie [event] | name ie == "Event" -> case event of
@@ -111,10 +114,10 @@ play_event x sq = case x of
 
 
 wait ::
-    (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
-    Sequencer mode -> Time -> MS.StateT Time IO ()
-wait (Sequencer h p q) t = do
-    c <- liftIO $ Client.getId h
+    (SndSeq.AllowOutput mode) =>
+    Sequencer mode -> Chan Event.TimeStamp -> Time -> MS.StateT Time IO ()
+wait sq waitChan t = do
+    c <- liftIO $ Client.getId (handle sq)
     {-
     liftIO $ Log.put . ("wait, current time " ++) . show =<< MS.get
     -}
@@ -124,32 +127,68 @@ wait (Sequencer h p q) t = do
     {-
     liftIO $ Log.put . ("wait, send echo for " ++) . show =<< MS.get
     -}
-    void $ liftIO $ Event.output h $
+    let dest =
+            Addr.Cons {
+               Addr.client = c,
+               Addr.port = privatePort sq
+            }
+
+    liftIO $ Log.put $ "send echo message to " ++ show dest
+    void $ liftIO $ Event.output (handle sq) $
        (Event.simple
           (Addr.Cons c Port.unknown)
           (Event.CustomEv Event.Echo (Event.Custom 0 0 0)))
-          { Event.queue = q
+          { Event.queue = queue sq
           , Event.timestamp =
-               Event.RealTime $ RealTime.fromInteger targetTime
-          , Event.dest = Addr.Cons {
-               Addr.client = c,
-               Addr.port = p
-            }
+                Event.RealTime $ RealTime.fromInteger targetTime
+          , Event.dest = dest
           }
 
-    void $ liftIO $ Event.drainOutput h
+    void $ liftIO $ Event.drainOutput (handle sq)
 
     let loop = do
-            -- Log.put "wait, wait for echo"
-            ev <- Event.input h
-            -- Log.put $ "wait, get message " ++ show ev
-            let myEcho =
-                   case Event.body ev of
-                      Event.CustomEv Event.Echo _ ->
-                         c == Addr.client (Event.source ev)
-                      _ -> False
-            when (not myEcho) loop
-    liftIO loop
+           Log.put $ "readChan waitChan"
+           time <- readChan waitChan
+           Log.put $ "read from waitChan: " ++ show time
+           when
+               (case time of
+                    Event.RealTime rt ->
+                        RealTime.toInteger rt /= targetTime
+                    _ -> True)
+               loop
+    liftIO $ loop
+
+
+{-
+We cannot concurrently wait for different kinds of events.
+Thus we run one thread that listens to all incoming events
+and distributes them to who they might concern.
+-}
+listen ::
+    (SndSeq.AllowInput mode) =>
+    Sequencer mode -> Chan Event.TimeStamp -> IO ()
+listen sq waitChan = do
+    Log.put "listen to ALSA port"
+    c <- Client.getId (handle sq)
+
+    let dest =
+            Addr.Cons {
+               Addr.client = c,
+               Addr.port = privatePort sq
+            }
+
+    forever $ do
+        Log.put "wait, wait for echo"
+        ev <- Event.input (handle sq)
+        Log.put $ "wait, get message " ++ show ev
+        let myEcho =
+               case Event.body ev of
+                  Event.CustomEv Event.Echo _ ->
+                     dest == Event.dest ev
+                  _ -> False
+        when myEcho $ do
+            Log.put "write waitChan"
+            writeChan waitChan (Event.timestamp ev)
 
 
 sendNote ::
@@ -160,6 +199,6 @@ sendNote ::
     CM.Pitch ->
     CM.Velocity ->
     IO ()
-sendNote h onoff chan pitch velocity =
-    sendEvent h $
+sendNote sq onoff chan pitch velocity =
+    sendEvent sq $
     Event.NoteEv onoff $ MidiAlsa.noteEvent chan pitch velocity velocity 0

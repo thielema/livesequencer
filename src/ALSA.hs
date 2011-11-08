@@ -18,68 +18,82 @@ import Utility ( void )
 
 
 data Sequencer mode =
-   Sequencer (SndSeq.T mode) Port.T Queue.T
+   Sequencer {
+      handle :: SndSeq.T mode,
+      publicPort, privatePort :: Port.T,
+      queue :: Queue.T
+   }
 
 
 sendEvent ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> Event.Data -> IO ()
-sendEvent (Sequencer h p _) ev = do
-   c <- Client.getId h
+sendEvent sq ev = do
+   c <- Client.getId (handle sq)
    void $
-      Event.outputDirect h $
-      Event.simple (Addr.Cons c p) ev
-   return ()
+      Event.outputDirect (handle sq) $
+      Event.simple (Addr.Cons c (publicPort sq)) ev
+
+queueControl ::
+   Sequencer mode -> Event.QueueEv -> IO ()
+queueControl sq cmd =
+   Queue.control (handle sq) (queue sq) cmd 0 Nothing
+
+drainOutput ::
+   (SndSeq.AllowOutput mode) =>
+   Sequencer mode -> IO ()
+drainOutput sq =
+   void $ Event.drainOutput (handle sq)
 
 startQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
-startQueue (Sequencer h _ q) = do
+startQueue sq = do
    -- Log.put "start queue"
-   Queue.control h q Event.QueueStart 0 Nothing
-   void $ Event.drainOutput h
+   queueControl sq Event.QueueStart
+   drainOutput sq
 
 stopQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
-stopQueue sq@(Sequencer h _ q) = do
+stopQueue sq = do
    -- Log.put "stop queue"
-   mapM_ (Event.output h) =<< allNotesOff sq
-   Queue.control h q Event.QueueStop 0 Nothing
-   void $ Event.drainOutput h
+   mapM_ (Event.output (handle sq)) =<< allNotesOff sq
+   queueControl sq Event.QueueStop
+   drainOutput sq
 
 pauseQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
-pauseQueue (Sequencer h _ q) = do
+pauseQueue sq = do
    -- Log.put "pause queue"
-   Queue.control h q Event.QueueStop 0 Nothing
-   void $ Event.drainOutput h
+   queueControl sq Event.QueueStop
+   drainOutput sq
 
 continueQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
-continueQueue (Sequencer h _ q) = do
+continueQueue sq = do
    -- Log.put "continue queue"
-   Queue.control h q Event.QueueContinue 0 Nothing
-   void $ Event.drainOutput h
+   queueControl sq Event.QueueContinue
+   drainOutput sq
 
 quietContinueQueue ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO ()
-quietContinueQueue sq@(Sequencer h _ q) = do
+quietContinueQueue sq = do
    -- Log.put "continue queue"
-   mapM_ (Event.output h) =<< allNotesOff sq
-   Queue.control h q Event.QueueContinue 0 Nothing
-   void $ Event.drainOutput h
+   mapM_ (Event.output (handle sq)) =<< allNotesOff sq
+   queueControl sq Event.QueueContinue
+   drainOutput sq
 
 allNotesOff ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> IO [Event.T]
-allNotesOff (Sequencer h p _) = do
-   c <- Client.getId h
+allNotesOff sq = do
+   c <- Client.getId (handle sq)
    return $
-      map (Event.simple (Addr.Cons c p) .
+      map (Event.simple (Addr.Cons c (publicPort sq)) .
            Event.CtrlEv Event.Controller .
            flip MIDI.modeEvent ModeMsg.AllNotesOff)
          [minBound .. maxBound]
@@ -87,8 +101,9 @@ allNotesOff (Sequencer h p _) = do
 parseAndConnect ::
    (SndSeq.AllowOutput mode) =>
    Sequencer mode -> Maybe String -> IO ()
-parseAndConnect (Sequencer h p _) =
-   maybe (return ()) (SndSeq.connectTo h p <=< Addr.parse h)
+parseAndConnect sq =
+   maybe (return ())
+      (SndSeq.connectTo (handle sq) (publicPort sq) <=< Addr.parse (handle sq))
 
 
 withSequencer ::
@@ -101,6 +116,11 @@ withSequencer name act =
    Client.setName h name
    Port.withSimple h "inout"
       (Port.caps [Port.capRead, Port.capSubsRead,
-                  Port.capWrite, Port.capSubsWrite]) Port.typeApplication $ \ port -> do
-   Queue.with h $ \queue -> do
-   act $ Sequencer h port queue
+                  Port.capWrite, Port.capSubsWrite])
+      (Port.types [Port.typeMidiGeneric, Port.typeSoftware, 
+                   Port.typeApplication]) $ \ public -> do
+   Port.withSimple h "echo"
+      (Port.caps [Port.capRead, Port.capWrite])
+      (Port.types [Port.typeSpecific]) $ \ private -> do
+   Queue.with h $ \q -> do
+   act $ Sequencer h public private q

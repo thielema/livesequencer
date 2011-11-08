@@ -40,6 +40,7 @@ import Event
 
 import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
+import qualified Sound.ALSA.Sequencer.Event as SeqEvent
 
 import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Trans.Maybe as MaybeT
@@ -49,6 +50,7 @@ import Control.Monad.Trans.Class ( lift )
 import Control.Monad ( forever, forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
+import qualified Text.ParserCombinators.Parsec.Token as Token
 
 import Control.Exception ( bracket, finally, try )
 import qualified System.IO as IO
@@ -62,6 +64,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
 
+import qualified Data.Char as Char
 import qualified Data.List as List
 import Data.Tuple.HT ( fst3 )
 
@@ -98,7 +101,8 @@ data Action =
    | Control Controls.Event
    | Load FilePath
 
-data Execution = Restart | Stop | Pause | Continue
+data Execution =
+    Restart | Stop | Pause | Continue | PlayTerm String
 
 
 -- | messages that are sent from machine to GUI
@@ -197,6 +201,19 @@ machine input output importPaths progInit sq = do
                     Continue -> do
                         ALSA.continueQueue sq
                         start $ return ()
+                    PlayTerm str ->
+                        case Parsec.parse
+                                 (Parsec.between
+                                     (Token.whiteSpace Term.lexer)
+                                     (Parsec.eof)
+                                     IO.input)
+                                 "marked range" str of
+                            Left msg ->
+                                writeChan output . Exception $
+                                Program.messageFromParserError msg
+                            Right t -> do
+                                ALSA.quietContinueQueue sq
+                                start $ writeTMVar term t
             Modification moduleName sourceCode pos -> do
                 Log.put $
                     "module " ++ show moduleName ++
@@ -240,9 +257,11 @@ machine input output importPaths progInit sq = do
                         writeChan output $ Register p ctrls
                         Log.put "chased and parsed OK"
 
+    waitChan <- newChan
+    void $ forkIO $ Event.listen sq waitChan
     ALSA.startQueue sq
     MS.evalStateT
-        ( execute program runningVar term ( writeChan output ) sq ) 0
+        ( execute program runningVar term ( writeChan output ) sq waitChan ) 0
 
 
 execute :: TVar Program
@@ -251,8 +270,9 @@ execute :: TVar Program
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
+        -> Chan SeqEvent.TimeStamp
         -> MS.StateT Time IO ()
-execute program running term output sq = forever $ do
+execute program running term output sq waitChan = forever $ do
     let mainName = read "main"
     ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
         void $ takeTMVar running
@@ -294,7 +314,7 @@ execute program running term output sq = forever $ do
         Exc.Success x -> do
             mapM_ (liftIO . output . Exception .
                    uncurry (Exception.Message Exception.Term))
-                =<< play_event x sq
+                =<< play_event sq waitChan x
             case x of
                 Node j _ | Term.name j == "Wait" -> liftIO $
                     output ResetDisplay
@@ -446,8 +466,14 @@ gui input output = do
           on command := writeChan input (Execution Restart),
           help :=
               "stop sound and restart program execution with 'main'" ]
+    playTermItem <- WX.menuItem execMenu
+        [ text := "Play term\tCtrl-M",
+          help :=
+              "stop sound and restart program execution " ++
+              "with the marked editor area as current term, " ++
+              "or use the surrounding identifier if nothing is marked" ]
     _stopItem <- WX.menuItem execMenu
-        [ text := "Stop\tCtrl-Z",
+        [ text := "Stop\tCtrl-Space",
           on command := writeChan input (Execution Stop),
           help :=
               "stop program execution and sound, " ++
@@ -589,6 +615,25 @@ gui input output = do
             refreshProgram =<< getFromNotebook nb =<< readIORef panels
             -- mapM_ refreshProgram pnls
             ]
+
+    set playTermItem
+        [ on command := do
+            (_moduleName, (_panel, editor, _highlighter)) <-
+                getFromNotebook nb =<< readIORef panels
+            marked <- WXCMZ.textCtrlGetStringSelection editor
+            expr <-
+                if null marked
+                  then do
+                      content <- get editor text
+                      i <- get editor cursor
+                      case splitAt i content of
+                          (prefix,suffix) ->
+                              return $
+                                  (reverse $ takeWhile Char.isAlphaNum $ reverse prefix)
+                                  ++
+                                  takeWhile Char.isAlphaNum suffix
+                  else return marked
+            writeChan input . Execution . PlayTerm $ expr ]
 
     set runningItem
         [ on command := do
