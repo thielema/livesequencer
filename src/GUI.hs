@@ -10,7 +10,7 @@ import qualified Rewrite
 import qualified Option
 import qualified Log
 import Program ( Program, modules )
-import Term ( Term(..), Identifier )
+import Term ( Term, Identifier )
 import Utility ( void )
 
 import qualified Graphics.UI.WX as WX
@@ -319,14 +319,14 @@ execute program running term output sq waitChan = forever $ do
             case es of
                 Exc.Exception (pos,msg) -> returnExc pos msg
                 Exc.Success s ->
-                    case s of
-                        Node i [x, xs] | Term.name i == ":" -> do
+                    case Term.viewNode s of
+                        Just (":", [x, xs]) -> do
                             putTMVar running ()
                             putTMVar term xs
                             return $ Exc.Success x
-                        Node i [] | Term.name i == "[]" -> do
+                        Just ("[]", []) -> do
                             putTMVar term mainName
-                            returnExc (Term.range i) "finished."
+                            returnExc (Term.termRange s) "finished."
                         _ -> do
                             putTMVar term mainName
                             returnExc (Term.termRange s) $
@@ -343,8 +343,8 @@ execute program running term output sq waitChan = forever $ do
             mapM_ (liftIO . output . Exception .
                    uncurry (Exception.Message Exception.Term))
                 =<< play_event sq waitChan x
-            case x of
-                Node j _ | Term.name j == "Wait" -> liftIO $
+            case Term.viewNode x of
+                Just ("Wait", _) -> liftIO $
                     output ResetDisplay
                 _ -> return ()
 
