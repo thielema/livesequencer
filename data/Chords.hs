@@ -3,6 +3,13 @@ module Chords where
 import Midi
 import List
 
+chord3 dur p0 p1 p2 =
+   mergeMany [
+      note dur p0,
+      note dur p1,
+      note dur p2
+   ] ;
+
 chord4 dur p0 p1 p2 p3 =
    mergeMany [
       note dur p0,
