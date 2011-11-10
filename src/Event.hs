@@ -80,32 +80,32 @@ play_event ::
     Chan Event.TimeStamp ->
     Term ->
     MS.StateT Time IO [ (Range, String) ]
-play_event sq waitChan x = case x of
-    Node i [Number _ n] | name i == "Wait" ->
+play_event sq waitChan x = case Term.viewNode x of
+    Just ("Wait", [Number _ n]) ->
 --        threadDelay (fromIntegral n * 1000)
         wait sq waitChan (10^(6::Int) * n)
         >>
         return []
-    Node ie [event] | name ie == "Event" -> case event of
-        Node ic [chann, body] | name ic == "Channel" ->
+    Just ("Event", [event]) -> case Term.viewNode event of
+        Just ("Channel", [chann, body]) ->
             withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
-                case body of
-                    Node i [pn, vn] | name i == "On" ->
+                case Term.viewNode body of
+                    Just ("On", [pn, vn]) ->
                         withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
                         withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
                         runIO $
                         sendNote sq Event.NoteOn chan p v
-                    Node i [pn, vn] | name i == "Off" ->
+                    Just ("Off", [pn, vn]) ->
                         withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
                         withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
                         runIO $
                         sendNote sq Event.NoteOff chan p v
-                    Node i [pn] | name i == "PgmChange" ->
+                    Just ("PgmChange", [pn]) ->
                         withRangeCheck "program" CM.toProgram CM.fromProgram pn $ \p ->
                         runIO $
                         sendEvent sq $ Event.CtrlEv Event.PgmChange $
                             MidiAlsa.programChangeEvent chan p
-                    Node i [ccn, vn] | name i == "Controller" ->
+                    Just ("Controller", [ccn, vn]) ->
                         withRangeCheck "controller" CM.toController CM.fromController ccn $ \cc ->
                         withRangeCheck "controller value" ControllerValue fromControllerValue vn $ \(ControllerValue v) ->
                         runIO $

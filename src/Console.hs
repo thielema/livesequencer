@@ -61,9 +61,9 @@ execute p sq waitChan =
                 Exception (pos, msg) ->
                     liftIO $ IO.hPutStrLn IO.stderr $ show pos ++ " " ++ msg
                 Success s ->
-                    case s of
-                        Node i [] | name i == "[]" -> return ()
-                        Node i [x, xs] | name i == ":" -> do
+                    case Term.viewNode s of
+                        Just ("[]", []) -> return ()
+                        Just (":", [x, xs]) -> do
                             liftIO . mapM_ print =<< play_event sq waitChan x
                             go xs
                         _ -> liftIO $ IO.hPutStrLn IO.stderr $

@@ -152,6 +152,13 @@ instance Show Term where show = render . output
 instance Read Term where readsPrec = parsec_reader
 
 
+{- |
+simplifies case analysis
+-}
+viewNode :: Term -> Maybe (String, [Term])
+viewNode (Node f xs) = Just (Term.name f, xs)
+viewNode _ = Nothing
+
 parse :: Bool -> Parser Term
 parse atomic =
         (T.lexeme lexer $ fmap (uncurry Number) $

@@ -62,12 +62,13 @@ full x = do
         Node f args ->
             fmap (Node f) $ mapM full args
         Number _ _ -> return x'
+        String_Literal _ _ -> return x'
 
 -- | evaluate until root symbol is constructor.
 top :: Term -> Evaluator Term
 top t = case t of
-    Number {} ->
-        return t
+    Number {} -> return t
+    String_Literal {} -> return t
     Node f xs ->
         if isConstructor f
           then return t
@@ -158,6 +159,14 @@ match_expand pat t = case pat of
             _ ->
                 exception (termRange t') $
                 "number pattern matched against non-number term: " ++ show t'
+    String_Literal _ a -> do
+        t' <- top t
+        case t' of
+            String_Literal _ b ->
+                return ( toMaybe (a==b) M.empty, t' )
+            _ ->
+                exception (termRange t') $
+                "string pattern matched against non-string term: " ++ show t'
 
 
 match_expand_list ::

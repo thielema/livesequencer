@@ -98,9 +98,9 @@ collect :: Program.Program -> [ ( Term.Identifier, Control ) ]
 collect p = do
     ( _mod, contents ) <- M.toList $ Program.modules p
     Module.Rule_Declaration rule <- Module.declarations contents
-    ( _pos, ( Term.Node f args ) ) <- Term.subterms $ Rule.rhs rule
-    case ( Term.name f, args ) of
-        ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
+    ( _pos, term ) <- Term.subterms $ Rule.rhs rule
+    case Term.viewNode term of
+        Just ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
               return ( tag
                      , CheckBox $ read ( Term.name val )
                      )
