@@ -34,7 +34,8 @@ Description:
    .
    2. input language *****
    .
-   language is first-order Haskell (no map, no fold),
+   language is Haskell with
+   only strict pattern matching and
    pattern matching only at the definition level (no case),
    no local bindings (no lambda, let, where),
    no types (no type signatures, no type inference)

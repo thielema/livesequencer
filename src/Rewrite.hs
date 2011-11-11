@@ -116,15 +116,26 @@ eval_decls g =
         (\(Rule.Rule f xs rhs) go ys -> do
             (m, ys') <- match_expand_list M.empty xs ys
             case m of
-                 Nothing -> go ys'
-                 Just sub -> do
-                     lift $ tell [ Step { target = g
-                                   , rule = Just f } ]
-                     return $ apply sub rhs)
+                Nothing -> go ys'
+                Just (substitions, additionalArgs) -> do
+                    lift $ tell [ Step { target = g
+                                  , rule = Just f } ]
+                    rhs' <- apply substitions rhs
+                    appendArguments rhs' additionalArgs)
         (\ys ->
             exception (range g) $
             unwords [ "no matching pattern for function", show g,
                       "and arguments", show ys ])
+
+appendArguments :: Term -> [Term] -> Evaluator Term
+appendArguments g ys =
+    case (g, ys) of
+        (Node f xs, _) -> return $ Node f $ xs ++ ys
+        (t, []) -> return t
+        (t, _) ->
+            exception (termRange t) $
+            unwords [ "cannot apply ", show t,
+                      "to arguments like a function" ]
 
 
 -- | check whether term matches pattern.
@@ -144,7 +155,7 @@ match_expand pat t = case pat of
                     then return ( Nothing, t' )
                     else do
                          ( m, ys' ) <- match_expand_list M.empty xs ys
-                         return ( m, Node f ys' )
+                         return ( fmap fst m, Node f ys' )
             _ ->
                 exception (termRange t') $
                 "constructor pattern matched against non-constructor term: " ++ show t'
@@ -173,12 +184,12 @@ match_expand_list ::
     M.Map Identifier Term ->
     [Term] ->
     [Term] ->
-    Evaluator (Maybe (M.Map Identifier Term), [Term])
-match_expand_list s [] [] = return ( Just s, [] )
+    Evaluator (Maybe (M.Map Identifier Term, [Term]), [Term])
+match_expand_list s [] ys = return ( Just (s,ys), ys )
 match_expand_list s (x:xs) (y:ys) = do
     (m, y') <- match_expand x y
     case m of
-        Nothing -> return ( m, y' : ys )
+        Nothing -> return ( Nothing, y' : ys )
         Just s' -> do
             s'' <-
                 case runWriter $ Trav.sequenceA $
@@ -192,12 +203,12 @@ match_expand_list s (x:xs) (y:ys) = do
                 match_expand_list s'' xs ys
 match_expand_list _ (x:_) _ =
     exception (termRange x) "too few arguments"
-match_expand_list _ _ (y:_) =
-    exception (termRange y) "too many arguments"
 
-apply :: M.Map Identifier Term -> Term -> Term
+apply :: M.Map Identifier Term -> Term -> Evaluator Term
 apply m t = case t of
-    Node f xs -> case M.lookup f m of
-        Nothing -> Node f ( map ( apply m ) xs )
-        Just t' -> t'
-    _ -> t
+    Node f xs -> do
+        ys <- mapM ( apply m ) xs
+        case M.lookup f m of
+            Nothing -> return $ Node f ys
+            Just t' -> appendArguments t' ys
+    _ -> return t
