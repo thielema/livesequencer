@@ -26,19 +26,13 @@ program n =
 controller cc x =
   [ Event ( Controller cc x ) ] ;
 
--- this is just (map (channelEvent chan))
-channel chan [] = [] ;
-channel chan (x : xs) =
-   channelEvent chan x : channel chan xs ;
+channel chan = map ( channelEvent chan ) ;
 
 channelEvent chan (Event event) = Event (Channel chan event) ;
 channelEvent chan (Wait duration) = Wait duration ;
 
 
--- this is just (map (tranposeEvent d))
-transpose d [] = [] ;
-transpose d (x : xs) =
-   transposeEvent d x : transpose d xs ;
+transpose d = map ( transposeEvent d ) ;
 
 transposeEvent d (Event (On pitch velocity)) = Event (On (pitch+d) velocity) ;
 transposeEvent d (Event (Off pitch velocity)) = Event (Off (pitch+d) velocity) ;
@@ -51,9 +45,7 @@ controlCurve d cc (x : xs) =
 
 normalVelocity = 64 ;
 
-emphasize v [] = [] ;
-emphasize v (x : xs) =
-   emphasizeEvent v x : emphasize v xs ;
+emphasize v = map ( emphasizeEvent v ) ;
 
 {-
 We only alter the start velocity.

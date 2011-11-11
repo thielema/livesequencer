@@ -6,10 +6,10 @@ http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
 -}
 pitch cls octave = cls + (octave+1)*12 ;
 
-cb =  0 ; c o = pitch cb o ; cs o = pitch (cb+1) o ; cf o = pitch (cb-1) o ;
-db =  2 ; d o = pitch db o ; ds o = pitch (db+1) o ; df o = pitch (db-1) o ;
-eb =  4 ; e o = pitch eb o ; es o = pitch (eb+1) o ; ef o = pitch (eb-1) o ;
-fb =  5 ; f o = pitch fb o ; fs o = pitch (fb+1) o ; ff o = pitch (fb-1) o ;
-gb =  7 ; g o = pitch gb o ; gs o = pitch (gb+1) o ; gf o = pitch (gb-1) o ;
-ab =  9 ; a o = pitch ab o ; as o = pitch (ab+1) o ; af o = pitch (ab-1) o ;
-bb = 11 ; b o = pitch bb o ; bs o = pitch (bb+1) o ; bf o = pitch (bb-1) o ;
+cb =  0 ; c = pitch cb ; cs = pitch (cb+1) ; cf = pitch (cb-1) ;
+db =  2 ; d = pitch db ; ds = pitch (db+1) ; df = pitch (db-1) ;
+eb =  4 ; e = pitch eb ; es = pitch (eb+1) ; ef = pitch (eb-1) ;
+fb =  5 ; f = pitch fb ; fs = pitch (fb+1) ; ff = pitch (fb-1) ;
+gb =  7 ; g = pitch gb ; gs = pitch (gb+1) ; gf = pitch (gb-1) ;
+ab =  9 ; a = pitch ab ; as = pitch (ab+1) ; af = pitch (ab-1) ;
+bb = 11 ; b = pitch bb ; bs = pitch (bb+1) ; bf = pitch (bb-1) ;
