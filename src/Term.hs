@@ -38,13 +38,13 @@ instance Ord Identifier where
 isConstructor :: Identifier -> Bool
 isConstructor i =
     case name i of
-        (c:_) -> c == '[' || c == ':' || isUpper c
+        c:_ -> c == '[' || c == ':' || isUpper c
         _ -> error "isConstructor: identifier must be non-empty"
 
 isVariable :: Identifier -> Bool
 isVariable i =
     case name i of
-        (c:_) -> isLower c
+        c:_ -> isLower c || elem c "+-*/.&|%$!?#~<>="
         _ -> error "isVariable: identifier must be non-empty"
 
 
