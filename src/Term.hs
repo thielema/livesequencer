@@ -100,7 +100,7 @@ operators =
   , [ ( "^", AssocRight) ]
   , [ ( "*", AssocLeft), ("/", AssocLeft) ]
   , [ ( "+", AssocLeft), ("-", AssocLeft) ]
-  , [ ( ":", AssocRight ) ]
+  , [ ( ":", AssocRight ), ( "++", AssocRight ) ]
   , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ]
   , [ ( "&&", AssocRight ) ]
   , [ ( "||", AssocRight ) ]

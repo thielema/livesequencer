@@ -27,9 +27,11 @@ replicate n x = take n ( repeat x ) ;
 
 repeat s = s : repeat s ;
 
-cycle s = append s (cycle s) ;
+cycle s = s ++ cycle s ;
 
-append = flip (foldr cons) ;
+append = flip ( foldr cons ) ;
+
+xs ++ ys = foldr cons ys xs ;
 
 cons x xs = x : xs ;
 

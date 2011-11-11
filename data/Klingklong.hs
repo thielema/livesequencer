@@ -12,12 +12,12 @@ main = [] ;
 
 -- * patterns
 
-loop0 = append ( patternChannel ( note qn (c 4) ) ) loop0 ;
+loop0 = patternChannel ( note qn (c 4) ) ++ loop0 ;
 
 loop0_1 =
-    append ( patternChannel (
-        append ping ( note qn (c 4) )
-    ) ) loop0_1 ;
+    patternChannel (
+        ping ++ note qn (c 4)
+    ) ++ loop0_1 ;
 
 
 pattern1 = patternChannel ( concat [
@@ -55,11 +55,11 @@ pattern3b = patternChannel ( concat [
     note en (c 4) ] ) ;
 
 
-loop1 = append pattern1 loop1 ;
+loop1 = pattern1 ++ loop1 ;
 
-loop2a = append pattern2a loop2a ;
+loop2a = pattern2a ++ loop2a ;
 
-loop2b = append pattern2b loop1 ;
+loop2b = pattern2b ++ loop1 ;
 
 
 -- * pad
@@ -119,7 +119,7 @@ bass3 = bassChannel ( concat [
         bassControl ] ) ;
 
 bassLoop =
-  append ( bassNote (c 2) ) bassLoop ;
+  bassNote (c 2) ++ bassLoop ;
 
 
 -- * sweep
@@ -127,7 +127,7 @@ bassLoop =
 sweep =
    padChannel ( controlCurve en brightnessCC triangle) ;
 
-triangle = append ( rampUp 0 ) ( rampDown 124 ) ;
+triangle = rampUp 0 ++ rampDown 124 ;
 
 rampUp 124 = [] ;
 rampUp n = n : rampUp (n+4) ;
@@ -138,60 +138,60 @@ rampDown n = n : rampDown (n-4) ;
 
 -- * complex
 
-loop1p = append ( merge pattern1 pad1 ) loop1p ;
+loop1p = merge pattern1 pad1 ++ loop1p ;
 
 pad3loop =
-  append
-    ( merge ( quadAlt pattern3a pattern3b ) pad3 )
+    merge ( quadAlt pattern3a pattern3b ) pad3
+    ++
     loop1 ;
 
 loop3sweep =
-   append ( merge pad3 sweep ) loop3sweep ;
+  merge pad3 sweep ++ loop3sweep ;
 
 bassPad =
-  append
-    ( merge pad1 (bassNote (c 2) ) )
+    merge pad1 (bassNote (c 2) )
+    ++
     bassPad ;
 
 pattern1Bass =
-  append
-    ( merge ( quad pattern1 ) (bassNote (c 2) ) )
+    merge ( quad pattern1 ) (bassNote (c 2) )
+    ++
     pattern1Bass ;
 
 pattern1BassPadShort =
-  append
-    ( mergeMany [
+    mergeMany [
         quad pattern1,
         bassNote (c 2),
         pad1, sweep
-    ] )
+    ]
+    ++
     pattern1BassPadShort ;
 
 pattern1BassPad =
-  append
-    ( double ( mergeMany [
+    double ( mergeMany [
         quad pattern1,
         bassNote (c 2),
-        pad1, sweep ] ) )
+        pad1, sweep ] )
+    ++
     pattern2BassPad ;
 
 pattern2BassPad =
-  append (
     mergeMany [
       append
         (quad pattern2a)
         (quadAlt pattern2a pattern2b),
       double (bassNote (a 1)),
       pad2, double sweep
-    ] )
+    ]
+    ++
     pattern1BassPad ;
 
 pattern3BassPad =
-  append
-    ( mergeMany [
+    mergeMany [
        quadAlt pattern3a pattern3b,
        bass3, pad3, sweep
-    ] )
+    ]
+    ++
     pattern1BassPad ;
 
 
