@@ -33,7 +33,7 @@ splitAt 0 xs = Pair [] xs ;
 splitAt n [] = Pair [] [] ;
 splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
 
-consFirst x (Pair xs ys) = Pair (x : xs) ys ;
+consFirst x p = Pair (x : fst p) (snd p) ;
 
 
 merge (Wait a : xs) (Wait b : ys) =
