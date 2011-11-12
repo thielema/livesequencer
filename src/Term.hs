@@ -44,7 +44,7 @@ isConstructor i =
 isVariable :: Identifier -> Bool
 isVariable i =
     case name i of
-        c:_ -> isLower c || elem c "+-*/.&|%$!?#~<>="
+        c:_ -> isLower c || elem c operatorSymbols
         _ -> error "isVariable: identifier must be non-empty"
 
 
@@ -174,8 +174,11 @@ instance Input Term where
   input = Expr.buildExpressionParser table ( parse False )
 
 operatorStart, operatorLetter :: CharParser st Char
-operatorStart  = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
-operatorLetter = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
+operatorStart  = Parsec.oneOf operatorSymbols
+operatorLetter = Parsec.oneOf operatorSymbols
+
+operatorSymbols :: [Char]
+operatorSymbols = ":!#$%&*+./<=>?@\\^|-~"
 
 table :: Expr.OperatorTable Char st Term
 table = map ( map binary ) operators
