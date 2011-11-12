@@ -1,7 +1,8 @@
 module Rewrite where
 
-import Term
+import Term ( Term(..), Identifier(..), Range(..), termRange )
 import Program
+import qualified Term
 import qualified Rule
 import qualified Module
 
@@ -9,7 +10,8 @@ import Control.Monad.Trans.Reader ( Reader, runReader, asks )
 import Control.Monad.Trans.Writer ( WriterT, runWriterT, runWriter, tell )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad.Exception.Synchronous
-           ( Exceptional, ExceptionalT, runExceptionalT, throwT )
+           ( Exceptional(Exception,Success), ExceptionalT,
+             runExceptionalT, throwT )
 import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
@@ -70,7 +72,7 @@ top t = case t of
     Number {} -> return t
     String_Literal {} -> return t
     Node f xs ->
-        if isConstructor f
+        if Term.isConstructor f
           then return t
           else do
               rs <- lift $ lift $ asks functions
@@ -128,14 +130,10 @@ eval_decls g =
                       "and arguments", show ys ])
 
 appendArguments :: Term -> [Term] -> Evaluator Term
-appendArguments g ys =
-    case (g, ys) of
-        (Node f xs, _) -> return $ Node f $ xs ++ ys
-        (t, []) -> return t
-        (t, _) ->
-            exception (termRange t) $
-            unwords [ "cannot apply ", show t,
-                      "to arguments like a function" ]
+appendArguments f xs =
+    case Term.appendArguments f xs of
+        Success t -> return t
+        Exception e -> exception (termRange f) e
 
 
 -- | check whether term matches pattern.
@@ -145,9 +143,9 @@ match_expand ::
     Term -> Term ->
     Evaluator ( Maybe (M.Map Identifier Term) , Term )
 match_expand pat t = case pat of
-    Node f [] | isVariable f ->
+    Node f [] | Term.isVariable f ->
         return ( Just $ M.singleton f t , t )
-    Node f xs | isConstructor f -> do
+    Node f xs | Term.isConstructor f -> do
         t' <- top t
         case t' of
             Node g ys ->

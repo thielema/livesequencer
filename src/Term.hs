@@ -16,6 +16,7 @@ import Text.ParserCombinators.Parsec.Expr
 import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
 
 import qualified Data.Set as S
+import Control.Monad.Exception.Synchronous ( Exceptional(Success,Exception) )
 import Control.Monad ( liftM2, mzero )
 import Data.Char (isUpper, isLower)
 import Data.Ord (comparing)
@@ -159,19 +160,35 @@ viewNode :: Term -> Maybe (String, [Term])
 viewNode (Node f xs) = Just (Term.name f, xs)
 viewNode _ = Nothing
 
-parse :: Bool -> Parser Term
-parse atomic =
+appendArguments :: Term -> [Term] -> Exceptional String Term
+appendArguments g ys =
+    case (g, ys) of
+        (Node f xs, _) -> return $ Node f $ xs ++ ys
+        (t, []) -> return t
+        (t, _) ->
+            Exception $
+            unwords [ "cannot apply ", show t,
+                      "to arguments like a function" ]
+
+parseAtom :: Parser Term
+parseAtom =
         (T.lexeme lexer $ fmap (uncurry Number) $
          ranged (fmap read $ Parsec.many1 Parsec.digit))
     <|> do s <- T.stringLiteral lexer
            return $ String_Literal undefined s
     <|> T.parens lexer input
     <|> bracketed_list
-    <|> liftM2 Node input
-            (if atomic then return [] else Parsec.many ( parse True ))
+    <|> fmap (flip Node []) input
+
+parse :: Parser Term
+parse = do
+    t <- liftM2 appendArguments parseAtom $ Parsec.many parseAtom
+    case t of
+        Success t' -> return t'
+        Exception e -> fail e
 
 instance Input Term where
-  input = Expr.buildExpressionParser table ( parse False )
+  input = Expr.buildExpressionParser table parse
 
 operatorStart, operatorLetter :: CharParser st Char
 operatorStart  = Parsec.oneOf operatorSymbols
