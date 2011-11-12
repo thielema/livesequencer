@@ -662,10 +662,11 @@ gui input output = do
 -}
                       case splitAt i content of
                           (prefix,suffix) ->
-                              return $
-                                  (reverse $ takeWhile Char.isAlphaNum $ reverse prefix)
-                                  ++
-                                  takeWhile Char.isAlphaNum suffix
+                              let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
+                              in  return $
+                                      (reverse $ takeWhile identLetter $ reverse prefix)
+                                      ++
+                                      takeWhile identLetter suffix
                   else return marked
             writeChan input . Execution . PlayTerm $ expr ]
 
