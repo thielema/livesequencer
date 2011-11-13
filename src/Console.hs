@@ -1,9 +1,9 @@
 -- module Console where
 
 import Term
-import Event
 import Program ( Program (..), chase )
 import Utility ( void )
+import qualified Event
 import qualified Rewrite
 import qualified Exception
 
@@ -11,7 +11,6 @@ import qualified Option
 import qualified ALSA
 
 import qualified Sound.ALSA.Sequencer as SndSeq
-import qualified Sound.ALSA.Sequencer.Event as SeqEvent
 
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
@@ -43,15 +42,16 @@ main = do
         ALSA.parseAndConnect sq
             ( Option.connectFrom opt ) ( Option.connectTo opt )
         ALSA.startQueue sq
-        MS.evalStateT ( execute p sq waitChan ( read "main" ) ) 0
+        flip MS.evalStateT (Event.RealTime, 0) $
+            execute p sq waitChan ( read "main" )
 
 
 execute ::
     Program ->
     ALSA.Sequencer SndSeq.DuplexMode ->
-    Chan SeqEvent.TimeStamp ->
+    Chan Event.WaitResult ->
     Term ->
-    MS.StateT Time IO ()
+    MS.StateT Event.State IO ()
 execute p sq waitChan =
     let go t = do
             let (ms, log) = Rewrite.runEval (Rewrite.force_head t) p
@@ -66,7 +66,7 @@ execute p sq waitChan =
                         Just (":", [x, xs]) -> do
                             resolveT
                                 (liftIO . putStrLn . Exception.statusFromMessage)
-                                (play_event sq waitChan x)
+                                (Event.play sq waitChan x)
                             go xs
                         _ -> liftIO $ IO.hPutStrLn IO.stderr $
                              "do not know how to handle term\n" ++ show s

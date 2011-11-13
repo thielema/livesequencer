@@ -36,14 +36,13 @@ import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 
 import Graphics.UI.WXCore.Events
-import Event
+import qualified Event
 
 import Foreign.Storable ( peek )
 import Foreign.Marshal.Alloc ( alloca )
 
 import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
-import qualified Sound.ALSA.Sequencer.Event as SeqEvent
 import qualified Sound.MIDI.Message.Channel.Voice as VM
 
 import qualified Control.Monad.Trans.State as MS
@@ -61,6 +60,9 @@ import qualified System.IO as IO
 import qualified System.IO.Error as Err
 import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
+
+import qualified Data.Accessor.Monad.Trans.State as AccM
+import qualified Data.Accessor.Tuple as AccTuple
 
 import qualified Data.Traversable as Trav
 import qualified Data.Foldable as Fold
@@ -103,11 +105,12 @@ main = do
 data Action =
      Modification Identifier String Int -- ^ modulename, sourcetext, position
    | Execution Execution
+   | NextStep
    | Control Controls.Event
    | Load FilePath
 
 data Execution =
-    Restart | Stop | Pause | Continue | PlayTerm String
+    Mode Event.WaitMode | Restart | Stop | PlayTerm String
 
 
 -- | messages that are sent from machine to GUI
@@ -117,7 +120,7 @@ data GuiUpdate =
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
-   | Running Bool
+   | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
 
 
@@ -187,20 +190,14 @@ machine input output importPaths progInit sq = do
     program <- newTVarIO progInit
     let mainName = read "main"
     term <- newTMVarIO mainName
-    runningVar <- newTMVarIO ()
+    waitChan <- newChan
 
     void $ forkIO $ forever $ do
         action <- readChan input
-        let start transaction = do
-                writeChan output $ Running True
-                STM.atomically $
-                    writeTMVar runningVar () >>
-                    transaction
-            stop transaction = do
-                writeChan output $ Running False
-                STM.atomically $
-                    clearTMVar runningVar >>
-                    transaction
+        let withMode mode transaction = do
+                writeChan output $ Running mode
+                writeChan waitChan $ Event.ModeChange mode
+                STM.atomically transaction
         case action of
             Control event -> do
                 Log.put $ show event
@@ -213,20 +210,32 @@ machine input output importPaths progInit sq = do
                         lift $ writeTVar program p'
                         -- return $ Controls.get_controller_module p'
                 -- Log.put $ show m
+            NextStep -> writeChan waitChan Event.NextStep
             Execution exec ->
                 case exec of
+                    Mode mode -> do
+                        case mode of
+                            Event.RealTime -> do
+                                ALSA.continueQueue sq
+                            Event.SlowMotion _ -> do
+                                ALSA.continueQueue sq
+                            Event.SingleStep -> do
+                                ALSA.pauseQueue sq
+                        withMode mode $ return ()
                     Restart -> do
                         ALSA.quietContinueQueue sq
-                        start $ writeTMVar term mainName
+                        withMode Event.RealTime $ writeTMVar term mainName
                     Stop -> do
                         ALSA.stopQueue sq
-                        stop $ writeTMVar term mainName
+                        withMode Event.SingleStep $ writeTMVar term mainName
+{-
                     Pause -> do
                         ALSA.pauseQueue sq
-                        stop $ return ()
+                        withMode Event.SingleStep $ return ()
                     Continue -> do
                         ALSA.continueQueue sq
-                        start $ return ()
+                        withMode Event.RealTime $ return ()
+-}
                     PlayTerm str ->
                         case Parsec.parse
                                  (Parsec.between
@@ -239,7 +248,7 @@ machine input output importPaths progInit sq = do
                                 Program.messageFromParserError msg
                             Right t -> do
                                 ALSA.quietContinueQueue sq
-                                start $ writeTMVar term t
+                                withMode Event.RealTime $ writeTMVar term t
             Modification moduleName sourceCode pos -> do
                 Log.put $
                     "module " ++ show moduleName ++
@@ -268,7 +277,7 @@ machine input output importPaths progInit sq = do
                     lift $ Log.put "parsed and modified OK"
             Load filePath -> do
                 Log.put $
-                    "load " ++ filePath ++ " and all its depenencies"
+                    "load " ++ filePath ++ " and all its dependencies"
                 exceptionToGUI output $ do
                     (p,ctrls) <-
                         prepareProgram =<<
@@ -276,36 +285,31 @@ machine input output importPaths progInit sq = do
                             (FilePath.takeBaseName filePath) filePath
                     lift $ do
                         ALSA.stopQueue sq
-                        start $ do
+                        withMode Event.RealTime $ do
                             writeTVar program p
                             writeTMVar term mainName
                         ALSA.continueQueue sq
                         writeChan output $ Register p ctrls
                         Log.put "chased and parsed OK"
 
-    waitChan <- newChan
     void $ forkIO $
         Event.listen sq
             ( writeChan output . InsertText . formatPitch ) waitChan
     ALSA.startQueue sq
-    MS.evalStateT
-        ( execute program runningVar term ( writeChan output ) sq waitChan ) 0
+    flip MS.evalStateT (Event.RealTime, 0) $
+        execute program term ( writeChan output ) sq waitChan
 
 
 execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
-        -> TMVar () -- ^ the variable is set, if the interpreter is running
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
-        -> Chan SeqEvent.TimeStamp
-        -> MS.StateT Time IO ()
-execute program running term output sq waitChan = forever $ do
+        -> Chan Event.WaitResult
+        -> MS.StateT Event.State IO ()
+execute program term output sq waitChan = forever $ do
     let mainName = read "main"
     ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
-        void $ takeTMVar running
-            {- this might cause a long wait,
-               since if execution is stopped, then the term TMVar is empty -}
         t <- takeTMVar term
         p <- readTVar program
             {- this happens anew at each click
@@ -321,7 +325,6 @@ execute program running term output sq waitChan = forever $ do
                 Exc.Success s ->
                     case Term.viewNode s of
                         Just (":", [x, xs]) -> do
-                            putTMVar running ()
                             putTMVar term xs
                             return $ Exc.Success x
                         Just ("[]", []) -> do
@@ -335,14 +338,22 @@ execute program running term output sq waitChan = forever $ do
     liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
 
     case result of
-        Exc.Exception (rng,msg) -> liftIO $ do
-            ALSA.stopQueue sq
-            output $ Exception $ Exception.Message Exception.Term rng msg
-            output $ Running False
+        Exc.Exception (rng,msg) -> do
+            liftIO $ do
+                ALSA.stopQueue sq
+                -- writeChan waitChan $ Event.ModeChange Event.SingleStep
+                output $ Exception $ Exception.Message Exception.Term rng msg
+                output $ Running Event.SingleStep
+            {-
+            We have to alter the mode directly,
+            since the channel is only read when we wait for a duration other than Nothing
+            -}
+            AccM.set AccTuple.first Event.SingleStep
+            Event.wait sq waitChan Nothing
         Exc.Success x -> do
             Exc.resolveT
                 (liftIO . output . Exception)
-                (play_event sq waitChan x)
+                (Event.play sq waitChan x)
             case Term.viewNode x of
                 Just ("Wait", _) -> liftIO $ output ResetDisplay
                 _ -> return ()
@@ -488,6 +499,20 @@ gui input output = do
               "parse the edited program and if successful " ++
               "replace the executed program" ]
     WX.menuLine execMenu
+    realTimeItem <- WX.menuItem execMenu
+        [ text := "Real time",
+          checkable := True,
+          checked := True,
+          help := "pause according to Wait elements" ]
+    slowMotionItem <- WX.menuItem execMenu
+        [ text := "Slow motion",
+          checkable := True,
+          help := "pause between every list element" ]
+    singleStepItem <- WX.menuItem execMenu
+        [ text := "Single step",
+          checkable := True,
+          help := "wait for user confirmation after every list element" ]
+    WX.menuLine execMenu
     _restartItem <- WX.menuItem execMenu
         [ text := "Res&tart\tCtrl-T",
           on command := writeChan input (Execution Restart),
@@ -505,11 +530,22 @@ gui input output = do
           help :=
               "stop program execution and sound, " ++
               "reset term to 'main'" ]
-    runningItem <- WX.menuItem execMenu
-        [ text := "running\tCtrl-U",
-          checkable := True,
-          checked := True,
-          help := "pause or continue program execution" ]
+
+    WX.menuLine execMenu
+
+    fasterItem <- WX.menuItem execMenu
+        [ text := "Faster\tCtrl->",
+          enabled := False,
+          help := "decrease pause in slow motion mode" ]
+    slowerItem <- WX.menuItem execMenu
+        [ text := "Slower\tCtrl-<",
+          enabled := False,
+          help := "increase pause in slow motion mode" ]
+    nextStepItem <- WX.menuItem execMenu
+        [ text := "Next step\tCtrl-N",
+          enabled := False,
+          on command := writeChan input NextStep,
+          help := "perform next step in single step mode" ]
 
 
     windowMenu <- WX.menuPane [text := "&Window"]
@@ -669,11 +705,69 @@ gui input output = do
                   else return marked
             writeChan input . Execution . PlayTerm $ expr ]
 
-    set runningItem
-        [ on command := do
-            running <- get runningItem checked
-            writeChan input . Execution $
-                if running then Continue else Pause ]
+    waitDuration <- newIORef 500
+
+    let updateSlowMotionDur = do
+            dur <- readIORef waitDuration
+            writeChan input $ Execution $ Mode $ Event.SlowMotion dur
+
+    set fasterItem [
+        on command := do
+            modifyIORef waitDuration (\d -> max 100 (d-100))
+            updateSlowMotionDur
+            d <- readIORef waitDuration
+            set status [ text :=
+                "decreased pause to " ++ show d ++ "ms" ] ]
+
+    set slowerItem [
+        on command := do
+            modifyIORef waitDuration (100+)
+            updateSlowMotionDur
+            d <- readIORef waitDuration
+            set status [ text :=
+                "increased pause to " ++ show d ++ "ms" ] ]
+
+    let setRealTime b = do
+            set realTimeItem [ checked := b ]
+
+        setSlowMotion b = do
+            set slowMotionItem [ checked := b ]
+            set fasterItem [ enabled := b ]
+            set slowerItem [ enabled := b ]
+
+        setSingleStep b = do
+            set singleStepItem [ checked := b ]
+            set nextStepItem [ enabled := b ]
+
+        onActivation w act =
+            set w [ on command := do
+                b <- get w checked
+                if b then act else set w [checked := True] ]
+
+        activateRealTime = do
+            setRealTime True
+            setSlowMotion False
+            setSingleStep False
+
+        activateSlowMotion = do
+            setRealTime False
+            setSlowMotion True
+            setSingleStep False
+
+        activateSingleStep = do
+            setRealTime False
+            setSlowMotion False
+            setSingleStep True
+
+    onActivation realTimeItem $ do
+        activateRealTime
+        writeChan input $ Execution $ Mode Event.RealTime
+    onActivation slowMotionItem $ do
+        activateSlowMotion
+        updateSlowMotionDur
+    onActivation singleStepItem $ do
+        activateSingleStep
+        writeChan input $ Execution $ Mode Event.SingleStep
 
 
     set f [
@@ -811,12 +905,21 @@ gui input output = do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
-            Running running -> do
-                set status [ text :=
-                    if running
-                      then "interpreter started"
-                      else "interpreter stopped" ]
-                set runningItem [ checked := running ]
+            Running mode -> do
+                case mode of
+                    Event.RealTime -> do
+                        set status [ text := "interpreter in real-time mode" ]
+                        activateRealTime
+                    Event.SlowMotion dur -> do
+                        set status [ text :=
+                            ("interpreter in slow-motion mode with pause " ++
+                             show dur ++ "ms") ]
+                        activateSlowMotion
+                    Event.SingleStep -> do
+                        set status [ text :=
+                            "interpreter in single step mode," ++
+                            " waiting for next step" ]
+                        activateSingleStep
 
 displayModules ::
     Chan Action ->
