@@ -18,6 +18,8 @@ import qualified Sound.ALSA.Sequencer.Event as Event
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
+import qualified Control.Monad.Trans.Class as MT
+import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
 
@@ -32,14 +34,17 @@ import Control.Concurrent.Chan
 type Time = Integer
 
 
-termException :: String -> Term -> Exception.Message
+termException ::
+    (Monad m) =>
+    String -> Term -> ExceptionalT Exception.Message m ()
 termException msg s =
+    throwT $
     Exception.Message Exception.Term
         (termRange s) (msg ++ " " ++ show s)
 
 
-runIO :: (MonadIO m) => IO () -> m [Exception.Message]
-runIO action = liftIO action >> return []
+runIO :: (MonadIO m) => IO () -> ExceptionalT Exception.Message m ()
+runIO action = MT.lift $ liftIO action
 
 {-
 FIXME:
@@ -50,25 +55,31 @@ withRangeCheck ::
     (Bounded a, Monad m) =>
     String -> (Int -> a) -> (a -> Int) ->
     Term ->
-    (a -> m [Exception.Message]) -> m [Exception.Message]
+    (a -> ExceptionalT Exception.Message m ()) ->
+    ExceptionalT Exception.Message m ()
 withRangeCheck typ fromInt0 toInt0 (Number rng x) =
     let aux ::
             (Monad m) =>
             (Int -> a) -> (a -> Int) ->
-            a -> a -> (a -> m [Exception.Message]) -> m [Exception.Message]
+            a -> a ->
+            (a -> ExceptionalT Exception.Message m ()) ->
+            ExceptionalT Exception.Message m ()
         aux fromInt toInt minb maxb f =
             if' (x < fromIntegral (toInt minb))
-                (return [Exception.Message Exception.Term rng $
-                         typ ++ " argument " ++ show x ++
-                             " is less than minimum value " ++ show (toInt minb)]) $
+                (throwT $ Exception.Message Exception.Term rng $
+                    typ ++ " argument " ++ show x ++
+                        " is less than minimum value " ++ show (toInt minb)) $
             if' (fromIntegral (toInt maxb) < x)
-                (return [Exception.Message Exception.Term rng $
+                (throwT $ Exception.Message Exception.Term rng $
                          typ ++ " argument " ++ show x ++
-                              " is greater than maximum value " ++ show (toInt maxb)]) $
+                              " is greater than maximum value " ++ show (toInt maxb)) $
             f (fromInt $ fromInteger x)
     in  aux fromInt0 toInt0 minBound maxBound
 withRangeCheck typ _ _ t =
-    \ _f -> return $ [termException (typ ++ " argument is not a number") t]
+    \ _f ->
+        throwT $
+        Exception.Message Exception.Term
+            (termRange t) (typ ++ " argument is not a number")
 
 
 newtype ControllerValue = ControllerValue {fromControllerValue :: Int}
@@ -83,13 +94,11 @@ play_event ::
     Sequencer mode ->
     Chan Event.TimeStamp ->
     Term ->
-    MS.StateT Time IO [ Exception.Message ]
+    ExceptionalT Exception.Message (MS.StateT Time IO) ()
 play_event sq waitChan x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) ->
 --        threadDelay (fromIntegral n * 1000)
-        wait sq waitChan (10^(6::Int) * n)
-        >>
-        return []
+        MT.lift $ wait sq waitChan (10^(6::Int) * n)
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) ->
             withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
@@ -115,9 +124,9 @@ play_event sq waitChan x = case Term.viewNode x of
                         runIO $
                         sendEvent sq $ Event.CtrlEv Event.Controller $
                             MidiAlsa.controllerEvent chan cc (fromIntegral v)
-                    _ -> return [ termException "unknown channel event" x ]
-        _ -> return [ termException "Event must contain Channel, but not " x ]
-    _ -> return [ termException "can only process Wait or Event, but not " x ]
+                    _ -> termException "unknown channel event" x
+        _ -> termException "Event must contain Channel, but not " x
+    _ -> termException "can only process Wait or Event, but not " x
 
 
 wait ::

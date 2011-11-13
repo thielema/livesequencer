@@ -64,9 +64,9 @@ execute p sq waitChan =
                     case Term.viewNode s of
                         Just ("[]", []) -> return ()
                         Just (":", [x, xs]) -> do
-                            liftIO .
-                                mapM_ (putStrLn . Exception.statusFromMessage)
-                                =<< play_event sq waitChan x
+                            resolveT
+                                (liftIO . putStrLn . Exception.statusFromMessage)
+                                (play_event sq waitChan x)
                             go xs
                         _ -> liftIO $ IO.hPutStrLn IO.stderr $
                              "do not know how to handle term\n" ++ show s
