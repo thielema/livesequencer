@@ -3,6 +3,7 @@ module Event where
 import Term
 import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
 import Utility ( void )
+import qualified Exception
 import qualified Log
 
 import qualified Sound.MIDI.Message.Channel as CM
@@ -31,12 +32,13 @@ import Control.Concurrent.Chan
 type Time = Integer
 
 
-termException :: String -> Term -> (Range, String)
+termException :: String -> Term -> Exception.Message
 termException msg s =
-    (termRange s, msg ++ " " ++ show s)
+    Exception.Message Exception.Term
+        (termRange s) (msg ++ " " ++ show s)
 
 
-runIO :: (MonadIO m) => IO () -> m [(Range, String)]
+runIO :: (MonadIO m) => IO () -> m [Exception.Message]
 runIO action = liftIO action >> return []
 
 {-
@@ -48,23 +50,25 @@ withRangeCheck ::
     (Bounded a, Monad m) =>
     String -> (Int -> a) -> (a -> Int) ->
     Term ->
-    (a -> m [(Range, String)]) -> m [(Range, String)]
+    (a -> m [Exception.Message]) -> m [Exception.Message]
 withRangeCheck typ fromInt0 toInt0 (Number rng x) =
     let aux ::
             (Monad m) =>
             (Int -> a) -> (a -> Int) ->
-            a -> a -> (a -> m [(Range, String)]) -> m [(Range, String)]
+            a -> a -> (a -> m [Exception.Message]) -> m [Exception.Message]
         aux fromInt toInt minb maxb f =
             if' (x < fromIntegral (toInt minb))
-                (return [(rng, typ ++ " argument " ++ show x ++
-                              " is less than minimum value " ++ show (toInt minb))]) $
+                (return [Exception.Message Exception.Term rng $
+                         typ ++ " argument " ++ show x ++
+                             " is less than minimum value " ++ show (toInt minb)]) $
             if' (fromIntegral (toInt maxb) < x)
-                (return [(rng, typ ++ " argument " ++ show x ++
-                              " is greater than maximum value " ++ show (toInt maxb))]) $
+                (return [Exception.Message Exception.Term rng $
+                         typ ++ " argument " ++ show x ++
+                              " is greater than maximum value " ++ show (toInt maxb)]) $
             f (fromInt $ fromInteger x)
     in  aux fromInt0 toInt0 minBound maxBound
 withRangeCheck typ _ _ t =
-    \ _f -> return [(termRange t, typ ++ " argument is not a number")]
+    \ _f -> return $ [termException (typ ++ " argument is not a number") t]
 
 
 newtype ControllerValue = ControllerValue {fromControllerValue :: Int}
@@ -79,7 +83,7 @@ play_event ::
     Sequencer mode ->
     Chan Event.TimeStamp ->
     Term ->
-    MS.StateT Time IO [ (Range, String) ]
+    MS.StateT Time IO [ Exception.Message ]
 play_event sq waitChan x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) ->
 --        threadDelay (fromIntegral n * 1000)

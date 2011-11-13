@@ -340,8 +340,7 @@ execute program running term output sq waitChan = forever $ do
             output $ Exception $ Exception.Message Exception.Term rng msg
             output $ Running False
         Exc.Success x -> do
-            mapM_ (liftIO . output . Exception .
-                   uncurry (Exception.Message Exception.Term))
+            mapM_ (liftIO . output . Exception)
                 =<< play_event sq waitChan x
             case Term.viewNode x of
                 Just ("Wait", _) -> liftIO $
