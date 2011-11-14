@@ -13,6 +13,8 @@ import Program ( Program, modules )
 import Term ( Term, Identifier )
 import Utility ( void )
 
+import qualified HTTPServer
+
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
@@ -23,6 +25,7 @@ import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
+import Control.Concurrent.MVar
 import Control.Concurrent.Chan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TMVar
@@ -100,6 +103,7 @@ main = do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
+            void $ forkIO $ HTTPServer.run (httpMethods output) (Option.httpPort opt)
 
 -- | messages that are sent from GUI to machine
 data Action =
@@ -120,6 +124,10 @@ data GuiUpdate =
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
+   | GetModuleList { _moduleList :: MVar [ Identifier ] }
+   | GetModuleContent {
+         _moduleName :: Identifier,
+         _moduleContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
    | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
 
@@ -357,6 +365,19 @@ execute program term output sq waitChan = forever $ do
             case Term.viewNode x of
                 Just ("Wait", _) -> liftIO $ output ResetDisplay
                 _ -> return ()
+
+
+httpMethods :: Chan GuiUpdate -> HTTPServer.Methods
+httpMethods output = HTTPServer.Methods {
+        HTTPServer.getModuleList = do
+            modList <- newEmptyMVar
+            writeChan output $ GetModuleList modList
+            takeMVar modList,
+        HTTPServer.getModuleContent = \name -> Exc.ExceptionalT $ do
+            content <- newEmptyMVar
+            writeChan output $ GetModuleContent name content
+            takeMVar content
+    }
 
 
 -- | following code taken from http://snipplr.com/view/17538/
@@ -920,6 +941,19 @@ gui input output = do
                             "interpreter in single step mode," ++
                             " waiting for next step" ]
                         activateSingleStep
+
+            GetModuleList modList ->
+                putMVar modList . M.keys =<< readIORef panels
+
+            GetModuleContent name content ->
+                (putMVar content =<<) $ Exc.runExceptionalT $ do
+                    pnls <- lift $ readIORef panels
+                    (_,editor,_) <-
+                        Exc.ExceptionalT $ return $
+                            Exc.fromMaybe
+                                (HTTPServer.notFound $ "module " ++ show name ++ " not found") $
+                            M.lookup name pnls
+                    lift $ get editor text
 
 displayModules ::
     Chan Action ->

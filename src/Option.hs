@@ -21,8 +21,12 @@ import Data.List ( intercalate )
 data Option = Option {
         moduleName :: Identifier,
         importPaths :: [FilePath],
-        connectTo, connectFrom :: Maybe String
+        connectTo, connectFrom :: Maybe String,
+        httpPort :: Port
     }
+
+newtype Port = Port { deconsPort :: Int }
+    deriving (Eq, Show)
 
 deflt :: Option
 deflt =
@@ -30,9 +34,22 @@ deflt =
         moduleName = error "no module specified",
         importPaths = [ ".", "data", "data" </> "prelude" ],
         connectTo = Nothing,
-        connectFrom = Nothing
+        connectFrom = Nothing,
+        httpPort = Port 8080
     }
 
+
+parseNumber ::
+   (Read a) =>
+   String -> (a -> Bool) -> String -> String -> IO a
+parseNumber name constraint constraintName str =
+   case reads str of
+      [(n, "")] ->
+         if constraint n
+           then return n
+           else exitFailureMsg $ name ++ " must be a " ++ constraintName ++ " number"
+      _ ->
+         exitFailureMsg $ name ++ " must be a number, but is '" ++ str ++ "'"
 
 exitFailureMsg :: String -> IO a
 exitFailureMsg msg = do
@@ -65,6 +82,12 @@ description =
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectFrom = Just str})
         ("connect from an ALSA port at startup") :
+    Opt.Option [] ["http-port"]
+        (flip ReqArg "HTTP-PORT" $ \str flags ->
+            fmap (\port -> flags{httpPort = Port $ fromInteger port}) $
+            parseNumber "HTTP port" (\n -> 0<n && n<65536) "positive 16 bit" str)
+        ("provide a web server under this port,\ndefault " ++
+         (show $ deconsPort $ httpPort deflt) ) :
     []
 
 
