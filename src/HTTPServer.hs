@@ -103,26 +103,39 @@ formatModuleContent list name content =
     Html.header (Html.thetitle <<
         ("Haskell Live Sequencer - Module " ++ show name)) +++
     (Html.body $
-        htmlFromModuleList list +++
-        Html.h1 << show name +++
-        ((Html.! [Html.action $ show name]) $
-         Html.form $
-             (let (protected,editable) =
-                      ListHT.breakAfter
-                          (List.isPrefixOf $ replicate 8 '-') $
-                      lines content
-              in  Html.pre << unlines protected
+        sideBySide
+            (htmlFromModuleList list)
+            (Html.h1 << show name +++
+             ((Html.! [Html.action $ show name, Html.method "post",
+                       Html.HtmlAttr "accept-charset" "ISO-8859-1"]) $
+              Html.form $
+                  (let (protected,editable) =
+                           ListHT.breakAfter
+                               (List.isPrefixOf $ replicate 8 '-') $
+                           lines content
+                   in  Html.pre << unlines protected
+                       +++
+                       -- Html.hr +++
+                       Html.textarea
+                           Html.! [Html.name "content", Html.rows "30", Html.cols "100"]
+                           << unlines editable)
                   +++
-                  -- Html.hr +++
-                  Html.textarea
-                      Html.! [Html.name $ show name, Html.rows "30", Html.cols "100"]
-                      << unlines editable)
-             +++
-             Html.br
-             +++
-             Html.submit "" "submit"))
+                  Html.br
+                  +++
+                  Html.submit "" "submit")))
+
+{-
+As far as I can see,
+CSS would require me to use an absolute horizontal position
+for the module content.
+Thus I stick to the much-maligned tables.
+-}
+sideBySide :: Html.Html -> Html.Html -> Html.Html
+sideBySide left right =
+    Html.simpleTable [] [Html.valign "top"] [[left, right]]
 
 htmlFromModuleList :: [Identifier] -> Html.Html
 htmlFromModuleList =
+    (Html.! [Html.identifier "module-list"]) .
     Html.unordList . map
        (\name -> (Html.anchor << show name) Html.! [Html.href $ show name])
