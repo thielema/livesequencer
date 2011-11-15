@@ -17,6 +17,8 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 
 import qualified Control.Monad.Trans.Class as MT
 
+import qualified Data.List.HT as ListHT
+import qualified Data.List as List
 import Utility ( void )
 
 
@@ -105,9 +107,16 @@ formatModuleContent list name content =
         Html.h1 << show name +++
         ((Html.! [Html.action $ show name]) $
          Html.form $
-             Html.textarea
-                 Html.! [Html.name $ show name, Html.rows "30", Html.cols "100"]
-                 << content
+             (let (protected,editable) =
+                      ListHT.breakAfter
+                          (List.isPrefixOf $ replicate 8 '-') $
+                      lines content
+              in  Html.pre << unlines protected
+                  +++
+                  -- Html.hr +++
+                  Html.textarea
+                      Html.! [Html.name $ show name, Html.rows "30", Html.cols "100"]
+                      << unlines editable)
              +++
              Html.br
              +++
