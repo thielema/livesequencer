@@ -105,9 +105,12 @@ main = do
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
             void $ forkIO $ HTTPServer.run (httpMethods output) (Option.httpPort opt)
 
+type HTTPFeedback = Exc.Exceptional HTTPServer.Error (Maybe String, String)
+
 -- | messages that are sent from GUI to machine
 data Action =
-     Modification Identifier String Int -- ^ modulename, sourcetext, position
+     Modification (Maybe (MVar HTTPFeedback)) Identifier String Int
+         -- ^ MVar of the HTTP server, modulename, sourcetext, position
    | Execution Execution
    | NextStep
    | Control Controls.Event
@@ -131,7 +134,7 @@ data GuiUpdate =
    | UpdateModuleContent {
          _moduleName :: Identifier,
          _moduleEditableContent :: String,
-         _moduleNewContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
+         _moduleNewContent :: MVar HTTPFeedback }
    | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
 
@@ -173,6 +176,38 @@ formatPitch p =
                 11 -> "b"
                 _ -> error "pitch class must be a number from 0 to 11"
     in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
+
+
+modifyModule ::
+    TVar Program ->
+    Chan GuiUpdate ->
+    Identifier ->
+    [Char] ->
+    Int ->
+    Exc.ExceptionalT Exception.Message IO ()
+modifyModule program output moduleName sourceCode pos = do
+    m0 <-
+        Exc.mapExceptionT Program.messageFromParserError $
+        Exc.fromEitherT $ return $
+        Parsec.parse IO.input ( show moduleName ) sourceCode
+    Exc.mapExceptionalT STM.atomically $ do
+        -- TODO: handle the case that the module changed its name
+        -- (might happen if user changes the text in the editor)
+        p <- lift $ readTVar program
+        let Just previous = M.lookup moduleName $ modules p
+        let m = m0 { Module.source_location =
+                         Module.source_location previous
+                   , Module.source_text = sourceCode
+                   -- for now ignore renaming
+                   , Module.name = moduleName
+                   }
+        lift . writeTVar program =<<
+            (Exc.ExceptionalT $ return $
+             Program.add_module m p)
+    lift $ writeChan output $
+        Refresh moduleName sourceCode pos
+    lift $ Log.put "parsed and modified OK"
+
 
 
 writeTMVar :: TMVar a -> a -> STM.STM ()
@@ -261,32 +296,26 @@ machine input output importPaths progInit sq = do
                             Right t -> do
                                 ALSA.quietContinueQueue sq
                                 withMode Event.RealTime $ writeTMVar term t
-            Modification moduleName sourceCode pos -> do
+            Modification feedback moduleName sourceCode pos -> do
                 Log.put $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
-                exceptionToGUI output $ do
-                    m0 <-
-                        Exc.mapExceptionT Program.messageFromParserError $
-                        Exc.fromEitherT $ return $
-                        Parsec.parse IO.input ( show moduleName ) sourceCode
-                    Exc.mapExceptionalT STM.atomically $ do
-                        -- TODO: handle the case that the module changed its name
-                        -- (might happen if user changes the text in the editor)
-                        p <- lift $ readTVar program
-                        let Just previous = M.lookup moduleName $ modules p
-                        let m = m0 { Module.source_location =
-                                         Module.source_location previous
-                                   , Module.source_text = sourceCode
-                                   -- for now ignore renaming
-                                   , Module.name = moduleName
-                                   }
-                        lift . writeTVar program =<<
-                            (Exc.ExceptionalT $ return $
-                             Program.add_module m p)
-                    lift $ writeChan output $
-                        Refresh moduleName sourceCode pos
-                    lift $ Log.put "parsed and modified OK"
+                case feedback of
+                    Nothing ->
+                        exceptionToGUI output $
+                            modifyModule program output moduleName sourceCode pos
+                    Just mvar -> do
+                        result <-
+                            Exc.runExceptionalT $
+                            modifyModule program output moduleName sourceCode pos
+                        case result of
+                            Exc.Success () ->
+                                putMVar mvar $ Exc.Success (Nothing, sourceCode)
+                            Exc.Exception e -> do
+                                writeChan output $ Exception e
+                                putMVar mvar $ Exc.Success $
+                                    (Just $ Exception.statusFromMessage e,
+                                     sourceCode)
             Load filePath -> do
                 Log.put $
                     "load " ++ filePath ++ " and all its dependencies"
@@ -696,7 +725,7 @@ gui input output = do
     let refreshProgram (moduleName, (_panel, editor, _highlighter)) = do
             s <- get editor text
             pos <- get editor cursor
-            writeChan input $ Modification moduleName s pos
+            writeChan input $ Modification Nothing moduleName s pos
 
             updateErrorLog $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
@@ -961,23 +990,25 @@ gui input output = do
                         "module " ++ show name ++ " downloaded by web client" ]
                     lift $ get editor text
 
-            UpdateModuleContent name content contentMVar ->
-                (putMVar contentMVar =<<) $ Exc.runExceptionalT $ do
+            UpdateModuleContent name content contentMVar -> do
+                result <- Exc.runExceptionalT $ do
                     pnls <- lift $ readIORef panels
                     (_,editor,_) <- getModuleForHTTP pnls name
                     lift $ set status [ text :=
                         "module " ++ show name ++ " updated by web client" ]
+                    pos <- lift $ get editor cursor
                     localContent <- lift $ get editor text
                     let newContent =
                             fst ( HTTPServer.splitProtected localContent )
                             ++
                             content
                     lift $ set editor [ text := newContent ]
-{-
-                    lift $ writeChan output $
-                        Refresh moduleName sourceCode pos
--}
-                    return newContent
+                    return (newContent, pos)
+                case result of
+                    Exc.Exception e -> putMVar contentMVar (Exc.Exception e)
+                    Exc.Success (newContent, pos) ->
+                        writeChan input $
+                        Modification (Just contentMVar) name newContent pos
 
 getModuleForHTTP ::
     (Monad m) =>

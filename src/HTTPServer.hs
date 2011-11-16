@@ -47,7 +47,7 @@ data Methods =
             Identifier -> ExceptionalT Error IO String,
         updateModuleContent ::
             Identifier -> String ->
-            ExceptionalT Error IO String
+            ExceptionalT Error IO (Maybe String, String)
     }
 
 run :: Methods -> Option.Port -> IO ()
@@ -66,7 +66,7 @@ run dict (Option.Port port) =
                         modIdent <- parseModuleName modName
                         content <- getModuleContent dict modIdent
                         return $ HTTPd.Response 200 headers $
-                            formatModuleContent modList modIdent content
+                            formatModuleContent modList modIdent (Nothing, content)
                     _ ->
                         Exc.throwT $ badRequest $ "Bad path in URL"
             "POST" ->
@@ -123,8 +123,9 @@ formatModuleList list =
     Html.header (Html.thetitle << "Haskell Live Sequencer - Module list") +++
     Html.body (htmlFromModuleList list)
 
-formatModuleContent :: [Identifier] -> Identifier -> String -> String
-formatModuleContent list name content =
+formatModuleContent ::
+    [Identifier] -> Identifier -> (Maybe String, String) -> String
+formatModuleContent list name (mmsg, content) =
     Html.renderHtml $
     Html.header (Html.thetitle <<
         ("Haskell Live Sequencer - Module " ++ show name)) +++
@@ -132,6 +133,7 @@ formatModuleContent list name content =
         sideBySide
             (htmlFromModuleList list)
             (Html.h1 << show name +++
+             Html.toHtml (maybe "" (\msg -> "error: " ++ msg) mmsg) +++
              ((Html.! [Html.action $ show name, Html.method "post",
                        Html.HtmlAttr "accept-charset" "ISO-8859-1"]) $
               Html.form $
