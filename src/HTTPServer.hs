@@ -5,6 +5,7 @@ import qualified IO
 import qualified Option
 
 import qualified Network.Shed.Httpd as HTTPd
+import qualified Network.CGI as CGI
 import Network.URI ( uriPath )
 
 import Text.Html((<<), (+++), )
@@ -19,6 +20,7 @@ import qualified Control.Monad.Trans.Class as MT
 
 import qualified Data.List.HT as ListHT
 import qualified Data.List as List
+import Data.Tuple.HT ( mapPair )
 import Utility ( void )
 
 
@@ -42,7 +44,10 @@ data Methods =
     Methods {
         getModuleList :: IO [Identifier],
         getModuleContent ::
-            Identifier -> ExceptionalT Error IO String
+            Identifier -> ExceptionalT Error IO String,
+        updateModuleContent ::
+            Identifier -> String ->
+            ExceptionalT Error IO String
     }
 
 run :: Methods -> Option.Port -> IO ()
@@ -58,18 +63,26 @@ run dict (Option.Port port) =
                         getModuleList dict
                     '/':modName -> do
                         modList <- MT.lift $ getModuleList dict
-                        modIdent <-
-                            Exc.mapExceptionT
-                                (badRequest .
-                                 ("syntax error in module name:\n"++) .
-                                 show) $
-                            Exc.fromEitherT $ return $
-                            Parsec.parse
-                                (Parsec.between (return ()) Parsec.eof IO.input)
-                                "" modName
+                        modIdent <- parseModuleName modName
                         content <- getModuleContent dict modIdent
                         return $ HTTPd.Response 200 headers $
                             formatModuleContent modList modIdent content
+                    _ ->
+                        Exc.throwT $ badRequest $ "Bad path in URL"
+            "POST" ->
+                case uriPath $ HTTPd.reqURI req of
+                    '/':modName -> do
+                        modList <- MT.lift $ getModuleList dict
+                        modIdent <- parseModuleName modName
+                        editable <-
+                            case CGI.formDecode $ HTTPd.reqBody req of
+                                [("content", str)] -> return str
+                                _ -> Exc.throwT $ badRequest $
+                                     "The only argument must be 'content'"
+                        updatedContent <-
+                            updateModuleContent dict modIdent editable
+                        return $ HTTPd.Response 200 headers $
+                            formatModuleContent modList modIdent updatedContent
                     _ ->
                         Exc.throwT $ badRequest $ "Bad path in URL"
             method ->
@@ -91,6 +104,19 @@ handleException =
          map (\line -> Html.toHtml line +++ Html.br) $ lines msg)
 
 
+parseModuleName ::
+    (Monad m) =>
+    String -> ExceptionalT Error m Identifier
+parseModuleName modName =
+    Exc.mapExceptionT
+        (badRequest .
+         ("syntax error in module name:\n"++) .
+         show) $
+    Exc.fromEitherT $ return $
+    Parsec.parse
+        (Parsec.between (return ()) Parsec.eof IO.input)
+        "" modName
+
 formatModuleList :: [Identifier] -> String
 formatModuleList list =
     Html.renderHtml $
@@ -109,20 +135,27 @@ formatModuleContent list name content =
              ((Html.! [Html.action $ show name, Html.method "post",
                        Html.HtmlAttr "accept-charset" "ISO-8859-1"]) $
               Html.form $
-                  (let (protected,editable) =
-                           ListHT.breakAfter
-                               (List.isPrefixOf $ replicate 8 '-') $
-                           lines content
-                   in  Html.pre << unlines protected
-                       +++
-                       -- Html.hr +++
-                       Html.textarea
-                           Html.! [Html.name "content", Html.rows "30", Html.cols "100"]
-                           << unlines editable)
+                  (case splitProtected content of
+                       (protected,editable) ->
+                           Html.pre << protected
+                           +++
+                           -- Html.hr +++
+                           Html.textarea
+                               Html.! [Html.name "content",
+                                       Html.rows "30", Html.cols "100"]
+                               << editable)
                   +++
                   Html.br
                   +++
                   Html.submit "" "submit")))
+
+splitProtected :: String -> (String, String)
+splitProtected =
+    mapPair (unlines, unlines) .
+    ListHT.breakAfter
+        (List.isPrefixOf $ replicate 8 '-') .
+    lines
+
 
 {-
 As far as I can see,

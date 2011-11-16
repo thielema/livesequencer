@@ -128,6 +128,10 @@ data GuiUpdate =
    | GetModuleContent {
          _moduleName :: Identifier,
          _moduleContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
+   | UpdateModuleContent {
+         _moduleName :: Identifier,
+         _moduleEditableContent :: String,
+         _moduleNewContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
    | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
 
@@ -280,8 +284,8 @@ machine input output importPaths progInit sq = do
                         lift . writeTVar program =<<
                             (Exc.ExceptionalT $ return $
                              Program.add_module m p)
-                    lift $ writeChan output
-                        (Refresh moduleName sourceCode pos)
+                    lift $ writeChan output $
+                        Refresh moduleName sourceCode pos
                     lift $ Log.put "parsed and modified OK"
             Load filePath -> do
                 Log.put $
@@ -376,7 +380,11 @@ httpMethods output = HTTPServer.Methods {
         HTTPServer.getModuleContent = \name -> Exc.ExceptionalT $ do
             content <- newEmptyMVar
             writeChan output $ GetModuleContent name content
-            takeMVar content
+            takeMVar content,
+        HTTPServer.updateModuleContent = \name edited -> Exc.ExceptionalT $ do
+            newContent <- newEmptyMVar
+            writeChan output $ UpdateModuleContent name edited newContent
+            takeMVar newContent
     }
 
 
@@ -948,12 +956,39 @@ gui input output = do
             GetModuleContent name content ->
                 (putMVar content =<<) $ Exc.runExceptionalT $ do
                     pnls <- lift $ readIORef panels
-                    (_,editor,_) <-
-                        Exc.ExceptionalT $ return $
-                            Exc.fromMaybe
-                                (HTTPServer.notFound $ "module " ++ show name ++ " not found") $
-                            M.lookup name pnls
+                    (_,editor,_) <- getModuleForHTTP pnls name
+                    lift $ set status [ text :=
+                        "module " ++ show name ++ " downloaded by web client" ]
                     lift $ get editor text
+
+            UpdateModuleContent name content contentMVar ->
+                (putMVar contentMVar =<<) $ Exc.runExceptionalT $ do
+                    pnls <- lift $ readIORef panels
+                    (_,editor,_) <- getModuleForHTTP pnls name
+                    lift $ set status [ text :=
+                        "module " ++ show name ++ " updated by web client" ]
+                    localContent <- lift $ get editor text
+                    let newContent =
+                            fst ( HTTPServer.splitProtected localContent )
+                            ++
+                            content
+                    lift $ set editor [ text := newContent ]
+{-
+                    lift $ writeChan output $
+                        Refresh moduleName sourceCode pos
+-}
+                    return newContent
+
+getModuleForHTTP ::
+    (Monad m) =>
+    M.Map Identifier a ->
+    Identifier ->
+    Exc.ExceptionalT HTTPServer.Error m a
+getModuleForHTTP pnls name =
+    Exc.ExceptionalT $ return $
+    Exc.fromMaybe
+        (HTTPServer.notFound $ "module " ++ show name ++ " not found") $
+    M.lookup name pnls
 
 displayModules ::
     Chan Action ->
