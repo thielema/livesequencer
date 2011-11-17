@@ -985,19 +985,34 @@ gui input output = do
             UpdateModuleContent name content contentMVar -> do
                 result <- Exc.runExceptionalT $ do
                     pnls <- lift $ readIORef panels
-                    (_,editor,_) <- getModuleForHTTP pnls name
+                    (_,editor,_) <-
+                        case M.lookup name pnls of
+                            Nothing ->
+                                Exc.throwT
+                                    ("Module " ++ show name ++ " no longer available.",
+                                     "")
+                            Just pnl -> return pnl
                     lift $ set status [ text :=
                         "module " ++ show name ++ " updated by web client" ]
                     pos <- lift $ get editor cursor
                     localContent <- lift $ get editor text
-                    let newContent =
-                            fst ( HTTPServer.splitProtected localContent )
-                            ++
-                            content
-                    lift $ set editor [ text := newContent ]
-                    return (newContent, pos)
+                    case HTTPServer.splitProtected localContent of
+                        (protected, sepEditable) ->
+                            case sepEditable of
+                                Nothing ->
+                                    Exc.throwT
+                                        ("Module does no longer contain a separation mark, " ++
+                                         "thus you cannot alter the content.",
+                                         protected)
+                                Just (sep, _edit) -> do
+                                    let newContent = protected ++ sep ++ '\n' : content
+                                    lift $ set editor [ text := newContent, cursor := pos ]
+                                    return (newContent, pos)
                 case result of
-                    Exc.Exception e -> putMVar contentMVar (Exc.Exception e)
+                    Exc.Exception (e, protected) ->
+                        putMVar contentMVar $
+                            Exc.Success (Just e,
+                                protected ++ HTTPServer.separatorLine ++ '\n' : content)
                     Exc.Success (newContent, pos) ->
                         writeChan input $
                         Modification (Just contentMVar) name newContent pos

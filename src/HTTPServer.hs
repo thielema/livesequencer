@@ -133,33 +133,47 @@ formatModuleContent list name (mmsg, content) =
         sideBySide
             (htmlFromModuleList list)
             (Html.h1 << show name +++
-             Html.toHtml (maybe "" (\msg -> "error: " ++ msg) mmsg) +++
+             maybe Html.noHtml
+                 (\msg -> (Html.! [Html.color Html.red]) $ Html.font $
+                     htmlFromMultiline $ "error:\n" ++ msg) mmsg +++
              ((Html.! [Html.action $ show name, Html.method "post",
                        Html.HtmlAttr "accept-charset" "ISO-8859-1"]) $
               Html.form $
                   case splitProtected content of
-                       (protected,editable) ->
-                           Html.pre << protected
-                           +++
-                           if null editable
-                             then Html.noHtml
-                             else
-                               Html.textarea
-                                   Html.! [Html.name "content",
-                                           Html.rows "30", Html.cols "100"]
-                                   << editable
-                               +++
-                               Html.br
-                               +++
-                               Html.submit "" "submit")))
+                      (protected, sepEditable) ->
+                          Html.pre << protected
+                          +++
+                          case sepEditable of
+                              Nothing -> Html.noHtml
+                              Just (separator, editable) ->
+                                  Html.pre << separator
+                                  +++
+                                  Html.textarea
+                                      Html.! [Html.name "content",
+                                              Html.rows "30", Html.cols "100"]
+                                      << editable
+                                  +++
+                                  Html.br
+                                  +++
+                                  Html.submit "" "submit")))
 
-splitProtected :: String -> (String, String)
+splitProtected :: String -> (String, Maybe (String, String))
 splitProtected =
-    mapPair (unlines, unlines) .
-    ListHT.breakAfter
-        (List.isPrefixOf $ replicate 8 '-') .
+    mapPair (unlines,
+        \lns ->
+            case lns of
+                separator:suffix -> Just (separator, unlines suffix)
+                [] -> Nothing) .
+    ListHT.break (List.isPrefixOf separatorLine) .
     lines
 
+separatorLine :: String
+separatorLine = replicate 8 '-'
+
+htmlFromMultiline :: String -> Html.Html
+htmlFromMultiline =
+    Html.concatHtml . List.intersperse Html.br .
+    map Html.toHtml . lines
 
 {-
 As far as I can see,
