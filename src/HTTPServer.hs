@@ -137,19 +137,21 @@ formatModuleContent list name (mmsg, content) =
              ((Html.! [Html.action $ show name, Html.method "post",
                        Html.HtmlAttr "accept-charset" "ISO-8859-1"]) $
               Html.form $
-                  (case splitProtected content of
+                  case splitProtected content of
                        (protected,editable) ->
                            Html.pre << protected
                            +++
-                           -- Html.hr +++
-                           Html.textarea
-                               Html.! [Html.name "content",
-                                       Html.rows "30", Html.cols "100"]
-                               << editable)
-                  +++
-                  Html.br
-                  +++
-                  Html.submit "" "submit")))
+                           if null editable
+                             then Html.noHtml
+                             else
+                               Html.textarea
+                                   Html.! [Html.name "content",
+                                           Html.rows "30", Html.cols "100"]
+                                   << editable
+                               +++
+                               Html.br
+                               +++
+                               Html.submit "" "submit")))
 
 splitProtected :: String -> (String, String)
 splitProtected =
