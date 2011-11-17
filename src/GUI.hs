@@ -275,14 +275,6 @@ machine input output importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
-{-
-                    Pause -> do
-                        ALSA.pauseQueue sq
-                        withMode Event.SingleStep $ return ()
-                    Continue -> do
-                        ALSA.continueQueue sq
-                        withMode Event.RealTime $ return ()
--}
                     PlayTerm str ->
                         case Parsec.parse
                                  (Parsec.between
