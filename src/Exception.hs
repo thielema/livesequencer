@@ -30,6 +30,14 @@ statusFromMessage (Message typ (Range pos _) descr) =
     show (Pos.sourceColumn pos) ++ "  " ++
     flattenMultiline descr
 
+multilineFromMessage :: Message -> String
+multilineFromMessage (Message typ (Range pos _) descr) =
+    stringFromType typ ++ " - " ++
+    Pos.sourceName pos ++ ':' :
+    show (Pos.sourceLine pos) ++ ':' :
+    show (Pos.sourceColumn pos) ++ "\n" ++
+    descr
+
 stringFromType :: Type -> String
 stringFromType typ =
     case typ of

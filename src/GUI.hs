@@ -89,7 +89,7 @@ main = do
     (p,ctrls) <-
         Exc.resolveT
             (\e ->
-                IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
+                IO.hPutStrLn IO.stderr (Exception.multilineFromMessage e) >>
                 Exit.exitFailure) $
             prepareProgram =<<
             Program.chase (Option.importPaths opt) (Option.moduleName opt)
@@ -306,7 +306,7 @@ machine input output importPaths progInit sq = do
                             Exc.Exception e -> do
                                 writeChan output $ Exception e
                                 putMVar mvar $ Exc.Success $
-                                    (Just $ Exception.statusFromMessage e,
+                                    (Just $ Exception.multilineFromMessage e,
                                      sourceCode)
             Load filePath -> do
                 Log.put $
