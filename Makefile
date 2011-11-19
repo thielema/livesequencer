@@ -1,6 +1,9 @@
 SIZE = 1280x720
 PATTERN = /tmp/klingklong/%04d.png
 
+# xvidcap crashes from time to time for unknown reasons
+# even if it keeps recording, it drop frames
+# independent from the frame rate.
 xvidcap:
 # --window
 # --gui no
@@ -9,12 +12,12 @@ xvidcap:
 # klingklong.flv:	/tmp/klingklong/0000.png
 #	ffmpeg -r 12 -f image2 -i $(PATTERN) -s $(SIZE) -t 40 -vcodec flashsv $@
 
-# Offset habe ich mit xvidcap ermittelt
+# I got the offset from xvidcap
 ffmpegcast:
 	ffmpeg -f x11grab -r 10 -s 1280x720 -i :0.0+14,67 -vcodec flashsv -sameq /data2/video/klingklong.flv
 #	ffmpeg -f x11grab -r 10 -s 1280x720 -i :0.0+14,67 -vcodec huffyuv -sameq /data2/video/klingklong.avi
 
-# GUI-Fenster passend dazu verschieben
+# this places the GUI window according to the box that ffmpeg grabs
 place:
 #	xwininfo -name live-sequencer | fgrep -i 'window id' | cut -d' ' -f4
 	wmctrl -r live-sequencer -e 0,11,43,1280,720
