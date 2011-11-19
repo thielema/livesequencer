@@ -1,5 +1,36 @@
 -- module GUI where
 
+{- |
+The program manages a number of threads:
+
+GUI:
+The GUI shall be responsive also if a program is loaded or a term is reduced.
+Thus the GUI has its own thread.
+If a GUI element requires a more complicated action,
+it sends an Action message via then 'input' Chan to the 'machine'.
+
+machine:
+This thread manages loading and parsing of modules
+as well as the operation mode of the interpreter.
+It gets most of its messages from the GUI
+and sends its result as GuiUpdate via the 'output' Chan to the GUI.
+
+execute:
+This runs the interpreter.
+It reduces expressions and sends according MIDI messages
+or waits according to Wait events.
+
+ALSA:
+With ALSA we can wait only for all kinds of events at once.
+Thus this thread receives all incoming messages and distributes them
+to the right receiver.
+E.g. NoteOn events are sent to the GUI as text inserts
+and Echo messages are sent to the 'execute' thread for handling Wait events.
+
+HTTPServer:
+Waits for and responds to incoming HTTP requests.
+-}
+
 import qualified IO
 import qualified Term
 import qualified Program
