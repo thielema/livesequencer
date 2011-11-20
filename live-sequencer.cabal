@@ -115,6 +115,7 @@ Executable live-sequencer-gui
     HTTPServer
     HTTPServer.Option
     Utility
+    Utility.Concurrent
     Event
     IO
     Exception

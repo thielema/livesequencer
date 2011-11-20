@@ -43,6 +43,7 @@ import qualified Log
 import Program ( Program, modules )
 import Term ( Term, Identifier )
 import Utility ( void )
+import Utility.Concurrent ( writeTMVar, writeTChanIO )
 
 import qualified HTTPServer
 
@@ -248,19 +249,6 @@ modifyModule program output moduleName sourceCode pos = do
         Refresh moduleName sourceCode pos
 --    lift $ Log.put "parsed and modified OK"
 
-
-
-writeTMVar :: TMVar a -> a -> STM ()
-writeTMVar var a =
-    clearTMVar var >> putTMVar var a
-
-clearTMVar :: TMVar a -> STM ()
-clearTMVar var =
-    void $ tryTakeTMVar var
-
-writeTChanIO :: TChan a -> a -> IO ()
-writeTChanIO chan a =
-    STM.atomically $ writeTChan chan a
 
 {-
 This runs concurrently
