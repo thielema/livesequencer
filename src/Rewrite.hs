@@ -7,11 +7,11 @@ import qualified Rule
 import qualified Module
 
 import Control.Monad.Trans.Reader ( Reader, runReader, asks )
-import Control.Monad.Trans.Writer ( WriterT, runWriterT, runWriter, tell )
+import Control.Monad.Trans.Writer ( WriterT, runWriter, tell, mapWriterT )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad.Exception.Synchronous
            ( Exceptional(Exception,Success), ExceptionalT,
-             runExceptionalT, throwT )
+             mapExceptionalT, throwT )
 import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
@@ -30,10 +30,11 @@ type Evaluator =
     ExceptionalT (Range, String) ( WriterT [ Message ] ( Reader Program ) )
 
 runEval ::
-    Evaluator a -> Program ->
-    (Exceptional (Range, String) a, [ Message ])
-runEval evl p =
-    flip runReader p . runWriterT . runExceptionalT $ evl
+    (Monad m) =>
+    Program -> Evaluator a ->
+    ExceptionalT (Range, String) ( WriterT [ Message ] m ) a
+runEval p =
+    mapExceptionalT (mapWriterT (return . flip runReader p))
 
 exception :: Range -> String -> Evaluator a
 exception rng msg =

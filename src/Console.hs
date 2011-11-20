@@ -15,11 +15,13 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.Chan
 
+import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.State as MS
 import Control.Monad.Exception.Synchronous
-          ( Exceptional(Success, Exception), resolveT )
+          ( mapExceptionalT, resolveT, throwT )
 import Control.Monad.IO.Class ( liftIO )
-import Control.Monad ( forM_ )
+import Control.Monad.Trans.Class ( lift )
+import Control.Monad ( forM_, (>=>) )
 
 import qualified System.IO as IO
 import qualified System.Exit as Exit
@@ -54,20 +56,23 @@ execute ::
     MS.StateT Event.State IO ()
 execute p sq waitChan =
     let go t = do
-            let (ms, log) = Rewrite.runEval (Rewrite.force_head t) p
-            liftIO $ forM_ log print
-            liftIO $ print ms
-            case ms of
-                Exception (pos, msg) ->
-                    liftIO $ IO.hPutStrLn IO.stderr $ show pos ++ " " ++ msg
-                Success s ->
-                    case Term.viewNode s of
-                        Just ("[]", []) -> return ()
-                        Just (":", [x, xs]) -> do
-                            resolveT
-                                (liftIO . putStrLn . Exception.statusFromMessage)
-                                (Event.play sq waitChan x)
-                            go xs
-                        _ -> liftIO $ IO.hPutStrLn IO.stderr $
-                             "do not know how to handle term\n" ++ show s
-    in  go
+            s <-
+                mapExceptionalT
+                    (MW.runWriterT >=> \(ms,log) ->
+                        forM_ log (liftIO . print) >> return ms) $
+                Rewrite.runEval p (Rewrite.force_head t)
+            lift $ liftIO $ print s
+            case Term.viewNode s of
+                Just ("[]", []) -> return ()
+                Just (":", [x, xs]) -> do
+                    lift $ resolveT
+                        (liftIO . putStrLn . Exception.statusFromMessage)
+                        (Event.play sq waitChan x)
+                    go xs
+                _ -> throwT
+                        (termRange s,
+                         "do not know how to handle term\n" ++ show s)
+    in  resolveT
+            (\(pos, msg) ->
+                liftIO $ IO.hPutStrLn IO.stderr $ show pos ++ " " ++ msg)
+         . go

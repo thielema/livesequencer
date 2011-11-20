@@ -82,6 +82,7 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Sound.MIDI.Message.Channel.Voice as VM
 
 import qualified Control.Monad.Trans.State as MS
+import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
@@ -388,35 +389,11 @@ execute :: TVar Program
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> Chan Event.WaitResult
         -> MS.StateT Event.State IO ()
-execute program term output sq waitChan = forever $ do
-    let mainName = read "main"
-    result <- liftIO $ STM.atomically $ do
-        t <- takeTMVar term
-        p <- readTVar program
-            {- this happens anew at each click
-               since the program text might have changed in the editor -}
-        let ( es, log ) =
-                Rewrite.runEval (Rewrite.force_head t) p
-        let returnExc pos msg = do
-                putTMVar term mainName
-                return . Exc.Exception .
-                    Exception.Message Exception.Term pos $ msg
-        Exc.switch (const $ return ()) (output . Term log . show) es
-        case es of
-            Exc.Exception (pos,msg) -> returnExc pos msg
-            Exc.Success s ->
-                case Term.viewNode s of
-                    Just (":", [x, xs]) -> do
-                        putTMVar term xs
-                        return $ Exc.Success x
-                    Just ("[]", []) -> do
-                        returnExc (Term.termRange s) "finished."
-                    _ -> do
-                        returnExc (Term.termRange s) $
-                            "I do not know how to handle this term: " ++ show s
+execute program term output sq waitChan =
+    forever $
 
-    case result of
-        Exc.Exception e -> do
+    excSwitchT
+        (\e -> do
             liftIO $ do
                 ALSA.stopQueue sq
                 -- writeChan waitChan $ Event.ModeChange Event.SingleStep
@@ -428,8 +405,8 @@ execute program term output sq waitChan = forever $ do
             since the channel is only read when we wait for a duration other than Nothing
             -}
             AccM.set AccTuple.first Event.SingleStep
-            Event.wait sq waitChan Nothing
-        Exc.Success x -> do
+            Event.wait sq waitChan Nothing)
+        (\x -> do
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
@@ -439,11 +416,42 @@ execute program term output sq waitChan = forever $ do
             case Term.viewNode x of
                 Just ("Wait", _) ->
                     liftIO $ STM.atomically $ output ResetDisplay
-                _ -> return ()
+                _ -> return ())
+        (let mainName = read "main"
+         in  Exc.mapExceptionalT (liftIO . STM.atomically) $
+             flip Exc.catchT (\(pos,msg) -> do
+                 lift $ putTMVar term mainName
+                 Exc.throwT $ Exception.Message Exception.Term pos msg) $ do
+             t <- lift $ takeTMVar term
+             p <- lift $ readTVar program
+                 {- this happens anew at each click
+                    since the program text might have changed in the editor -}
+             (s,log) <-
+                 Exc.mapExceptionalT
+                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
+                      MW.runWriterT) $
+                 Rewrite.runEval p (Rewrite.force_head t)
+             lift $ output . Term log . show $ s
+             case Term.viewNode s of
+                 Just (":", [x, xs]) -> do
+                     lift $ putTMVar term xs
+                     return x
+                 Just ("[]", []) ->
+                     Exc.throwT (Term.termRange s, "finished.")
+                 _ ->
+                     Exc.throwT (Term.termRange s,
+                         "I do not know how to handle this term: " ++ show s))
 
+-- also available in explicit-exception>=0.1.7
+excSwitchT ::
+    (Monad m) =>
+    (e -> m b) -> (a -> m b) ->
+    Exc.ExceptionalT e m a -> m b
+excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
 
 httpMethods :: TChan GuiUpdate -> HTTPServer.Methods
-httpMethods output = HTTPServer.Methods {
+httpMethods output =
+    HTTPServer.Methods {
         HTTPServer.getModuleList = do
             modList <- newEmptyMVar
             writeTChanIO output $ GetModuleList modList
