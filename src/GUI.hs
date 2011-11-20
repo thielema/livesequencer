@@ -58,8 +58,10 @@ import Graphics.UI.WX.Types
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
+import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TMVar
+import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
 import Data.IORef ( newIORef, readIORef, writeIORef, modifyIORef )
@@ -126,8 +128,8 @@ main = do
             Program.chase (Option.importPaths opt) (Option.moduleName opt)
 
     input <- newChan
-    output <- newChan
-    writeChan output $ Register p ctrls
+    output <- newTChanIO
+    writeTChanIO output $ Register p ctrls
     ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
         ALSA.parseAndConnect sq
             ( Option.connectFrom opt ) ( Option.connectTo opt )
@@ -171,11 +173,18 @@ data GuiUpdate =
 
 
 exceptionToGUI ::
-    Chan GuiUpdate ->
+    TChan GuiUpdate ->
+    Exc.ExceptionalT Exception.Message STM () ->
+    STM ()
+exceptionToGUI output =
+    Exc.resolveT (writeTChan output . Exception)
+
+exceptionToGUIIO ::
+    TChan GuiUpdate ->
     Exc.ExceptionalT Exception.Message IO () ->
     IO ()
-exceptionToGUI output =
-    Exc.resolveT (writeChan output . Exception)
+exceptionToGUIIO output =
+    Exc.resolveT (writeTChanIO output . Exception)
 
 prepareProgram ::
     (Monad m) =>
@@ -211,43 +220,46 @@ formatPitch p =
 
 modifyModule ::
     TVar Program ->
-    Chan GuiUpdate ->
+    TChan GuiUpdate ->
     Identifier ->
     [Char] ->
     Int ->
-    Exc.ExceptionalT Exception.Message IO ()
+    Exc.ExceptionalT Exception.Message STM ()
 modifyModule program output moduleName sourceCode pos = do
     m0 <-
         Exc.mapExceptionT Program.messageFromParserError $
         Exc.fromEitherT $ return $
         Parsec.parse IO.input ( show moduleName ) sourceCode
-    Exc.mapExceptionalT STM.atomically $ do
-        -- TODO: handle the case that the module changed its name
-        -- (might happen if user changes the text in the editor)
-        p <- lift $ readTVar program
-        let Just previous = M.lookup moduleName $ modules p
-        let m = m0 { Module.source_location =
-                         Module.source_location previous
-                   , Module.source_text = sourceCode
-                   -- for now ignore renaming
-                   , Module.name = moduleName
-                   }
-        lift . writeTVar program =<<
-            (Exc.ExceptionalT $ return $
-             Program.add_module m p)
-    lift $ writeChan output $
+    -- TODO: handle the case that the module changed its name
+    -- (might happen if user changes the text in the editor)
+    p <- lift $ readTVar program
+    let Just previous = M.lookup moduleName $ modules p
+    let m = m0 { Module.source_location =
+                     Module.source_location previous
+               , Module.source_text = sourceCode
+               -- for now ignore renaming
+               , Module.name = moduleName
+               }
+    lift . writeTVar program =<<
+        (Exc.ExceptionalT $ return $
+         Program.add_module m p)
+    lift $ writeTChan output $
         Refresh moduleName sourceCode pos
-    lift $ Log.put "parsed and modified OK"
+--    lift $ Log.put "parsed and modified OK"
 
 
 
-writeTMVar :: TMVar a -> a -> STM.STM ()
+writeTMVar :: TMVar a -> a -> STM ()
 writeTMVar var a =
     clearTMVar var >> putTMVar var a
 
-clearTMVar :: TMVar a -> STM.STM ()
+clearTMVar :: TMVar a -> STM ()
 clearTMVar var =
     void $ tryTakeTMVar var
+
+writeTChanIO :: TChan a -> a -> IO ()
+writeTChanIO chan a =
+    STM.atomically $ writeTChan chan a
 
 {-
 This runs concurrently
@@ -258,7 +270,7 @@ we can keep the GUI and the execution of code going while parsing.
 -}
 machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
-        -> Chan GuiUpdate -- ^ and writes output to here
+        -> TChan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
         -> [FilePath]
         -> Program -- ^ initial program
@@ -273,20 +285,20 @@ machine input output importPaths progInit sq = do
     void $ forkIO $ forever $ do
         action <- readChan input
         let withMode mode transaction = do
-                writeChan output $ Running mode
                 writeChan waitChan $ Event.ModeChange mode
-                STM.atomically transaction
+                STM.atomically $ do
+                    writeTChan output $ Running mode
+                    transaction
         case action of
             Control event -> do
                 Log.put $ show event
-                exceptionToGUI output $
-                    Exc.mapExceptionalT STM.atomically $ do
-                        p <- lift $ readTVar program
-                        p' <-
-                            Exc.ExceptionalT $ return $
-                            Controls.change_controller_module p event
-                        lift $ writeTVar program p'
-                        -- return $ Controls.get_controller_module p'
+                STM.atomically $ exceptionToGUI output $ do
+                    p <- lift $ readTVar program
+                    p' <-
+                        Exc.ExceptionalT $ return $
+                        Controls.change_controller_module p event
+                    lift $ writeTVar program p'
+                    -- return $ Controls.get_controller_module p'
                 -- Log.put $ show m
             NextStep -> writeChan waitChan Event.NextStep
             Execution exec ->
@@ -314,7 +326,7 @@ machine input output importPaths progInit sq = do
                                      IO.input)
                                  "marked range" str of
                             Left msg ->
-                                writeChan output . Exception $
+                                writeTChanIO output . Exception $
                                 Program.messageFromParserError msg
                             Right t -> do
                                 ALSA.quietContinueQueue sq
@@ -325,24 +337,28 @@ machine input output importPaths progInit sq = do
                     " has new input\n" ++ sourceCode
                 case feedback of
                     Nothing ->
+                        STM.atomically $
                         exceptionToGUI output $
-                            modifyModule program output moduleName sourceCode pos
+                        modifyModule program output moduleName sourceCode pos
                     Just mvar -> do
-                        result <-
-                            Exc.runExceptionalT $
-                            modifyModule program output moduleName sourceCode pos
-                        case result of
-                            Exc.Success () ->
-                                putMVar mvar $ Exc.Success (Nothing, sourceCode)
-                            Exc.Exception e -> do
-                                writeChan output $ Exception e
-                                putMVar mvar $ Exc.Success $
+                        x <-
+                            STM.atomically $
+                            fmap (Exc.switch
+                                (\e ->
                                     (Just $ Exception.multilineFromMessage e,
-                                     sourceCode)
+                                     sourceCode))
+                                (\() -> (Nothing, sourceCode))) $
+                            Exc.runExceptionalT $
+                            Exc.catchT
+                                (modifyModule program output moduleName sourceCode pos)
+                                (\e -> do
+                                    lift $ writeTChan output $ Exception e
+                                    Exc.throwT e)
+                        putMVar mvar $ Exc.Success x
             Load filePath -> do
                 Log.put $
                     "load " ++ filePath ++ " and all its dependencies"
-                exceptionToGUI output $ do
+                exceptionToGUIIO output $ do
                     (p,ctrls) <-
                         prepareProgram =<<
                         Program.load importPaths Program.empty
@@ -352,61 +368,61 @@ machine input output importPaths progInit sq = do
                         withMode Event.RealTime $ do
                             writeTVar program p
                             writeTMVar term mainName
+                            writeTChan output $ Register p ctrls
                         ALSA.continueQueue sq
-                        writeChan output $ Register p ctrls
                         Log.put "chased and parsed OK"
 
     void $ forkIO $
         Event.listen sq
-            ( writeChan output . InsertText . formatPitch ) waitChan
+            ( writeTChanIO output . InsertText . formatPitch )
+            waitChan
     ALSA.startQueue sq
     flip MS.evalStateT (Event.RealTime, 0) $
-        execute program term ( writeChan output ) sq waitChan
+        execute program term ( writeTChan output ) sq waitChan
 
 
 execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
         -> TMVar Term -- ^ current term
-        -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
+        -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> Chan Event.WaitResult
         -> MS.StateT Event.State IO ()
 execute program term output sq waitChan = forever $ do
     let mainName = read "main"
-    ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
+    result <- liftIO $ STM.atomically $ do
         t <- takeTMVar term
         p <- readTVar program
             {- this happens anew at each click
                since the program text might have changed in the editor -}
-        let eslog@( es, _log ) =
+        let ( es, log ) =
                 Rewrite.runEval (Rewrite.force_head t) p
         let returnExc pos msg = do
                 putTMVar term mainName
                 return . Exc.Exception .
                     Exception.Message Exception.Term pos $ msg
-        fmap ((,) eslog) $
-            case es of
-                Exc.Exception (pos,msg) -> returnExc pos msg
-                Exc.Success s ->
-                    case Term.viewNode s of
-                        Just (":", [x, xs]) -> do
-                            putTMVar term xs
-                            return $ Exc.Success x
-                        Just ("[]", []) -> do
-                            returnExc (Term.termRange s) "finished."
-                        _ -> do
-                            returnExc (Term.termRange s) $
-                                "I do not know how to handle this term: " ++ show s
-
-    liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
+        Exc.switch (const $ return ()) (output . Term log . show) es
+        case es of
+            Exc.Exception (pos,msg) -> returnExc pos msg
+            Exc.Success s ->
+                case Term.viewNode s of
+                    Just (":", [x, xs]) -> do
+                        putTMVar term xs
+                        return $ Exc.Success x
+                    Just ("[]", []) -> do
+                        returnExc (Term.termRange s) "finished."
+                    _ -> do
+                        returnExc (Term.termRange s) $
+                            "I do not know how to handle this term: " ++ show s
 
     case result of
         Exc.Exception e -> do
             liftIO $ do
                 ALSA.stopQueue sq
                 -- writeChan waitChan $ Event.ModeChange Event.SingleStep
-                output $ Exception e
-                output $ Running Event.SingleStep
+                STM.atomically $ do
+                    output $ Exception e
+                    output $ Running Event.SingleStep
             {-
             We have to alter the mode directly,
             since the channel is only read when we wait for a duration other than Nothing
@@ -418,26 +434,27 @@ execute program term output sq waitChan = forever $ do
             exceptions on processing an event are not fatal and we keep running
             -}
             Exc.resolveT
-                (liftIO . output . Exception)
+                (liftIO . STM.atomically . output . Exception)
                 (Event.play sq waitChan x)
             case Term.viewNode x of
-                Just ("Wait", _) -> liftIO $ output ResetDisplay
+                Just ("Wait", _) ->
+                    liftIO $ STM.atomically $ output ResetDisplay
                 _ -> return ()
 
 
-httpMethods :: Chan GuiUpdate -> HTTPServer.Methods
+httpMethods :: TChan GuiUpdate -> HTTPServer.Methods
 httpMethods output = HTTPServer.Methods {
         HTTPServer.getModuleList = do
             modList <- newEmptyMVar
-            writeChan output $ GetModuleList modList
+            writeTChanIO output $ GetModuleList modList
             takeMVar modList,
         HTTPServer.getModuleContent = \name -> Exc.ExceptionalT $ do
             content <- newEmptyMVar
-            writeChan output $ GetModuleContent name content
+            writeTChanIO output $ GetModuleContent name content
             takeMVar content,
         HTTPServer.updateModuleContent = \name edited -> Exc.ExceptionalT $ do
             newContent <- newEmptyMVar
-            writeChan output $ UpdateModuleContent name edited newContent
+            writeTChanIO output $ UpdateModuleContent name edited newContent
             takeMVar newContent
     }
 
@@ -491,7 +508,7 @@ for cycling through widgets using tabulator key.
 -}
 gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan GuiUpdate -- ^ the machine writes here
+    -> TChan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> IO ()
 gui input output = do
@@ -537,7 +554,7 @@ gui input output = do
     out <- newChan
 
     void $ forkIO $ forever $ do
-        writeChan out =<< readChan output
+        writeChan out =<< STM.atomically (readTChan output)
         WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
@@ -673,7 +690,7 @@ gui input output = do
             result <- try act
             case result of
                 Left err ->
-                    writeChan output $
+                    writeTChanIO output $
                     Exception $ Exception.Message Exception.InOut
                         (Program.dummyRange (show moduleName))
                         (Err.ioeGetErrorString err)
