@@ -379,10 +379,11 @@ execute program term output sq waitChan = forever $ do
             {- this happens anew at each click
                since the program text might have changed in the editor -}
         let eslog@( es, _log ) =
-                flip Rewrite.runEval p $
-                Rewrite.force_head t
-        let returnExc pos =
-                return . Exc.Exception . (,) pos
+                Rewrite.runEval (Rewrite.force_head t) p
+        let returnExc pos msg = do
+                putTMVar term mainName
+                return . Exc.Exception .
+                    Exception.Message Exception.Term pos $ msg
         fmap ((,) eslog) $
             case es of
                 Exc.Exception (pos,msg) -> returnExc pos msg
@@ -392,21 +393,19 @@ execute program term output sq waitChan = forever $ do
                             putTMVar term xs
                             return $ Exc.Success x
                         Just ("[]", []) -> do
-                            putTMVar term mainName
                             returnExc (Term.termRange s) "finished."
                         _ -> do
-                            putTMVar term mainName
                             returnExc (Term.termRange s) $
                                 "I do not know how to handle this term: " ++ show s
 
     liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
 
     case result of
-        Exc.Exception (rng,msg) -> do
+        Exc.Exception e -> do
             liftIO $ do
                 ALSA.stopQueue sq
                 -- writeChan waitChan $ Event.ModeChange Event.SingleStep
-                output $ Exception $ Exception.Message Exception.Term rng msg
+                output $ Exception e
                 output $ Running Event.SingleStep
             {-
             We have to alter the mode directly,
@@ -415,6 +414,9 @@ execute program term output sq waitChan = forever $ do
             AccM.set AccTuple.first Event.SingleStep
             Event.wait sq waitChan Nothing
         Exc.Success x -> do
+            {-
+            exceptions on processing an event are not fatal and we keep running
+            -}
             Exc.resolveT
                 (liftIO . output . Exception)
                 (Event.play sq waitChan x)
