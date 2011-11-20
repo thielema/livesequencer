@@ -116,6 +116,7 @@ Executable live-sequencer-gui
     HTTPServer.Option
     Utility
     Utility.Concurrent
+    Utility.WX
     Event
     IO
     Exception

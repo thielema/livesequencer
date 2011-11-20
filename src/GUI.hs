@@ -44,6 +44,7 @@ import Program ( Program, modules )
 import Term ( Term, Identifier )
 import Utility ( void )
 import Utility.Concurrent ( writeTMVar, writeTChanIO )
+import Utility.WX ( cursor, editable, notebookSelection )
 
 import qualified HTTPServer
 
@@ -467,35 +468,6 @@ createMyEvent =
 
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
-
-
--- might be moved to wx package
-cursor :: WX.Attr (TextCtrl a) Int
-cursor =
-    WX.newAttr "cursor"
-        WXCMZ.textCtrlGetInsertionPoint
-        WXCMZ.textCtrlSetInsertionPoint
-
-editable :: WX.Attr (TextCtrl a) Bool
-editable =
-    WX.newAttr "editable"
-        WXCMZ.textCtrlIsEditable
-        WXCMZ.textCtrlSetEditable
-
-_modified :: WX.ReadAttr (TextCtrl a) Bool
-_modified =
-    WX.readAttr "modified"
-        WXCMZ.textCtrlIsModified
---        WXCMZ.textCtrlDiscardEdits
---        WXCMZ.textCtrlMarkDirty
-
-
-notebookSelection :: WX.Attr (Notebook a) Int
-notebookSelection =
-    WX.newAttr "selection"
-        WXCMZ.notebookGetSelection
-        (\nb -> void . WXCMZ.notebookSetSelection nb)
-
 
 
 {-
