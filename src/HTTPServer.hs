@@ -1,8 +1,17 @@
-module HTTPServer where
+module HTTPServer (
+    Methods(Methods),
+    run,
+    getModuleList,
+    getModuleContent,
+    updateModuleContent,
+    separatorLine,
+    splitProtected,
+    Error, notFound,
+    ) where
 
 import Term ( Identifier )
 import qualified IO
-import qualified Option
+import qualified HTTPServer.Option as Option
 
 import qualified Network.Shed.Httpd as HTTPd
 import qualified Network.CGI as CGI
@@ -50,44 +59,52 @@ data Methods =
             ExceptionalT Error IO (Maybe String, String)
     }
 
-run :: Methods -> Option.Port -> IO ()
-run dict (Option.Port port) =
-    void $ HTTPd.initServer port $ \req ->
-        handleException $
-        case HTTPd.reqMethod req of
-            "GET" ->
-                case uriPath (HTTPd.reqURI req) of
-                    "/" ->
-                        MT.lift $
-                        fmap (HTTPd.Response 200 headers . formatModuleList) $
-                        getModuleList dict
-                    '/':modName -> do
-                        modList <- MT.lift $ getModuleList dict
-                        modIdent <- parseModuleName modName
-                        content <- getModuleContent dict modIdent
-                        return $ HTTPd.Response 200 headers $
-                            formatModuleContent modList modIdent (Nothing, content)
-                    _ ->
-                        Exc.throwT $ badRequest $ "Bad path in URL"
-            "POST" ->
-                case uriPath $ HTTPd.reqURI req of
-                    '/':modName -> do
-                        modList <- MT.lift $ getModuleList dict
-                        modIdent <- parseModuleName modName
-                        editable <-
-                            case CGI.formDecode $ HTTPd.reqBody req of
-                                [("content", str)] -> return str
-                                _ -> Exc.throwT $ badRequest $
-                                     "The only argument must be 'content'"
-                        updatedContent <-
-                            updateModuleContent dict modIdent editable
-                        return $ HTTPd.Response 200 headers $
-                            formatModuleContent modList modIdent updatedContent
-                    _ ->
-                        Exc.throwT $ badRequest $ "Bad path in URL"
-            method ->
-                Exc.throwT $ methodNotAllowed $
-                    "Method " ++ method ++ " not allowed"
+run :: Methods -> Option.Option -> IO ()
+run dict opt = 
+    case Option.port opt of
+        Option.Port port ->
+            void $ HTTPd.initServer port $
+                handleException . server dict
+
+server ::
+    Methods ->
+    HTTPd.Request ->
+    ExceptionalT Error IO HTTPd.Response
+server dict req =
+    case HTTPd.reqMethod req of
+        "GET" ->
+            case uriPath (HTTPd.reqURI req) of
+                "/" ->
+                    MT.lift $
+                    fmap (HTTPd.Response 200 headers . formatModuleList) $
+                    getModuleList dict
+                '/':modName -> do
+                    modList <- MT.lift $ getModuleList dict
+                    modIdent <- parseModuleName modName
+                    content <- getModuleContent dict modIdent
+                    return $ HTTPd.Response 200 headers $
+                        formatModuleContent modList modIdent (Nothing, content)
+                _ ->
+                    Exc.throwT $ badRequest $ "Bad path in URL"
+        "POST" ->
+            case uriPath $ HTTPd.reqURI req of
+                '/':modName -> do
+                    modList <- MT.lift $ getModuleList dict
+                    modIdent <- parseModuleName modName
+                    editable <-
+                        case CGI.formDecode $ HTTPd.reqBody req of
+                            [("content", str)] -> return str
+                            _ -> Exc.throwT $ badRequest $
+                                 "The only argument must be 'content'"
+                    updatedContent <-
+                        updateModuleContent dict modIdent editable
+                    return $ HTTPd.Response 200 headers $
+                        formatModuleContent modList modIdent updatedContent
+                _ ->
+                    Exc.throwT $ badRequest $ "Bad path in URL"
+        method ->
+            Exc.throwT $ methodNotAllowed $
+                "Method " ++ method ++ " not allowed"
 
 
 handleException ::

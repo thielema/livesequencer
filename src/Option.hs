@@ -1,6 +1,8 @@
 module Option where
 
 import Term ( Identifier )
+import Option.Utility ( exitFailureMsg, fmapOptDescr )
+import qualified HTTPServer.Option as HTTP
 
 import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
@@ -10,7 +12,6 @@ import System.FilePath ( (</>), searchPathSeparator )
 
 import System.Directory ( getCurrentDirectory )
 import qualified System.Exit as Exit
-import qualified System.IO as IO
 
 import Control.Monad ( when )
 
@@ -22,11 +23,8 @@ data Option = Option {
         moduleName :: Identifier,
         importPaths :: [FilePath],
         connectTo, connectFrom :: Maybe String,
-        httpPort :: Port
+        httpOption :: HTTP.Option
     }
-
-newtype Port = Port { deconsPort :: Int }
-    deriving (Eq, Show)
 
 deflt :: Option
 deflt =
@@ -35,26 +33,9 @@ deflt =
         importPaths = [ ".", "data", "data" </> "prelude" ],
         connectTo = Nothing,
         connectFrom = Nothing,
-        httpPort = Port 8080
+        httpOption = HTTP.deflt
     }
 
-
-parseNumber ::
-   (Read a) =>
-   String -> (a -> Bool) -> String -> String -> IO a
-parseNumber name constraint constraintName str =
-   case reads str of
-      [(n, "")] ->
-         if constraint n
-           then return n
-           else exitFailureMsg $ name ++ " must be a " ++ constraintName ++ " number"
-      _ ->
-         exitFailureMsg $ name ++ " must be a number, but is '" ++ str ++ "'"
-
-exitFailureMsg :: String -> IO a
-exitFailureMsg msg = do
-    IO.hPutStrLn IO.stderr msg
-    Exit.exitFailure
 
 {-
 Guide for common Linux/Unix command-line options:
@@ -82,13 +63,10 @@ description =
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectFrom = Just str})
         ("connect from an ALSA port at startup") :
-    Opt.Option [] ["http-port"]
-        (flip ReqArg "HTTP-PORT" $ \str flags ->
-            fmap (\port -> flags{httpPort = Port $ fromInteger port}) $
-            parseNumber "HTTP port" (\n -> 0<n && n<65536) "positive 16 bit" str)
-        ("provide a web server under this port,\ndefault " ++
-         (show $ deconsPort $ httpPort deflt) ) :
-    []
+    map (fmapOptDescr $ \update old -> do
+             newHTTP <- update $ httpOption old
+             return $ old {httpOption = newHTTP})
+        HTTP.description
 
 
 get :: IO Option

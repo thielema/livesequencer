@@ -137,7 +137,7 @@ main = do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
-            void $ forkIO $ HTTPServer.run (httpMethods output) (Option.httpPort opt)
+            void $ forkIO $ HTTPServer.run (httpMethods output) (Option.httpOption opt)
 
 type HTTPFeedback = Exc.Exceptional HTTPServer.Error (Maybe String, String)
 

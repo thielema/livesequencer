@@ -53,21 +53,24 @@ Build-Type: Simple
 
 Data-Files:
   data/prelude/Prelude.hs
-  data/Klingklong.hs
-  data/Finite.hs
-  data/Midi.hs
-  data/Chords.hs
-  data/Pitch.hs
   data/Band.hs
+  data/Chords.hs
+  data/Finite.hs
+  data/Klingklong.hs
+  data/List.hs
+  data/Midi.hs
+  data/Pitch.hs
+  data/Simplesong.hs
   data/Stream.hs
   data/Sweep.hs
   data/UD.hs
-  data/Simplesong.hs
-  data/List.hs
 
 Source-Repository head
   Type: git
   Location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
+
+Flag httpServer
+  Description: Enable access to modules via a web browser
 
 Executable live-sequencer
   Hs-Source-Dirs: src
@@ -79,6 +82,7 @@ Executable live-sequencer
     IO
     Module
     Option
+    Option.Utility
     Program
     Rewrite
     Rule
@@ -109,12 +113,14 @@ Executable live-sequencer-gui
   Other-Modules:
     ALSA
     HTTPServer
+    HTTPServer.Option
     Utility
     Event
     IO
     Exception
     Module
     Option
+    Option.Utility
     Program
     Rewrite
     Rule
