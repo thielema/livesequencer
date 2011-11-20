@@ -114,6 +114,7 @@ Executable live-sequencer-gui
     ALSA
     HTTPServer
     HTTPServer.Option
+    HTTPServer.GUI
     Utility
     Utility.Concurrent
     Utility.WX
@@ -123,6 +124,7 @@ Executable live-sequencer-gui
     Module
     Option
     Option.Utility
+    Controls
     Program
     Rewrite
     Rule

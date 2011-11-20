@@ -46,7 +46,7 @@ import Utility ( void )
 import Utility.Concurrent ( writeTMVar, writeTChanIO )
 import Utility.WX ( cursor, editable, notebookSelection )
 
-import qualified HTTPServer
+import qualified HTTPServer.GUI as HTTPGui
 
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
@@ -139,13 +139,15 @@ main = do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
-            void $ forkIO $ HTTPServer.run (httpMethods output) (Option.httpOption opt)
+            void $ forkIO $
+                HTTPGui.run
+                    (HTTPGui.methods (writeTChanIO output . HTTP))
+                    (Option.httpOption opt)
 
-type HTTPFeedback = Exc.Exceptional HTTPServer.Error (Maybe String, String)
 
 -- | messages that are sent from GUI to machine
 data Action =
-     Modification (Maybe (MVar HTTPFeedback)) Identifier String Int
+     Modification (Maybe (MVar HTTPGui.Feedback)) Identifier String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
    | Execution Execution
    | NextStep
@@ -163,14 +165,7 @@ data GuiUpdate =
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
-   | GetModuleList { _moduleList :: MVar [ Identifier ] }
-   | GetModuleContent {
-         _moduleName :: Identifier,
-         _moduleContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
-   | UpdateModuleContent {
-         _moduleName :: Identifier,
-         _moduleEditableContent :: String,
-         _moduleNewContent :: MVar HTTPFeedback }
+   | HTTP HTTPGui.GuiUpdate
    | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
 
@@ -437,23 +432,6 @@ excSwitchT ::
     (e -> m b) -> (a -> m b) ->
     Exc.ExceptionalT e m a -> m b
 excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
-
-httpMethods :: TChan GuiUpdate -> HTTPServer.Methods
-httpMethods output =
-    HTTPServer.Methods {
-        HTTPServer.getModuleList = do
-            modList <- newEmptyMVar
-            writeTChanIO output $ GetModuleList modList
-            takeMVar modList,
-        HTTPServer.getModuleContent = \name -> Exc.ExceptionalT $ do
-            content <- newEmptyMVar
-            writeTChanIO output $ GetModuleContent name content
-            takeMVar content,
-        HTTPServer.updateModuleContent = \name edited -> Exc.ExceptionalT $ do
-            newContent <- newEmptyMVar
-            writeTChanIO output $ UpdateModuleContent name edited newContent
-            takeMVar newContent
-    }
 
 
 -- | following code taken from http://snipplr.com/view/17538/
@@ -989,62 +967,13 @@ gui input output = do
                             " waiting for next step" ]
                         activateSingleStep
 
-            GetModuleList modList ->
-                putMVar modList . M.keys =<< readIORef panels
-
-            GetModuleContent name content ->
-                (putMVar content =<<) $ Exc.runExceptionalT $ do
-                    pnls <- lift $ readIORef panels
-                    (_,editor,_) <- getModuleForHTTP pnls name
-                    lift $ set status [ text :=
-                        "module " ++ show name ++ " downloaded by web client" ]
-                    lift $ get editor text
-
-            UpdateModuleContent name content contentMVar -> do
-                result <- Exc.runExceptionalT $ do
-                    pnls <- lift $ readIORef panels
-                    (_,editor,_) <-
-                        case M.lookup name pnls of
-                            Nothing ->
-                                Exc.throwT
-                                    ("Module " ++ show name ++ " no longer available.",
-                                     "")
-                            Just pnl -> return pnl
-                    lift $ set status [ text :=
-                        "module " ++ show name ++ " updated by web client" ]
-                    pos <- lift $ get editor cursor
-                    localContent <- lift $ get editor text
-                    case HTTPServer.splitProtected localContent of
-                        (protected, sepEditable) ->
-                            case sepEditable of
-                                Nothing ->
-                                    Exc.throwT
-                                        ("Module does no longer contain a separation mark, " ++
-                                         "thus you cannot alter the content.",
-                                         protected)
-                                Just (sep, _edit) -> do
-                                    let newContent = protected ++ sep ++ '\n' : content
-                                    lift $ set editor [ text := newContent, cursor := pos ]
-                                    return (newContent, pos)
-                case result of
-                    Exc.Exception (e, protected) ->
-                        putMVar contentMVar $
-                            Exc.Success (Just e,
-                                protected ++ HTTPServer.separatorLine ++ '\n' : content)
-                    Exc.Success (newContent, pos) ->
+            HTTP request ->
+                HTTPGui.update
+                    (\contentMVar name newContent pos ->
                         writeChan input $
-                        Modification (Just contentMVar) name newContent pos
+                        Modification (Just contentMVar) name newContent pos)
+                    status panels request
 
-getModuleForHTTP ::
-    (Monad m) =>
-    M.Map Identifier a ->
-    Identifier ->
-    Exc.ExceptionalT HTTPServer.Error m a
-getModuleForHTTP pnls name =
-    Exc.ExceptionalT $ return $
-    Exc.fromMaybe
-        (HTTPServer.notFound $ "module " ++ show name ++ " not found") $
-    M.lookup name pnls
 
 displayModules ::
     Chan Action ->
