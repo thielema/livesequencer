@@ -92,10 +92,10 @@ server dict req =
                     modList <- MT.lift $ getModuleList dict
                     modIdent <- parseModuleName modName
                     editable <-
-                        case CGI.formDecode $ HTTPd.reqBody req of
-                            [("content", str)] -> return str
+                        case lookup "content" $ CGI.formDecode $ HTTPd.reqBody req of
+                            Just str -> return str
                             _ -> Exc.throwT $ badRequest $
-                                 "The only argument must be 'content'"
+                                 "Argument 'content' missing"
                     updatedContent <-
                         updateModuleContent dict modIdent editable
                     return $ HTTPd.Response 200 headers $
