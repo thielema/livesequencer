@@ -89,7 +89,8 @@ import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( liftM2, forever, forM_ )
+import Control.Monad ( liftM2, forever, )
+import Data.Foldable ( forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Token as Token
@@ -647,10 +648,8 @@ gui input output = do
               mfilename <- WX.fileOpenDialog
                   f False {- change current directory -} True
                   "Load Haskell program" haskellFilenames "" ""
-              case mfilename of
-                  Nothing -> return ()
-                  Just filename ->
-                      writeChan input $ Load filename ]
+              forM_ mfilename $ writeChan input . Load
+          ]
 
     set reloadItem [
           on command := do
@@ -698,15 +697,13 @@ gui input output = do
               mfilename <- WX.fileSaveDialog
                   f False {- change current directory -} True
                   ("Save module " ++ show moduleName) haskellFilenames path file
-              case mfilename of
-                  Nothing -> return ()
-                  Just fileName -> do
-                      saveModule (fileName, moduleName, content)
-                      modifyIORef program $ \prg ->
-                          prg { Program.modules =
-                              M.adjust
-                                  (\modu -> modu { Module.source_location = fileName })
-                                  moduleName (Program.modules prg) }
+              forM_ mfilename $ \fileName -> do
+                  saveModule (fileName, moduleName, content)
+                  modifyIORef program $ \prg ->
+                      prg { Program.modules =
+                          M.adjust
+                              (\modu -> modu { Module.source_location = fileName })
+                              moduleName (Program.modules prg) }
           ]
 
 
@@ -916,7 +913,7 @@ gui input output = do
             -- update highlighter text field only if parsing was successful
             Refresh moduleName s pos -> do
                 pnls <- readIORef panels
-                maybe (return ())
+                Fold.mapM_
                     (\h -> set h [ text := s, cursor := pos ])
                     (M.lookup moduleName $ highlighters pnls)
                 set status [ text :=

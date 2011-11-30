@@ -13,6 +13,7 @@ import qualified Sound.MIDI.ALSA as MIDI
 
 import qualified System.IO as IO
 
+import Data.Foldable ( forM_ )
 import Control.Monad ( (<=<) )
 import Utility ( void )
 
@@ -103,16 +104,14 @@ parseAndConnect ::
    Sequencer mode ->
    Maybe String -> Maybe String -> IO ()
 parseAndConnect sq from to = do
-   maybe (return ())
+   forM_ from
       (SndSeq.connectFrom (handle sq) (publicPort sq)
        <=<
        Addr.parse (handle sq))
-      from
-   maybe (return ())
+   forM_ to
       (SndSeq.connectTo (handle sq) (publicPort sq)
        <=<
        Addr.parse (handle sq))
-      to
 
 
 withSequencer ::
