@@ -97,7 +97,7 @@ infixr 0  $, $!, `seq`
 
 operators :: [[([Char], Assoc)]]
 operators =
-  [ [ ( ".", AssocRight ) ]
+  [ [ ( ".", AssocRight ), ( "!!", AssocLeft ) ]
   , [ ( "^", AssocRight) ]
   , [ ( "*", AssocLeft), ("/", AssocLeft) ]
   , [ ( "+", AssocLeft), ("-", AssocLeft) ]

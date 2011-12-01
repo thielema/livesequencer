@@ -37,6 +37,10 @@ cons x xs = x : xs ;
 
 concat = foldr append [];
 
+(x:xs) !! 0 = x ;
+(x:xs) !! n = xs !! (n-1) ;
+[] !! n = error "!!: index too large" ;
+
 take n xs = foldr takeElem (const []) xs n ;
 
 takeElem x go 0 = [] ;
