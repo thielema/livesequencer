@@ -9,6 +9,10 @@ import Prelude ( (-), (+), (<), negate, Bool(False,True) )
 map f [] = [] ;
 map f (x : xs) = f x : map f xs ;
 
+zipWith f (x : xs) (y : ys) =
+    f x y : zipWith f xs ys ;
+zipWith f xs ys = [] ;
+
 foldr f a [] = a ;
 foldr f a (x : xs) = f x ( foldr f a xs ) ;
 
