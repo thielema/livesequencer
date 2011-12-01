@@ -1,3 +1,6 @@
+ghci:
+	ghci -Wall -i:data `ls -1 data/*.hs | fgrep -v BandControlled`
+
 SIZE = 1280x720
 PATTERN = /tmp/klingklong/%04d.png
 
