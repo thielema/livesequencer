@@ -105,6 +105,7 @@ operators =
   , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ]
   , [ ( "&&", AssocRight ) ]
   , [ ( "||", AssocRight ) ]
+  , [ ( "$",  AssocRight ) ]
   ]
 
 identifierStart, identifierLetter :: CharParser st Char

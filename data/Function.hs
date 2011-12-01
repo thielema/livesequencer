@@ -1,6 +1,8 @@
 module Function where
 
-compose f g x = f (g x) ;
+(f . g) x = f (g x) ;
+
+f $ x = f x ;
 
 flip f x y = f y x ;
 

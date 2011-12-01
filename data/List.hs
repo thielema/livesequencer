@@ -15,7 +15,7 @@ foldr f a (x : xs) = f x ( foldr f a xs ) ;
 foldl f a [] = a ;
 foldl f a (x : xs) = foldl f (f a x) xs ;
 
-length = compose sum ( map (const 1) ) ;
+length = sum . map (const 1) ;
 
 -- think about a version with constant space usage
 sum = foldl add 0 ;
