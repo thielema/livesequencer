@@ -3,7 +3,7 @@ module List where
 import Midi
 import Tuple
 import Function
-import Prelude ( (-), (+), (<), negate, Bool(False,True) )
+import Prelude ( (-), (+), (<), negate, Bool(False,True), error )
 
 
 map f [] = [] ;
