@@ -1,6 +1,8 @@
 module Option where
 
 import Term ( Identifier )
+import Option.Utility ( exitFailureMsg, fmapOptDescr )
+import qualified HTTPServer.Option as HTTP
 
 import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
@@ -10,7 +12,6 @@ import System.FilePath ( (</>), searchPathSeparator )
 
 import System.Directory ( getCurrentDirectory )
 import qualified System.Exit as Exit
-import qualified System.IO as IO
 
 import Control.Monad ( when )
 
@@ -21,7 +22,8 @@ import Data.List ( intercalate )
 data Option = Option {
         moduleName :: Identifier,
         importPaths :: [FilePath],
-        connectTo, connectFrom :: Maybe String
+        connectTo, connectFrom :: Maybe String,
+        httpOption :: HTTP.Option
     }
 
 deflt :: Option
@@ -30,14 +32,10 @@ deflt =
         moduleName = error "no module specified",
         importPaths = [ ".", "data", "data" </> "prelude" ],
         connectTo = Nothing,
-        connectFrom = Nothing
+        connectFrom = Nothing,
+        httpOption = HTTP.deflt
     }
 
-
-exitFailureMsg :: String -> IO a
-exitFailureMsg msg = do
-    IO.hPutStrLn IO.stderr msg
-    Exit.exitFailure
 
 {-
 Guide for common Linux/Unix command-line options:
@@ -65,7 +63,10 @@ description =
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectFrom = Just str})
         ("connect from an ALSA port at startup") :
-    []
+    map (fmapOptDescr $ \update old -> do
+             newHTTP <- update $ httpOption old
+             return $ old {httpOption = newHTTP})
+        HTTP.description
 
 
 get :: IO Option

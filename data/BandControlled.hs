@@ -1,10 +1,11 @@
-module Band where
+module BandControlled where
 
 import Drum
 import Chords
 import Pitch
 import Midi
 import List
+import Bool
 import Prelude ( (*) )
 
 main = merge ( cycle chords ) ( cycle drums ) ;
@@ -22,10 +23,17 @@ chords =
                 , quad ( major7 qn (g 4) )
                 ] ) ;
 
+quad x = concat [x,x,x,x] ;
+
 drums =
     drumChannel ( concat
         [ emphasize 16 ( drum bassDrum1 hn )
-        , quad ( drum acousticSnare en )
+        , concat [ optDrum ( checkBox B5 True  ) acousticSnare en
+                 , optDrum ( checkBox B6 False ) acousticSnare en
+                 , optDrum ( checkBox B7 False ) acousticSnare en
+                 , optDrum ( checkBox B8 True  ) acousticSnare en
+                 ]
         ] ) ;
 
-quad x = concat [ x, x, x, x ] ;
+optDrum b drm dur =
+    ifThenElse b ( drum drm dur ) ( rest dur ) ;

@@ -1,5 +1,36 @@
 -- module GUI where
 
+{- |
+The program manages a number of threads:
+
+GUI:
+The GUI shall be responsive also if a program is loaded or a term is reduced.
+Thus the GUI has its own thread.
+If a GUI element requires a more complicated action,
+it sends an Action message via then 'input' Chan to the 'machine'.
+
+machine:
+This thread manages loading and parsing of modules
+as well as the operation mode of the interpreter.
+It gets most of its messages from the GUI
+and sends its result as GuiUpdate via the 'output' Chan to the GUI.
+
+execute:
+This runs the interpreter.
+It reduces expressions and sends according MIDI messages
+or waits according to Wait events.
+
+ALSA:
+With ALSA we can wait only for all kinds of events at once.
+Thus this thread receives all incoming messages and distributes them
+to the right receiver.
+E.g. NoteOn events are sent to the GUI as text inserts
+and Echo messages are sent to the 'execute' thread for handling Wait events.
+
+HTTPServer:
+Waits for and responds to incoming HTTP requests.
+-}
+
 import qualified IO
 import qualified Term
 import qualified Program
@@ -12,6 +43,10 @@ import qualified Log
 import Program ( Program, modules )
 import Term ( Term, Identifier )
 import Utility ( void )
+import Utility.Concurrent ( writeTMVar, writeTChanIO )
+import Utility.WX ( cursor, editable, notebookSelection )
+
+import qualified HTTPServer.GUI as HTTPGui
 
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
@@ -23,9 +58,12 @@ import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
+import Control.Concurrent.MVar
 import Control.Concurrent.Chan
+import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM.TVar
 import Control.Concurrent.STM.TMVar
+import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
 import Data.IORef ( newIORef, readIORef, writeIORef, modifyIORef )
@@ -36,22 +74,23 @@ import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 
 import Graphics.UI.WXCore.Events
-import Event
+import qualified Event
 
 import Foreign.Storable ( peek )
 import Foreign.Marshal.Alloc ( alloca )
 
 import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
-import qualified Sound.ALSA.Sequencer.Event as SeqEvent
 import qualified Sound.MIDI.Message.Channel.Voice as VM
 
 import qualified Control.Monad.Trans.State as MS
+import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( liftM2, forever, forM_ )
+import Control.Monad ( liftM2, forever, )
+import Data.Foldable ( forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Token as Token
@@ -61,6 +100,9 @@ import qualified System.IO as IO
 import qualified System.IO.Error as Err
 import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
+
+import qualified Data.Accessor.Monad.Trans.State as AccM
+import qualified Data.Accessor.Tuple as AccTuple
 
 import qualified Data.Traversable as Trav
 import qualified Data.Foldable as Fold
@@ -84,30 +126,37 @@ main = do
     (p,ctrls) <-
         Exc.resolveT
             (\e ->
-                IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
+                IO.hPutStrLn IO.stderr (Exception.multilineFromMessage e) >>
                 Exit.exitFailure) $
             prepareProgram =<<
             Program.chase (Option.importPaths opt) (Option.moduleName opt)
 
     input <- newChan
-    output <- newChan
-    writeChan output $ Register p ctrls
+    output <- newTChanIO
+    writeTChanIO output $ Register p ctrls
     ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
         ALSA.parseAndConnect sq
             ( Option.connectFrom opt ) ( Option.connectTo opt )
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq
+            void $ forkIO $
+                HTTPGui.run
+                    (HTTPGui.methods (writeTChanIO output . HTTP))
+                    (Option.httpOption opt)
+
 
 -- | messages that are sent from GUI to machine
 data Action =
-     Modification Identifier String Int -- ^ modulename, sourcetext, position
+     Modification (Maybe (MVar HTTPGui.Feedback)) Identifier String Int
+         -- ^ MVar of the HTTP server, modulename, sourcetext, position
    | Execution Execution
+   | NextStep
    | Control Controls.Event
    | Load FilePath
 
 data Execution =
-    Restart | Stop | Pause | Continue | PlayTerm String
+    Mode Event.WaitMode | Restart | Stop | PlayTerm String
 
 
 -- | messages that are sent from machine to GUI
@@ -117,16 +166,24 @@ data GuiUpdate =
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
-   | Running Bool
+   | HTTP HTTPGui.GuiUpdate
+   | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
 
 
 exceptionToGUI ::
-    Chan GuiUpdate ->
+    TChan GuiUpdate ->
+    Exc.ExceptionalT Exception.Message STM () ->
+    STM ()
+exceptionToGUI output =
+    Exc.resolveT (writeTChan output . Exception)
+
+exceptionToGUIIO ::
+    TChan GuiUpdate ->
     Exc.ExceptionalT Exception.Message IO () ->
     IO ()
-exceptionToGUI output =
-    Exc.resolveT (writeChan output . Exception)
+exceptionToGUIIO output =
+    Exc.resolveT (writeTChanIO output . Exception)
 
 prepareProgram ::
     (Monad m) =>
@@ -160,13 +217,35 @@ formatPitch p =
     in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
 
 
-writeTMVar :: TMVar a -> a -> STM.STM ()
-writeTMVar var a =
-    clearTMVar var >> putTMVar var a
+modifyModule ::
+    TVar Program ->
+    TChan GuiUpdate ->
+    Identifier ->
+    [Char] ->
+    Int ->
+    Exc.ExceptionalT Exception.Message STM ()
+modifyModule program output moduleName sourceCode pos = do
+    m0 <-
+        Exc.mapExceptionT Program.messageFromParserError $
+        Exc.fromEitherT $ return $
+        Parsec.parse IO.input ( show moduleName ) sourceCode
+    -- TODO: handle the case that the module changed its name
+    -- (might happen if user changes the text in the editor)
+    p <- lift $ readTVar program
+    let Just previous = M.lookup moduleName $ modules p
+    let m = m0 { Module.source_location =
+                     Module.source_location previous
+               , Module.source_text = sourceCode
+               -- for now ignore renaming
+               , Module.name = moduleName
+               }
+    lift . writeTVar program =<<
+        (Exc.ExceptionalT $ return $
+         Program.add_module m p)
+    lift $ writeTChan output $
+        Refresh moduleName sourceCode pos
+--    lift $ Log.put "parsed and modified OK"
 
-clearTMVar :: TMVar a -> STM.STM ()
-clearTMVar var =
-    void $ tryTakeTMVar var
 
 {-
 This runs concurrently
@@ -177,7 +256,7 @@ we can keep the GUI and the execution of code going while parsing.
 -}
 machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
-        -> Chan GuiUpdate -- ^ and writes output to here
+        -> TChan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
         -> [FilePath]
         -> Program -- ^ initial program
@@ -187,46 +266,44 @@ machine input output importPaths progInit sq = do
     program <- newTVarIO progInit
     let mainName = read "main"
     term <- newTMVarIO mainName
-    runningVar <- newTMVarIO ()
+    waitChan <- newChan
 
     void $ forkIO $ forever $ do
         action <- readChan input
-        let start transaction = do
-                writeChan output $ Running True
-                STM.atomically $
-                    writeTMVar runningVar () >>
-                    transaction
-            stop transaction = do
-                writeChan output $ Running False
-                STM.atomically $
-                    clearTMVar runningVar >>
+        let withMode mode transaction = do
+                writeChan waitChan $ Event.ModeChange mode
+                STM.atomically $ do
+                    writeTChan output $ Running mode
                     transaction
         case action of
             Control event -> do
                 Log.put $ show event
-                exceptionToGUI output $
-                    Exc.mapExceptionalT STM.atomically $ do
-                        p <- lift $ readTVar program
-                        p' <-
-                            Exc.ExceptionalT $ return $
-                            Controls.change_controller_module p event
-                        lift $ writeTVar program p'
-                        -- return $ Controls.get_controller_module p'
+                STM.atomically $ exceptionToGUI output $ do
+                    p <- lift $ readTVar program
+                    p' <-
+                        Exc.ExceptionalT $ return $
+                        Controls.change_controller_module p event
+                    lift $ writeTVar program p'
+                    -- return $ Controls.get_controller_module p'
                 -- Log.put $ show m
+            NextStep -> writeChan waitChan Event.NextStep
             Execution exec ->
                 case exec of
+                    Mode mode -> do
+                        case mode of
+                            Event.RealTime -> do
+                                ALSA.continueQueue sq
+                            Event.SlowMotion _ -> do
+                                ALSA.continueQueue sq
+                            Event.SingleStep -> do
+                                ALSA.pauseQueue sq
+                        withMode mode $ return ()
                     Restart -> do
                         ALSA.quietContinueQueue sq
-                        start $ writeTMVar term mainName
+                        withMode Event.RealTime $ writeTMVar term mainName
                     Stop -> do
                         ALSA.stopQueue sq
-                        stop $ writeTMVar term mainName
-                    Pause -> do
-                        ALSA.pauseQueue sq
-                        stop $ return ()
-                    Continue -> do
-                        ALSA.continueQueue sq
-                        start $ return ()
+                        withMode Event.SingleStep $ writeTMVar term mainName
                     PlayTerm str ->
                         case Parsec.parse
                                  (Parsec.between
@@ -235,118 +312,127 @@ machine input output importPaths progInit sq = do
                                      IO.input)
                                  "marked range" str of
                             Left msg ->
-                                writeChan output . Exception $
+                                writeTChanIO output . Exception $
                                 Program.messageFromParserError msg
                             Right t -> do
                                 ALSA.quietContinueQueue sq
-                                start $ writeTMVar term t
-            Modification moduleName sourceCode pos -> do
+                                withMode Event.RealTime $ writeTMVar term t
+            Modification feedback moduleName sourceCode pos -> do
                 Log.put $
                     "module " ++ show moduleName ++
                     " has new input\n" ++ sourceCode
-                exceptionToGUI output $ do
-                    m0 <-
-                        Exc.mapExceptionT Program.messageFromParserError $
-                        Exc.fromEitherT $ return $
-                        Parsec.parse IO.input ( show moduleName ) sourceCode
-                    Exc.mapExceptionalT STM.atomically $ do
-                        -- TODO: handle the case that the module changed its name
-                        -- (might happen if user changes the text in the editor)
-                        p <- lift $ readTVar program
-                        let Just previous = M.lookup moduleName $ modules p
-                        let m = m0 { Module.source_location =
-                                         Module.source_location previous
-                                   , Module.source_text = sourceCode
-                                   -- for now ignore renaming
-                                   , Module.name = moduleName
-                                   }
-                        lift . writeTVar program =<<
-                            (Exc.ExceptionalT $ return $
-                             Program.add_module m p)
-                    lift $ writeChan output
-                        (Refresh moduleName sourceCode pos)
-                    lift $ Log.put "parsed and modified OK"
+                case feedback of
+                    Nothing ->
+                        STM.atomically $
+                        exceptionToGUI output $
+                        modifyModule program output moduleName sourceCode pos
+                    Just mvar -> do
+                        x <-
+                            STM.atomically $
+                            fmap (Exc.switch
+                                (\e ->
+                                    (Just $ Exception.multilineFromMessage e,
+                                     sourceCode))
+                                (\() -> (Nothing, sourceCode))) $
+                            Exc.runExceptionalT $
+                            Exc.catchT
+                                (modifyModule program output moduleName sourceCode pos)
+                                (\e -> do
+                                    lift $ writeTChan output $ Exception e
+                                    Exc.throwT e)
+                        putMVar mvar $ Exc.Success x
             Load filePath -> do
                 Log.put $
-                    "load " ++ filePath ++ " and all its depenencies"
-                exceptionToGUI output $ do
+                    "load " ++ filePath ++ " and all its dependencies"
+                exceptionToGUIIO output $ do
                     (p,ctrls) <-
                         prepareProgram =<<
                         Program.load importPaths Program.empty
                             (FilePath.takeBaseName filePath) filePath
                     lift $ do
                         ALSA.stopQueue sq
-                        start $ do
+                        withMode Event.RealTime $ do
                             writeTVar program p
                             writeTMVar term mainName
+                            writeTChan output $ Register p ctrls
                         ALSA.continueQueue sq
-                        writeChan output $ Register p ctrls
                         Log.put "chased and parsed OK"
 
-    waitChan <- newChan
     void $ forkIO $
         Event.listen sq
-            ( writeChan output . InsertText . formatPitch ) waitChan
+            ( writeTChanIO output . InsertText . formatPitch )
+            waitChan
     ALSA.startQueue sq
-    MS.evalStateT
-        ( execute program runningVar term ( writeChan output ) sq waitChan ) 0
+    flip MS.evalStateT (Event.RealTime, 0) $
+        execute program term ( writeTChan output ) sq waitChan
 
 
 execute :: TVar Program
                   -- ^ current program (GUI might change the contents)
-        -> TMVar () -- ^ the variable is set, if the interpreter is running
         -> TMVar Term -- ^ current term
-        -> ( GuiUpdate -> IO () ) -- ^ sink for messages (show current term)
+        -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
-        -> Chan SeqEvent.TimeStamp
-        -> MS.StateT Time IO ()
-execute program running term output sq waitChan = forever $ do
-    let mainName = read "main"
-    ( ( es, log ), result ) <- liftIO $ STM.atomically $ do
-        void $ takeTMVar running
-            {- this might cause a long wait,
-               since if execution is stopped, then the term TMVar is empty -}
-        t <- takeTMVar term
-        p <- readTVar program
-            {- this happens anew at each click
-               since the program text might have changed in the editor -}
-        let eslog@( es, _log ) =
-                flip Rewrite.runEval p $
-                Rewrite.force_head t
-        let returnExc pos =
-                return . Exc.Exception . (,) pos
-        fmap ((,) eslog) $
-            case es of
-                Exc.Exception (pos,msg) -> returnExc pos msg
-                Exc.Success s ->
-                    case Term.viewNode s of
-                        Just (":", [x, xs]) -> do
-                            putTMVar running ()
-                            putTMVar term xs
-                            return $ Exc.Success x
-                        Just ("[]", []) -> do
-                            putTMVar term mainName
-                            returnExc (Term.termRange s) "finished."
-                        _ -> do
-                            putTMVar term mainName
-                            returnExc (Term.termRange s) $
-                                "I do not know how to handle this term: " ++ show s
+        -> Chan Event.WaitResult
+        -> MS.StateT Event.State IO ()
+execute program term output sq waitChan =
+    forever $
 
-    liftIO $ Exc.switch (const $ return ()) (output . Term log . show) es
-
-    case result of
-        Exc.Exception (rng,msg) -> liftIO $ do
-            ALSA.stopQueue sq
-            output $ Exception $ Exception.Message Exception.Term rng msg
-            output $ Running False
-        Exc.Success x -> do
-            mapM_ (liftIO . output . Exception .
-                   uncurry (Exception.Message Exception.Term))
-                =<< play_event sq waitChan x
+    excSwitchT
+        (\e -> do
+            liftIO $ do
+                ALSA.stopQueue sq
+                -- writeChan waitChan $ Event.ModeChange Event.SingleStep
+                STM.atomically $ do
+                    output $ Exception e
+                    output $ Running Event.SingleStep
+            {-
+            We have to alter the mode directly,
+            since the channel is only read when we wait for a duration other than Nothing
+            -}
+            AccM.set AccTuple.first Event.SingleStep
+            Event.wait sq waitChan Nothing)
+        (\x -> do
+            {-
+            exceptions on processing an event are not fatal and we keep running
+            -}
+            Exc.resolveT
+                (liftIO . STM.atomically . output . Exception)
+                (Event.play sq waitChan x)
             case Term.viewNode x of
-                Just ("Wait", _) -> liftIO $
-                    output ResetDisplay
-                _ -> return ()
+                Just ("Wait", _) ->
+                    liftIO $ STM.atomically $ output ResetDisplay
+                _ -> return ())
+        (let mainName = read "main"
+         in  Exc.mapExceptionalT (liftIO . STM.atomically) $
+             flip Exc.catchT (\(pos,msg) -> do
+                 lift $ putTMVar term mainName
+                 Exc.throwT $ Exception.Message Exception.Term pos msg) $ do
+             t <- lift $ takeTMVar term
+             p <- lift $ readTVar program
+                 {- this happens anew at each click
+                    since the program text might have changed in the editor -}
+             (s,log) <-
+                 Exc.mapExceptionalT
+                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
+                      MW.runWriterT) $
+                 Rewrite.runEval p (Rewrite.force_head t)
+             lift $ output . Term log . show $ s
+             case Term.viewNode s of
+                 Just (":", [x, xs]) -> do
+                     lift $ putTMVar term xs
+                     return x
+                 Just ("[]", []) ->
+                     Exc.throwT (Term.termRange s, "finished.")
+                 _ ->
+                     Exc.throwT (Term.termRange s,
+                         "I do not know how to handle this term: " ++ show s))
+
+-- also available in explicit-exception>=0.1.7
+excSwitchT ::
+    (Monad m) =>
+    (e -> m b) -> (a -> m b) ->
+    Exc.ExceptionalT e m a -> m b
+excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
 
 
 -- | following code taken from http://snipplr.com/view/17538/
@@ -363,42 +449,13 @@ registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
 
 
--- might be moved to wx package
-cursor :: WX.Attr (TextCtrl a) Int
-cursor =
-    WX.newAttr "cursor"
-        WXCMZ.textCtrlGetInsertionPoint
-        WXCMZ.textCtrlSetInsertionPoint
-
-editable :: WX.Attr (TextCtrl a) Bool
-editable =
-    WX.newAttr "editable"
-        WXCMZ.textCtrlIsEditable
-        WXCMZ.textCtrlSetEditable
-
-_modified :: WX.ReadAttr (TextCtrl a) Bool
-_modified =
-    WX.readAttr "modified"
-        WXCMZ.textCtrlIsModified
---        WXCMZ.textCtrlDiscardEdits
---        WXCMZ.textCtrlMarkDirty
-
-
-notebookSelection :: WX.Attr (Notebook a) Int
-notebookSelection =
-    WX.newAttr "selection"
-        WXCMZ.notebookGetSelection
-        (\nb -> void . WXCMZ.notebookSetSelection nb)
-
-
-
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
 -}
 gui :: Chan Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> Chan GuiUpdate -- ^ the machine writes here
+    -> TChan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
     -> IO ()
 gui input output = do
@@ -444,7 +501,7 @@ gui input output = do
     out <- newChan
 
     void $ forkIO $ forever $ do
-        writeChan out =<< readChan output
+        writeChan out =<< STM.atomically (readTChan output)
         WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
@@ -489,6 +546,20 @@ gui input output = do
               "parse the edited program and if successful " ++
               "replace the executed program" ]
     WX.menuLine execMenu
+    realTimeItem <- WX.menuItem execMenu
+        [ text := "Real time",
+          checkable := True,
+          checked := True,
+          help := "pause according to Wait elements" ]
+    slowMotionItem <- WX.menuItem execMenu
+        [ text := "Slow motion",
+          checkable := True,
+          help := "pause between every list element" ]
+    singleStepItem <- WX.menuItem execMenu
+        [ text := "Single step",
+          checkable := True,
+          help := "wait for user confirmation after every list element" ]
+    WX.menuLine execMenu
     _restartItem <- WX.menuItem execMenu
         [ text := "Res&tart\tCtrl-T",
           on command := writeChan input (Execution Restart),
@@ -506,11 +577,22 @@ gui input output = do
           help :=
               "stop program execution and sound, " ++
               "reset term to 'main'" ]
-    runningItem <- WX.menuItem execMenu
-        [ text := "running\tCtrl-U",
-          checkable := True,
-          checked := True,
-          help := "pause or continue program execution" ]
+
+    WX.menuLine execMenu
+
+    fasterItem <- WX.menuItem execMenu
+        [ text := "Faster\tCtrl->",
+          enabled := False,
+          help := "decrease pause in slow motion mode" ]
+    slowerItem <- WX.menuItem execMenu
+        [ text := "Slower\tCtrl-<",
+          enabled := False,
+          help := "increase pause in slow motion mode" ]
+    nextStepItem <- WX.menuItem execMenu
+        [ text := "Next step\tCtrl-N",
+          enabled := False,
+          on command := writeChan input NextStep,
+          help := "perform next step in single step mode" ]
 
 
     windowMenu <- WX.menuPane [text := "&Window"]
@@ -555,7 +637,7 @@ gui input output = do
             result <- try act
             case result of
                 Left err ->
-                    writeChan output $
+                    writeTChanIO output $
                     Exception $ Exception.Message Exception.InOut
                         (Program.dummyRange (show moduleName))
                         (Err.ioeGetErrorString err)
@@ -566,10 +648,8 @@ gui input output = do
               mfilename <- WX.fileOpenDialog
                   f False {- change current directory -} True
                   "Load Haskell program" haskellFilenames "" ""
-              case mfilename of
-                  Nothing -> return ()
-                  Just filename ->
-                      writeChan input $ Load filename ]
+              forM_ mfilename $ writeChan input . Load
+          ]
 
     set reloadItem [
           on command := do
@@ -617,22 +697,20 @@ gui input output = do
               mfilename <- WX.fileSaveDialog
                   f False {- change current directory -} True
                   ("Save module " ++ show moduleName) haskellFilenames path file
-              case mfilename of
-                  Nothing -> return ()
-                  Just fileName -> do
-                      saveModule (fileName, moduleName, content)
-                      modifyIORef program $ \prg ->
-                          prg { Program.modules =
-                              M.adjust
-                                  (\modu -> modu { Module.source_location = fileName })
-                                  moduleName (Program.modules prg) }
+              forM_ mfilename $ \fileName -> do
+                  saveModule (fileName, moduleName, content)
+                  modifyIORef program $ \prg ->
+                      prg { Program.modules =
+                          M.adjust
+                              (\modu -> modu { Module.source_location = fileName })
+                              moduleName (Program.modules prg) }
           ]
 
 
     let refreshProgram (moduleName, (_panel, editor, _highlighter)) = do
             s <- get editor text
             pos <- get editor cursor
-            writeChan input $ Modification moduleName s pos
+            writeChan input $ Modification Nothing moduleName s pos
 
             updateErrorLog $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
@@ -662,18 +740,77 @@ gui input output = do
 -}
                       case splitAt i content of
                           (prefix,suffix) ->
-                              return $
-                                  (reverse $ takeWhile Char.isAlphaNum $ reverse prefix)
-                                  ++
-                                  takeWhile Char.isAlphaNum suffix
+                              let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
+                              in  return $
+                                      (reverse $ takeWhile identLetter $ reverse prefix)
+                                      ++
+                                      takeWhile identLetter suffix
                   else return marked
             writeChan input . Execution . PlayTerm $ expr ]
 
-    set runningItem
-        [ on command := do
-            running <- get runningItem checked
-            writeChan input . Execution $
-                if running then Continue else Pause ]
+    waitDuration <- newIORef 500
+
+    let updateSlowMotionDur = do
+            dur <- readIORef waitDuration
+            writeChan input $ Execution $ Mode $ Event.SlowMotion dur
+
+    set fasterItem [
+        on command := do
+            modifyIORef waitDuration (\d -> max 100 (d-100))
+            updateSlowMotionDur
+            d <- readIORef waitDuration
+            set status [ text :=
+                "decreased pause to " ++ show d ++ "ms" ] ]
+
+    set slowerItem [
+        on command := do
+            modifyIORef waitDuration (100+)
+            updateSlowMotionDur
+            d <- readIORef waitDuration
+            set status [ text :=
+                "increased pause to " ++ show d ++ "ms" ] ]
+
+    let setRealTime b = do
+            set realTimeItem [ checked := b ]
+
+        setSlowMotion b = do
+            set slowMotionItem [ checked := b ]
+            set fasterItem [ enabled := b ]
+            set slowerItem [ enabled := b ]
+
+        setSingleStep b = do
+            set singleStepItem [ checked := b ]
+            set nextStepItem [ enabled := b ]
+
+        onActivation w act =
+            set w [ on command := do
+                b <- get w checked
+                if b then act else set w [checked := True] ]
+
+        activateRealTime = do
+            setRealTime True
+            setSlowMotion False
+            setSingleStep False
+
+        activateSlowMotion = do
+            setRealTime False
+            setSlowMotion True
+            setSingleStep False
+
+        activateSingleStep = do
+            setRealTime False
+            setSlowMotion False
+            setSingleStep True
+
+    onActivation realTimeItem $ do
+        activateRealTime
+        writeChan input $ Execution $ Mode Event.RealTime
+    onActivation slowMotionItem $ do
+        activateSlowMotion
+        updateSlowMotionDur
+    onActivation singleStepItem $ do
+        activateSingleStep
+        writeChan input $ Execution $ Mode Event.SingleStep
 
 
     set f [
@@ -776,7 +913,7 @@ gui input output = do
             -- update highlighter text field only if parsing was successful
             Refresh moduleName s pos -> do
                 pnls <- readIORef panels
-                maybe (return ())
+                Fold.mapM_
                     (\h -> set h [ text := s, cursor := pos ])
                     (M.lookup moduleName $ highlighters pnls)
                 set status [ text :=
@@ -811,12 +948,29 @@ gui input output = do
                 previous <- varSwap highlights M.empty
                 setColorHighlighters previous 255 255 255
 
-            Running running -> do
-                set status [ text :=
-                    if running
-                      then "interpreter started"
-                      else "interpreter stopped" ]
-                set runningItem [ checked := running ]
+            Running mode -> do
+                case mode of
+                    Event.RealTime -> do
+                        set status [ text := "interpreter in real-time mode" ]
+                        activateRealTime
+                    Event.SlowMotion dur -> do
+                        set status [ text :=
+                            ("interpreter in slow-motion mode with pause " ++
+                             show dur ++ "ms") ]
+                        activateSlowMotion
+                    Event.SingleStep -> do
+                        set status [ text :=
+                            "interpreter in single step mode," ++
+                            " waiting for next step" ]
+                        activateSingleStep
+
+            HTTP request ->
+                HTTPGui.update
+                    (\contentMVar name newContent pos ->
+                        writeChan input $
+                        Modification (Just contentMVar) name newContent pos)
+                    status panels request
+
 
 displayModules ::
     Chan Action ->

@@ -1,15 +1,17 @@
 module Rewrite where
 
-import Term
+import Term ( Term(..), Identifier(..), Range(..), termRange )
 import Program
+import qualified Term
 import qualified Rule
 import qualified Module
 
 import Control.Monad.Trans.Reader ( Reader, runReader, asks )
-import Control.Monad.Trans.Writer ( WriterT, runWriterT, runWriter, tell )
+import Control.Monad.Trans.Writer ( WriterT, runWriter, tell, mapWriterT )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad.Exception.Synchronous
-           ( Exceptional, ExceptionalT, runExceptionalT, throwT )
+           ( Exceptional(Exception,Success), ExceptionalT,
+             mapExceptionalT, throwT )
 import qualified Data.Map as M
 import qualified Data.Traversable as Trav
 
@@ -28,10 +30,11 @@ type Evaluator =
     ExceptionalT (Range, String) ( WriterT [ Message ] ( Reader Program ) )
 
 runEval ::
-    Evaluator a -> Program ->
-    (Exceptional (Range, String) a, [ Message ])
-runEval evl p =
-    flip runReader p . runWriterT . runExceptionalT $ evl
+    (Monad m) =>
+    Program -> Evaluator a ->
+    ExceptionalT (Range, String) ( WriterT [ Message ] m ) a
+runEval p =
+    mapExceptionalT (mapWriterT (return . flip runReader p))
 
 exception :: Range -> String -> Evaluator a
 exception rng msg =
@@ -70,7 +73,7 @@ top t = case t of
     Number {} -> return t
     String_Literal {} -> return t
     Node f xs ->
-        if isConstructor f
+        if Term.isConstructor f
           then return t
           else do
               rs <- lift $ lift $ asks functions
@@ -116,15 +119,22 @@ eval_decls g =
         (\(Rule.Rule f xs rhs) go ys -> do
             (m, ys') <- match_expand_list M.empty xs ys
             case m of
-                 Nothing -> go ys'
-                 Just sub -> do
-                     lift $ tell [ Step { target = g
-                                   , rule = Just f } ]
-                     return $ apply sub rhs)
+                Nothing -> go ys'
+                Just (substitions, additionalArgs) -> do
+                    lift $ tell [ Step { target = g
+                                  , rule = Just f } ]
+                    rhs' <- apply substitions rhs
+                    appendArguments rhs' additionalArgs)
         (\ys ->
             exception (range g) $
             unwords [ "no matching pattern for function", show g,
                       "and arguments", show ys ])
+
+appendArguments :: Term -> [Term] -> Evaluator Term
+appendArguments f xs =
+    case Term.appendArguments f xs of
+        Success t -> return t
+        Exception e -> exception (termRange f) e
 
 
 -- | check whether term matches pattern.
@@ -134,9 +144,9 @@ match_expand ::
     Term -> Term ->
     Evaluator ( Maybe (M.Map Identifier Term) , Term )
 match_expand pat t = case pat of
-    Node f [] | isVariable f ->
+    Node f [] | Term.isVariable f ->
         return ( Just $ M.singleton f t , t )
-    Node f xs | isConstructor f -> do
+    Node f xs | Term.isConstructor f -> do
         t' <- top t
         case t' of
             Node g ys ->
@@ -144,7 +154,7 @@ match_expand pat t = case pat of
                     then return ( Nothing, t' )
                     else do
                          ( m, ys' ) <- match_expand_list M.empty xs ys
-                         return ( m, Node f ys' )
+                         return ( fmap fst m, Node f ys' )
             _ ->
                 exception (termRange t') $
                 "constructor pattern matched against non-constructor term: " ++ show t'
@@ -173,12 +183,12 @@ match_expand_list ::
     M.Map Identifier Term ->
     [Term] ->
     [Term] ->
-    Evaluator (Maybe (M.Map Identifier Term), [Term])
-match_expand_list s [] [] = return ( Just s, [] )
+    Evaluator (Maybe (M.Map Identifier Term, [Term]), [Term])
+match_expand_list s [] ys = return ( Just (s,ys), ys )
 match_expand_list s (x:xs) (y:ys) = do
     (m, y') <- match_expand x y
     case m of
-        Nothing -> return ( m, y' : ys )
+        Nothing -> return ( Nothing, y' : ys )
         Just s' -> do
             s'' <-
                 case runWriter $ Trav.sequenceA $
@@ -192,12 +202,12 @@ match_expand_list s (x:xs) (y:ys) = do
                 match_expand_list s'' xs ys
 match_expand_list _ (x:_) _ =
     exception (termRange x) "too few arguments"
-match_expand_list _ _ (y:_) =
-    exception (termRange y) "too many arguments"
 
-apply :: M.Map Identifier Term -> Term -> Term
+apply :: M.Map Identifier Term -> Term -> Evaluator Term
 apply m t = case t of
-    Node f xs -> case M.lookup f m of
-        Nothing -> Node f ( map ( apply m ) xs )
-        Just t' -> t'
-    _ -> t
+    Node f xs -> do
+        ys <- mapM ( apply m ) xs
+        case M.lookup f m of
+            Nothing -> return $ Node f ys
+            Just t' -> appendArguments t' ys
+    _ -> return t

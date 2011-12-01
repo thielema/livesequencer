@@ -1,4 +1,3 @@
-* file load / save
 
 * precise ALSA timing
   For precise timing it is certainly better
@@ -12,8 +11,10 @@
   and feed them with individual data.
   This is more easily done than distinction using MIDI channels.
 
-* use haskell-src(-exts) for parsing, to be sure
-  we have a subset of haskell
+* use haskell-src(-exts) for parsing,
+  to be sure we have a subset of haskell
+  haskell-src: no support for precedence and associativity
+  haskell-src-ext: no support for source locations
 
 * highlight "the data (Number) that is
   currently being output" in the editor
@@ -25,13 +26,31 @@
   Actually, all active terms should only be highlighted
   for an infinitesimally short time.
   For music highlighting we could highlight terms from NoteOn to corresponding NoteOff.
+  This would not work -
+  if NoteOn is wrapped in f and NoteOff is wrapped in g,
+  then on NoteOn the highlighting of f is switched on
+  and on NoteOff the highlighting of g is switched off?
+  Instead I think we must highlight the complete "backtrace" for the active term
+  (or at least the Wait, since this is what we really show)
+
+* merge editor and highlighter window
+  track all inputs of the editor window and
+  adapt the information in the syntax tree accordingly
 
 * add a type checker to the implementation
   (and data declarations to the language)
 
-* check all head, read, error, unmatched patterns, print, putStr stderr,
-  toProgram, toPitch, toVelocity etc.
+* support different import modes, qualified identifiers
+  and clashing identifiers in modules
+  Only this way, several people can work independently in their modules.
+
+* check all head, read, error, unmatched patterns, irrefutable patterns, print, putStr stderr,
+  toProgram, toPitch, toVelocity,
+  readFile, writeFile and other IO functions,
   whether they should handle exceptions
+  especially in Program there are currently too many 'errors'
+  problem: there will be no warnings about patterns in monadic results
+      e.g. (Number rng n) <- top
 
 * handle for resizing parts of the window
   even better: a way for rearranging parts of the GUI
@@ -54,5 +73,17 @@
   but makes working in the GIT working copy awful,
   because after every change in data/ you have to reinstall the files.
 
+* log to a MIDI file
+  Button "Open log": open a raw file that we log into
+     alternatively there should be an option '--log' for opening the file
+  Button "Close log": copy the raw file into a valid MIDI file
+     closing and wrapping the log should also performed at Quit
+  We could also let an external program log the events,
+  but then we must use ALSA time stamps for precise timing.
+  We could also provide a module that interprets a static program
+  and generates a MIDI file from it like Haskore.
 
+* maybe split Term into Parser and Term module
 
+* allow to enter lyrics
+  show them in status line or in a new window

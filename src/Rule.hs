@@ -4,10 +4,7 @@ import IO
 import Term ( Term(Node), Identifier )
 import qualified Term
 
-import qualified Text.ParserCombinators.Parsec as Parsec
 import Text.PrettyPrint.HughesPJ ( fsep, render, text )
-
-import Control.Monad ( when )
 
 
 data Rule = Rule
@@ -26,10 +23,14 @@ instance Output Rule where
 
 instance Input Rule where
   input = do
-    nm <- input
-    when (not $ Term.isVariable nm)
-        (fail $ show nm ++ " is not a function identifier")
-    ps <- Parsec.many (Term.parse True)
+    t <- input
+    (nm, ps) <-
+        case t of
+            Term.Node nm args ->
+                if Term.isVariable nm
+                  then return (nm, args)
+                  else fail $ show nm ++ " is not a function identifier"
+            _ -> fail $ "the term " ++ show t ++ " is not a valid left-hand side of a rule"
     Term.symbol "="
     r <- input
     Term.symbol ";"

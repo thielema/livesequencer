@@ -16,6 +16,7 @@ import Text.ParserCombinators.Parsec.Expr
 import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
 
 import qualified Data.Set as S
+import Control.Monad.Exception.Synchronous ( Exceptional(Success,Exception) )
 import Control.Monad ( liftM2, mzero )
 import Data.Char (isUpper, isLower)
 import Data.Ord (comparing)
@@ -38,13 +39,13 @@ instance Ord Identifier where
 isConstructor :: Identifier -> Bool
 isConstructor i =
     case name i of
-        (c:_) -> c == '[' || c == ':' || isUpper c
+        c:_ -> c == '[' || c == ':' || isUpper c
         _ -> error "isConstructor: identifier must be non-empty"
 
 isVariable :: Identifier -> Bool
 isVariable i =
     case name i of
-        (c:_) -> isLower c
+        c:_ -> isLower c || elem c operatorSymbols
         _ -> error "isVariable: identifier must be non-empty"
 
 
@@ -96,14 +97,15 @@ infixr 0  $, $!, `seq`
 
 operators :: [[([Char], Assoc)]]
 operators =
-  [ [ ( ".", AssocRight ) ]
+  [ [ ( ".", AssocRight ), ( "!!", AssocLeft ) ]
   , [ ( "^", AssocRight) ]
   , [ ( "*", AssocLeft), ("/", AssocLeft) ]
   , [ ( "+", AssocLeft), ("-", AssocLeft) ]
-  , [ ( ":", AssocRight ) ]
+  , [ ( ":", AssocRight ), ( "++", AssocRight ) ]
   , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ]
   , [ ( "&&", AssocRight ) ]
   , [ ( "||", AssocRight ) ]
+  , [ ( "$",  AssocRight ) ]
   ]
 
 identifierStart, identifierLetter :: CharParser st Char
@@ -159,23 +161,42 @@ viewNode :: Term -> Maybe (String, [Term])
 viewNode (Node f xs) = Just (Term.name f, xs)
 viewNode _ = Nothing
 
-parse :: Bool -> Parser Term
-parse atomic =
+appendArguments :: Term -> [Term] -> Exceptional String Term
+appendArguments g ys =
+    case (g, ys) of
+        (Node f xs, _) -> return $ Node f $ xs ++ ys
+        (t, []) -> return t
+        (t, _) ->
+            Exception $
+            unwords [ "cannot apply ", show t,
+                      "to arguments like a function" ]
+
+parseAtom :: Parser Term
+parseAtom =
         (T.lexeme lexer $ fmap (uncurry Number) $
          ranged (fmap read $ Parsec.many1 Parsec.digit))
     <|> do s <- T.stringLiteral lexer
            return $ String_Literal undefined s
     <|> T.parens lexer input
     <|> bracketed_list
-    <|> liftM2 Node input
-            (if atomic then return [] else Parsec.many ( parse True ))
+    <|> fmap (flip Node []) input
+
+parse :: Parser Term
+parse = do
+    t <- liftM2 appendArguments parseAtom $ Parsec.many parseAtom
+    case t of
+        Success t' -> return t'
+        Exception e -> fail e
 
 instance Input Term where
-  input = Expr.buildExpressionParser table ( parse False )
+  input = Expr.buildExpressionParser table parse
 
 operatorStart, operatorLetter :: CharParser st Char
-operatorStart  = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
-operatorLetter = Parsec.oneOf ":!#$%&*+./<=>?@\\^|-~"
+operatorStart  = Parsec.oneOf operatorSymbols
+operatorLetter = Parsec.oneOf operatorSymbols
+
+operatorSymbols :: [Char]
+operatorSymbols = ":!#$%&*+./<=>?@\\^|-~"
 
 table :: Expr.OperatorTable Char st Term
 table = map ( map binary ) operators

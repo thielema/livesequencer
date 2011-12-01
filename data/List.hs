@@ -2,24 +2,53 @@ module List where
 
 import Midi
 import Tuple
-import Prelude ( (-), (<), negate, Bool(False,True) )
+import Function
+import Prelude ( (-), (+), (<), negate, Bool(False,True) )
+
+
+map f [] = [] ;
+map f (x : xs) = f x : map f xs ;
+
+zipWith f (x : xs) (y : ys) =
+    f x y : zipWith f xs ys ;
+zipWith f xs ys = [] ;
+
+foldr f a [] = a ;
+foldr f a (x : xs) = f x ( foldr f a xs ) ;
+
+foldl f a [] = a ;
+foldl f a (x : xs) = foldl f (f a x) xs ;
+
+length = sum . map (const 1) ;
+
+-- think about a version with constant space usage
+sum = foldl add 0 ;
+
+add x y = x + y ;
 
 
 replicate n x = take n ( repeat x ) ;
 
 repeat s = s : repeat s ;
 
-cycle s = append s (cycle s) ;
+cycle s = s ++ cycle s ;
 
-append [] ys = ys ;
-append (x : xs) ys = x : append xs ys ;
+append = flip ( foldr cons ) ;
 
-concat [] = [] ;
-concat (x : xs) = append x (concat xs) ;
+xs ++ ys = foldr cons ys xs ;
 
-take 0 xs = [] ;
-take n [] = [] ;
-take n (x : xs) = x : take (n-1) xs ;
+cons x xs = x : xs ;
+
+concat = foldr append [];
+
+(x:xs) !! 0 = x ;
+(x:xs) !! n = xs !! (n-1) ;
+[] !! n = error "!!: index too large" ;
+
+take n xs = foldr takeElem (const []) xs n ;
+
+takeElem x go 0 = [] ;
+takeElem x go m = x : go (m-1) ;
 
 drop 0 xs = xs ;
 drop n [] = [] ;
@@ -33,7 +62,7 @@ splitAt 0 xs = Pair [] xs ;
 splitAt n [] = Pair [] [] ;
 splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
 
-consFirst x (Pair xs ys) = Pair (x : xs) ys ;
+consFirst x p = Pair (x : fst p) (snd p) ;
 
 
 merge (Wait a : xs) (Wait b : ys) =
