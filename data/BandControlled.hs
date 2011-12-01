@@ -1,5 +1,6 @@
 module BandControlled where
 
+import Drum
 import Chords
 import Pitch
 import Midi
@@ -25,13 +26,14 @@ chords =
 quad x = concat [x,x,x,x] ;
 
 drums =
-    channel 9 ( concat
-        [ emphasize 16 ( note hn 36 )
-        , concat [ ifThenElse ( checkBox B5 True ) ( note en 38 ) [ Wait en ]
-                 , ifThenElse ( checkBox B6 False ) ( note en 38 ) [ Wait en ]
-                 , ifThenElse ( checkBox B7 False ) ( note en 38 ) [ Wait en ]
-                 , ifThenElse ( checkBox B8 True ) ( note en 38 ) [ Wait en ]
+    drumChannel ( concat
+        [ emphasize 16 ( drum bassDrum1 hn )
+        , concat [ optDrum ( checkBox B5 True  ) acousticSnare en
+                 , optDrum ( checkBox B6 False ) acousticSnare en
+                 , optDrum ( checkBox B7 False ) acousticSnare en
+                 , optDrum ( checkBox B8 True  ) acousticSnare en
                  ]
         ] ) ;
 
-
+optDrum b drm dur =
+    ifThenElse b ( drum drm dur ) ( rest dur ) ;

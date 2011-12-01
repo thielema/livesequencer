@@ -1,5 +1,6 @@
 module Band where
 
+import Drum
 import Chords
 import Pitch
 import Midi
@@ -22,9 +23,9 @@ chords =
                 ] ) ;
 
 drums =
-    channel 9 ( concat
-        [ emphasize 16 ( note hn 36 )
-        , quad ( note en 38 )
+    drumChannel ( concat
+        [ emphasize 16 ( drum bassDrum1 hn )
+        , quad ( drum acousticSnare en )
         ] ) ;
 
 quad x = concat [ x, x, x, x ] ;

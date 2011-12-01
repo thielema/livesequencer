@@ -1,5 +1,6 @@
 module UD where
 
+import Drum
 import Chords
 import Pitch
 import Midi
@@ -46,10 +47,10 @@ quad x = concat [ x, x, x, x ] ;
 twice x = concat [ x, x];
 
 
-bass dur = emphasize 36 (note dur 36) ;
-snare dur = emphasize 16 (note dur 40) ;
+bass dur = emphasize 36 (drum bassDrum1 dur) ;
+snare dur = emphasize 16 (drum electricSnare dur) ;
 
-drums = channel 9 ( concat
+drums = drumChannel ( concat
         [ concat ( concat ( replicate 3
                    [ bass hn, snare hn ] )  )
         , concat [ bass qn, snare hn, snare qn ]
