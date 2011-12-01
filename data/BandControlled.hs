@@ -1,4 +1,4 @@
-module Drum where
+module BandControlled where
 
 import Chords
 import Pitch
