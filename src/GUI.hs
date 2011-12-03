@@ -547,16 +547,16 @@ gui input output = do
               "replace the executed program" ]
     WX.menuLine execMenu
     realTimeItem <- WX.menuItem execMenu
-        [ text := "Real time",
+        [ text := "Real time\tCtrl-1",
           checkable := True,
           checked := True,
           help := "pause according to Wait elements" ]
     slowMotionItem <- WX.menuItem execMenu
-        [ text := "Slow motion",
+        [ text := "Slow motion\tCtrl-2",
           checkable := True,
           help := "pause between every list element" ]
     singleStepItem <- WX.menuItem execMenu
-        [ text := "Single step",
+        [ text := "Single step\tCtrl-3",
           checkable := True,
           help := "wait for user confirmation after every list element" ]
     WX.menuLine execMenu
