@@ -112,7 +112,8 @@ Executable live-sequencer
     containers >=0.3 && <0.5,
     directory >=1.0 && <1.2,
     filepath >=1.1 && <1.3,
-    base >=4.2 && <5
+    base >=4.2 && <5,
+    process
 
 Executable live-sequencer-gui
   Hs-Source-Dirs: src
@@ -156,7 +157,8 @@ Executable live-sequencer-gui
     containers >=0.3 && <0.5,
     directory >=1.0 && <1.2,
     filepath >=1.1 && <1.3,
-    base >=4.2 && <5
+    base >=4.2 && <5,
+    process
 
   If flag(httpServer)
     Hs-Source-Dirs: http/enable
