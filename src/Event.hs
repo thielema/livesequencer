@@ -23,6 +23,9 @@ import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
 
+import qualified System.IO
+import qualified System.Cmd
+
 import qualified Data.Accessor.Monad.Trans.State as AccM
 import qualified Data.Accessor.Tuple as AccTuple
 import Data.Accessor.Basic ((^.), )
@@ -32,7 +35,7 @@ import Data.Bool.HT ( if' )
 
 import Control.Concurrent.Chan
 -- import Control.Concurrent ( threadDelay )
-
+import qualified Control.Concurrent
 
 type Time = Integer
 
@@ -111,6 +114,13 @@ play sq waitChan x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) ->
 --        threadDelay (fromIntegral n * 1000)
         MT.lift $ wait sq waitChan $ Just (n * 10^(6::Int))
+        
+    Just ( "Say", [ arg ] ) -> runIO $ void $ Control.Concurrent.forkIO $ void $ do
+       let cmd = unwords 
+               [ "echo", show arg, "|", "festival", "--tts" ]
+       System.IO.hPutStrLn System.IO.stderr cmd
+       System.Cmd.system cmd
+        
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) ->
             withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan -> do

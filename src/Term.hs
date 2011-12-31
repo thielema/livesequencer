@@ -99,7 +99,7 @@ operators :: [[([Char], Assoc)]]
 operators =
   [ [ ( ".", AssocRight ), ( "!!", AssocLeft ) ]
   , [ ( "^", AssocRight) ]
-  , [ ( "*", AssocLeft), ("/", AssocLeft) ]
+  , [ ( "*", AssocLeft), ("/", AssocLeft), ("%", AssocLeft) ]
   , [ ( "+", AssocLeft), ("-", AssocLeft) ]
   , [ ( ":", AssocRight ), ( "++", AssocRight ) ]
   , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ]
