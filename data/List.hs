@@ -27,6 +27,8 @@ sum = foldl add 0 ;
 add x y = x + y ;
 
 
+reverse = foldl (flip cons) [] ;
+
 replicate n x = take n ( repeat x ) ;
 
 repeat s = s : repeat s ;
