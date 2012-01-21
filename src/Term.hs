@@ -45,7 +45,7 @@ isConstructor i =
 isVariable :: Identifier -> Bool
 isVariable i =
     case name i of
-        c:_ -> isLower c || elem c operatorSymbols
+        c:_ -> isLower c || elem c ('_':operatorSymbols)
         _ -> error "isVariable: identifier must be non-empty"
 
 
