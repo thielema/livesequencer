@@ -1,7 +1,7 @@
 module Midi where
 
 
-data Event a = Wait Integer | Event a ;
+data Event a = Wait Integer | Say String | Event a ;
 
 data Channel a = Channel Integer a ;
 
