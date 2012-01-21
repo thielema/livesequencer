@@ -67,6 +67,10 @@ splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
 consFirst x p = Pair (x : fst p) (snd p) ;
 
 
+afterEach _y [] = [] ;
+afterEach y (x : xs) = x : y : afterEach y xs ;
+
+
 merge (Wait a : xs) (Wait b : ys) =
   mergeWait (a<b) (a-b) a xs b ys ;
 merge (Wait a : xs) (y : ys) =
