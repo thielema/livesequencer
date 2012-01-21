@@ -1,4 +1,4 @@
-module Stream where
+module Music where
 
 import Midi ( Event(Wait, Event, Say), note, Channel(Channel), transposeEvent )
 import List ( map, replicate, repeat, concat, mergeMany, afterEach )
@@ -53,10 +53,10 @@ amap f ( Seq xs ) = Seq ( map ( amap f ) xs );
 
 forever s = Seq ( repeat s ) ;
 
-data Stream a =
+data Music a =
          Atom a
-       | Par [Stream a]
-       | Seq [Stream a] ;
+       | Par [Music a]
+       | Seq [Music a] ;
 
 
 play (Par xs) = mergeMany ( map play xs ) ;
