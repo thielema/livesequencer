@@ -392,12 +392,13 @@ execute program term output sq waitChan =
             AccM.set AccTuple.first Event.SingleStep
             Event.wait sq waitChan Nothing)
         (\x -> do
+            let writeExcMsg = STM.atomically . output . Exception
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
             Exc.resolveT
-                (liftIO . STM.atomically . output . Exception)
-                (Event.play sq waitChan x)
+                (liftIO . writeExcMsg)
+                (Event.play sq waitChan writeExcMsg x)
             case Term.viewNode x of
                 Just ("Wait", _) ->
                     liftIO $ STM.atomically $ output ResetDisplay

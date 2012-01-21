@@ -47,6 +47,8 @@ main = do
         flip MS.evalStateT (Event.RealTime, 0) $
             execute p sq waitChan ( read "main" )
 
+writeExcMsg :: Exception.Message -> IO ()
+writeExcMsg = putStrLn . Exception.statusFromMessage
 
 execute ::
     Program ->
@@ -66,8 +68,8 @@ execute p sq waitChan =
                 Just ("[]", []) -> return ()
                 Just (":", [x, xs]) -> do
                     lift $ resolveT
-                        (liftIO . putStrLn . Exception.statusFromMessage)
-                        (Event.play sq waitChan x)
+                        (liftIO . writeExcMsg)
+                        (Event.play sq waitChan writeExcMsg x)
                     go xs
                 _ -> throwT
                         (termRange s,
