@@ -171,12 +171,31 @@ appendArguments g ys =
             unwords [ "cannot apply ", show t,
                       "to arguments like a function" ]
 
+{- |
+I would like to use 'T.stringLiteral'
+but this skips trailing spaces
+and we need the precise range of the literal.
+However this implementation is very simplistic,
+since T.stringChar is not exported.
+-}
+parseStringLiteral :: Parsec.GenParser Char st String
+parseStringLiteral =
+    flip (<?>) "literal string" $
+--    fmap catMaybes $
+    Parsec.between
+        (Parsec.char '"')
+        (Parsec.char '"' <?> "end of string")
+        (Parsec.many (Parsec.noneOf $ '"':"\n\r\\"))
+--        (Parsec.many (T.stringChar lexer))
+
+
 parseAtom :: Parser Term
 parseAtom =
         (T.lexeme lexer $ fmap (uncurry Number) $
          ranged (fmap read $ Parsec.many1 Parsec.digit))
-    <|> do s <- T.stringLiteral lexer
-           return $ String_Literal undefined s
+    <|> fmap (uncurry String_Literal)
+             (T.lexeme lexer (ranged parseStringLiteral))
+--    <|> fmap (uncurry String_Literal) (ranged (T.stringLiteral lexer))
     <|> T.parens lexer input
     <|> bracketed_list
     <|> fmap (flip Node []) input
