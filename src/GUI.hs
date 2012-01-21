@@ -89,7 +89,7 @@ import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( liftM2, forever, )
+import Control.Monad ( when, liftM2, forever, )
 import Data.Foldable ( forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
@@ -392,12 +392,13 @@ execute program term output sq waitChan =
             AccM.set AccTuple.first Event.SingleStep
             Event.wait sq waitChan Nothing)
         (\x -> do
+            let writeExcMsg = STM.atomically . output . Exception
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
             Exc.resolveT
-                (liftIO . STM.atomically . output . Exception)
-                (Event.play sq waitChan x)
+                (liftIO . writeExcMsg)
+                (Event.play sq waitChan writeExcMsg x)
             case Term.viewNode x of
                 Just ("Wait", _) ->
                     liftIO $ STM.atomically $ output ResetDisplay
@@ -416,6 +417,12 @@ execute program term output sq waitChan =
                      (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                       MW.runWriterT) $
                  Rewrite.runEval p (Rewrite.force_head t)
+             {-
+             This way the term will be pretty printed in the GUI thread
+             which may block the GUI thread.
+             However evaluating it here may defer playing notes,
+             which is not better.
+             -}
              lift $ output . Term log . show $ s
              case Term.viewNode s of
                  Just (":", [x, xs]) -> do
@@ -547,16 +554,16 @@ gui input output = do
               "replace the executed program" ]
     WX.menuLine execMenu
     realTimeItem <- WX.menuItem execMenu
-        [ text := "Real time",
+        [ text := "Real time\tCtrl-1",
           checkable := True,
           checked := True,
           help := "pause according to Wait elements" ]
     slowMotionItem <- WX.menuItem execMenu
-        [ text := "Slow motion",
+        [ text := "Slow motion\tCtrl-2",
           checkable := True,
           help := "pause between every list element" ]
     singleStepItem <- WX.menuItem execMenu
-        [ text := "Single step",
+        [ text := "Single step\tCtrl-3",
           checkable := True,
           help := "wait for user confirmation after every list element" ]
     WX.menuLine execMenu
@@ -620,6 +627,13 @@ gui input output = do
 
     windowMenuItem "errors" frameError
     windowMenuItem "controls" frameControls
+    WX.menuLine windowMenu
+    reducerVisibleItem <- WX.menuItem windowMenu
+        [ text := "current term",
+          checkable := True,
+          checked := True,
+          help := "show or hide current term - " ++
+                  "hiding may improve performance drastically" ]
 
 
     nb <- WX.notebook p [ ]
@@ -812,6 +826,11 @@ gui input output = do
         activateSingleStep
         writeChan input $ Execution $ Mode Event.SingleStep
 
+    set reducerVisibleItem
+        [ on command := do
+             b <- get reducerVisibleItem checked
+             set reducer [ visible := b ]
+             windowReFit reducer ]
 
     set f [
             layout := container p $ margin 5
@@ -882,7 +901,8 @@ gui input output = do
                 set_color nb ( highlighters pnls ) m ( rgb r g b )
         case msg of
             Term steps sr -> do
-                set reducer [ text := sr, cursor := 0 ]
+                get reducerVisibleItem checked >>=
+                    flip when ( set reducer [ text := sr, cursor := 0 ] )
                 forM_ steps $ \step ->
                   case step of
                     Rewrite.Step target mrule -> do

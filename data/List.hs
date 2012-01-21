@@ -3,7 +3,7 @@ module List where
 import Midi
 import Tuple
 import Function
-import Prelude ( (-), (+), (<), negate, Bool(False,True) )
+import Prelude ( (-), (+), (<), negate, Bool(False,True), error )
 
 
 map f [] = [] ;
@@ -26,6 +26,8 @@ sum = foldl add 0 ;
 
 add x y = x + y ;
 
+
+reverse = foldl (flip cons) [] ;
 
 replicate n x = take n ( repeat x ) ;
 
@@ -63,6 +65,10 @@ splitAt n [] = Pair [] [] ;
 splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
 
 consFirst x p = Pair (x : fst p) (snd p) ;
+
+
+afterEach _y [] = [] ;
+afterEach y (x : xs) = x : y : afterEach y xs ;
 
 
 merge (Wait a : xs) (Wait b : ys) =

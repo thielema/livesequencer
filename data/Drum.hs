@@ -1,5 +1,8 @@
 module Drum where
 
+import Midi ( note, channel )
+
+
 drum kind dur = note dur kind ;
 
 drumChannel = channel 9 ;

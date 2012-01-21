@@ -3,7 +3,7 @@ module Pattern where
 import Pitch
 import Midi
 import List
-import Prelude ( (*) )
+import Prelude ( (*), ($) )
 
 
 main = voice ;

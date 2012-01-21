@@ -23,6 +23,11 @@ import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
 
+import qualified System.Process as Proc
+import qualified System.Exit as Exit
+import qualified System.IO.Strict as StrictIO
+import qualified System.IO as IO
+
 import qualified Data.Accessor.Monad.Trans.State as AccM
 import qualified Data.Accessor.Tuple as AccTuple
 import Data.Accessor.Basic ((^.), )
@@ -30,8 +35,8 @@ import Data.Accessor.Basic ((^.), )
 import Data.Maybe ( isJust )
 import Data.Bool.HT ( if' )
 
-import Control.Concurrent.Chan
--- import Control.Concurrent ( threadDelay )
+import Control.Concurrent.Chan ( Chan, readChan, writeChan )
+import Control.Concurrent ( forkIO {- threadDelay -} )
 
 
 type Time = Integer
@@ -105,12 +110,34 @@ play ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
     Sequencer mode ->
     Chan WaitResult ->
+    (Exception.Message -> IO ()) ->
     Term ->
     ExceptionalT Exception.Message (MS.StateT State IO) ()
-play sq waitChan x = case Term.viewNode x of
+play sq waitChan throwAsync x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) ->
 --        threadDelay (fromIntegral n * 1000)
         MT.lift $ wait sq waitChan $ Just (n * 10^(6::Int))
+
+    Just ( "Say", [String_Literal rng arg] ) -> runIO $ do
+        let cmd = unwords
+                      [ "echo", show arg, "|", "festival", "--tts" ]
+        Log.put cmd
+        void $ forkIO $ do
+            (inp,_out,err,pid) <-
+                Proc.runInteractiveProcess
+                    "festival" [ "--tts" ] Nothing Nothing
+            void $ forkIO (IO.hPutStr inp arg >> IO.hClose inp)
+            errText <- StrictIO.hGetContents err
+            exitCode <- Proc.waitForProcess pid
+            case exitCode of
+                Exit.ExitSuccess ->
+                    when (not (null errText)) $
+                    throwAsync $
+                    Exception.Message Exception.Term rng ("warning: " ++ errText)
+                Exit.ExitFailure _ ->
+                    throwAsync $
+                    Exception.Message Exception.Term rng errText
+
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) ->
             withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan -> do
