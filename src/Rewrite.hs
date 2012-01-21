@@ -82,7 +82,7 @@ top t = case t of
 -- | do one reduction step at the root
 eval :: Module.FunctionDeclarations -> Identifier -> [Term] -> Evaluator Term
 eval _ i xs
-  | name i `elem` [ "compare", "<", "-", "+", "*", "/", "%" ] = do
+  | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
       ys <- mapM top xs
       lift $ tell $ [ Step { target = i, rule = Nothing } ]
       case ys of
@@ -100,8 +100,8 @@ eval _ i xs
                   "-" -> return $ Number (range i) $ a - b
                   "+" -> return $ Number (range i) $ a + b
                   "*" -> return $ Number (range i) $ a * b
-                  "/" -> return $ Number (range i) $ div a b
-                  "%" -> return $ Number (range i) $ mod a b
+                  "div" -> return $ Number (range i) $ div a b
+                  "mod" -> return $ Number (range i) $ mod a b
                   opName ->
                       exception (range i) $ "unknown operation " ++ show opName
           _ -> exception (range i) $ "wrong number of arguments"
