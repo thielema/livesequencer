@@ -122,6 +122,12 @@ identifierCore =
 identifier :: Parser String
 identifier = T.identifier lexer
 
+parenOperator :: Parser Identifier
+parenOperator =
+    T.parens lexer $
+    fmap (uncurry Identifier) $ ranged $
+    liftM2 (:) operatorStart (Parsec.many operatorLetter)
+
 symbol :: String -> Parser ()
 symbol = void . T.symbol lexer
 

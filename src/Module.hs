@@ -1,10 +1,9 @@
-{-# language EmptyDataDecls #-}
-
 module Module where
 
 import IO
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
+import qualified Term
 import qualified Rule
 
 import qualified Data.Map as M
@@ -33,11 +32,11 @@ instance Input Import where
       void $ Parsec.optionMaybe $ reserved lexer "hiding"
       void $ Parsec.optionMaybe $
           Token.parens lexer $ Token.commaSep lexer $
-          (do ident <- Token.identifier lexer
+          (do ident <- input
               void $ Parsec.option [] $ Token.parens lexer $
                   Token.commaSep lexer $ Token.identifier lexer
               return ident) <|>
-          Token.parens lexer (Token.operator lexer)
+          Term.parenOperator
       return $ Import { qualified = q, source = t, rename = r }
 
 instance Output Import where
@@ -48,6 +47,30 @@ instance Output Import where
                         Nothing -> empty
                         Just r  -> text "as" <+> output r
                     ]
+
+
+data TypeSig = TypeSig [Identifier] String String
+
+instance Input TypeSig where
+    input = do
+        names <-
+            Token.commaSep lexer
+                (input <|> Term.parenOperator)
+        reservedOp lexer "::"
+        context <-
+            (Parsec.try $
+             Parsec.manyTill
+                (Parsec.noneOf ";")
+                (Parsec.try $ reservedOp lexer "=>"))
+            <|>
+            return ""
+        typeExpr <- Parsec.many (Parsec.noneOf ";")
+        void $ Token.semi lexer
+        return $ TypeSig names context typeExpr
+
+instance Output TypeSig where
+    output _ = empty
+
 
 data Data = Data { lhs :: Term
                  , rhs :: [ Term ]
@@ -66,19 +89,20 @@ instance Output Data where
     output d = text "data" <+> output ( lhs d ) <+> text "="
         $$ hsep ( punctuate ( text "|") $ map output ( rhs d ) ) <+> text ";"
 
-data Type
 
 data Declaration = Rule_Declaration Rule
-                 | Type_Declaration Type
+                 | Type_Declaration TypeSig
                  | Data_Declaration Data
 
 instance Input Declaration where
-    input = do fmap Data_Declaration input
-        <|> do fmap Rule_Declaration input
+    input = fmap Data_Declaration input
+        <|> fmap Type_Declaration (Parsec.try input)
+        <|> fmap Rule_Declaration input
 
 instance Output Declaration where
     output decl = case decl of
         Data_Declaration d -> output d
+        Type_Declaration d -> output d
         Rule_Declaration d -> output d
 
 -- | on module parsing:
