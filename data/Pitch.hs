@@ -4,7 +4,18 @@ module Pitch where
 http://en.wikipedia.org/wiki/Scientific_pitch_notation
 http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
 -}
+pitch :: Integer -> Integer -> Integer ;
 pitch cls octave = cls + (octave+1)*12 ;
+
+cb, db, eb, fb, gb, ab, bb :: Integer ;
+
+c, cis, ces, cs, cf,
+  d, dis, des, ds, df,
+  e, eis, ees, es, ef,
+  f, fis, fes, fs, ff,
+  g, gis, ges, gs, gf,
+  a, ais, aes, as, af,
+  b, bis, bes, bs, bf :: Integer -> Integer ;
 
 cb =  0 ; c = pitch cb ; cis = cs ; ces = cf ;
 db =  2 ; d = pitch db ; dis = ds ; des = df ;

@@ -1,4 +1,5 @@
 module Bool where
 
-ifThenElse True  y n = y ;
-ifThenElse False y n = n ;
+ifThenElse :: Bool -> a -> a -> a ;
+ifThenElse True  y _ = y ;
+ifThenElse False _ n = n ;
