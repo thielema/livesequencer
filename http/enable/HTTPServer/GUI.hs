@@ -6,7 +6,7 @@ module HTTPServer.GUI (
     methods,
     ) where
 
-import Term ( Identifier )
+import qualified Module
 import Utility.WX ( cursor )
 
 import qualified HTTPServer
@@ -26,12 +26,12 @@ import qualified Data.Map as M
 
 
 data GuiUpdate =
-     GetModuleList { _moduleList :: MVar [ Identifier ] }
+     GetModuleList { _moduleList :: MVar [ Module.Name ] }
    | GetModuleContent {
-         _moduleName :: Identifier,
+         _moduleName :: Module.Name,
          _moduleContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
    | UpdateModuleContent {
-         _moduleName :: Identifier,
+         _moduleName :: Module.Name,
          _moduleEditableContent :: String,
          _moduleNewContent :: MVar Feedback }
 
@@ -56,9 +56,9 @@ methods output =
     }
 
 update ::
-    (MVar Feedback -> Identifier -> String -> Int -> IO ()) ->
+    (MVar Feedback -> Module.Name -> String -> Int -> IO ()) ->
     WX.StatusField ->
-    IORef (M.Map Identifier (a, TextCtrl b, c)) ->
+    IORef (M.Map Module.Name (a, TextCtrl b, c)) ->
     GuiUpdate ->
     IO ()
 update input status panels req =
@@ -71,7 +71,7 @@ update input status panels req =
                 pnls <- lift $ readIORef panels
                 (_,editor,_) <- getModule pnls name
                 lift $ set status [ text :=
-                    "module " ++ show name ++ " downloaded by web client" ]
+                    Module.tellName name ++ " downloaded by web client" ]
                 lift $ get editor text
 
         UpdateModuleContent name content contentMVar -> do
@@ -81,11 +81,11 @@ update input status panels req =
                     case M.lookup name pnls of
                         Nothing ->
                             Exc.throwT
-                                ("Module " ++ show name ++ " no longer available.",
+                                (Module.tellName name ++ " no longer available.",
                                  "")
                         Just pnl -> return pnl
                 lift $ set status [ text :=
-                    "module " ++ show name ++ " updated by web client" ]
+                    Module.tellName name ++ " updated by web client" ]
                 pos <- lift $ get editor cursor
                 localContent <- lift $ get editor text
                 case HTTPServer.splitProtected localContent of
@@ -110,11 +110,11 @@ update input status panels req =
 
 getModule ::
     (Monad m) =>
-    M.Map Identifier a ->
-    Identifier ->
+    M.Map Module.Name a ->
+    Module.Name ->
     Exc.ExceptionalT HTTPServer.Error m a
 getModule pnls name =
     Exc.ExceptionalT $ return $
     Exc.fromMaybe
-        (HTTPServer.notFound $ "module " ++ show name ++ " not found") $
+        (HTTPServer.notFound $ Module.tellName name ++ " not found") $
     M.lookup name pnls

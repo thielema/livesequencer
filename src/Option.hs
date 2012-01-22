@@ -1,8 +1,11 @@
 module Option where
 
-import Term ( Identifier )
+import qualified Module
+import qualified IO
 import Option.Utility ( exitFailureMsg, fmapOptDescr )
 import qualified HTTPServer.Option as HTTP
+
+import qualified Text.ParserCombinators.Parsec as Parsec
 
 import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
@@ -20,7 +23,7 @@ import Data.List ( intercalate )
 
 
 data Option = Option {
-        moduleName :: Identifier,
+        moduleName :: Module.Name,
         importPaths :: [FilePath],
         connectTo, connectFrom :: Maybe String,
         httpOption :: HTTP.Option
@@ -85,6 +88,6 @@ get = do
         [] -> exitFailureMsg "no module specified"
         _:_:_ -> exitFailureMsg "more than one module specified"
         [modu] ->
-            case reads modu of
-                [(ident,"")] -> return $ parsedOpts {moduleName = ident}
-                _ -> exitFailureMsg $ show modu ++ " is not a module name"
+            case Parsec.parse IO.input "" modu of
+                Right name -> return $ parsedOpts {moduleName = name}
+                Left _ -> exitFailureMsg $ show modu ++ " is not a module name"

@@ -22,10 +22,10 @@ import Utility ( void )
 
 
 data Import = Import { qualified :: Bool
-                     , source :: Identifier
+                     , source :: Name
                      , rename :: Maybe Identifier
                      }
-    deriving (Show)
+--    deriving (Show)
 
 {-
 A semicolon behind an import statement is necessary when parsing
@@ -57,7 +57,7 @@ instance Input Import where
 
 instance Output Import where
     output i = hsep [ text "import"
-                    , if qualified i then text "qualified" else  empty
+                    , if qualified i then text "qualified" else empty
                     , output $ source i
                     , case rename i of
                         Nothing -> empty
@@ -149,13 +149,26 @@ instance Output Declaration where
 -- instead, the actual file name is kept in source_location (defined here)
 
 data Module = Module
-               { name :: Identifier
+               { name :: Name
                , imports :: [ Import ]
                , declarations :: [ Declaration ]
                , functions :: FunctionDeclarations
                , source_text :: String
                , source_location :: FilePath
                }
+
+newtype Name = Name {deconsName :: String}
+    deriving (Eq, Ord)
+
+instance Input Name where
+    input = fmap Name Term.identifier
+
+instance Output Name where
+    output (Name n) = text n
+
+tellName :: Name -> String
+tellName (Name n) = "module " ++ n
+
 
 type FunctionDeclarations = M.Map Identifier [Rule]
 
@@ -200,7 +213,7 @@ parse ::
     FilePath -> String ->
     Parsec.GenParser Char () Module
 parse srcLoc srcText = do
-    m <- Parsec.option ( read "Main" ) $ do
+    m <- Parsec.option (Name "Main") $ do
         reserved lexer "module"
         m <- input
         reserved lexer "where"
