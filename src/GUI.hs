@@ -235,7 +235,7 @@ modifyModule program output moduleName sourceCode pos = do
         Exc.mapExceptionT Program.messageFromParserError $
         Exc.fromEitherT $ return $
         Parsec.parse
-            (Module.parse (Module.source_location previous) sourceCode)
+            (Module.parseUntilEOF (Module.source_location previous) sourceCode)
             ( show moduleName ) sourceCode
     lift . writeTVar program =<<
         (Exc.ExceptionalT $ return $

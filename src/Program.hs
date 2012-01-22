@@ -95,7 +95,7 @@ load dirs p n ff = do
             (\e -> Exception.Message
                 Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $
-        fmap (\s -> parse (Module.parse ff s) n s) $ readFile ff
+        fmap (\s -> parse (Module.parseUntilEOF ff s) n s) $ readFile ff
     case parseResult of
         Left err -> Exc.throwT (messageFromParserError err)
         Right m -> do

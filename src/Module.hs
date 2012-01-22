@@ -213,6 +213,15 @@ parse srcLoc srcText = do
         source_text = srcText,
         source_location = srcLoc }
 
+parseUntilEOF ::
+    FilePath -> String ->
+    Parsec.GenParser Char () Module
+parseUntilEOF srcLoc srcText = do
+    m <- parse srcLoc srcText
+    Parsec.eof
+    return m
+
+
 instance Output Module where
   output p = vcat
     [ hsep [ text "module", output $ name p, text "where" ]
