@@ -1,6 +1,6 @@
 module Module where
 
-import IO
+import IO ( Input, Output, input, output )
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
 import qualified Type
@@ -15,7 +15,7 @@ import qualified Text.ParserCombinators.Parsec.Token as Token
 import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
 import Text.PrettyPrint.HughesPJ
-           ( (<+>), ($$), empty, hsep, sep, hang, punctuate, nest,
+           ( (<+>), ($$), empty, hsep, sep, hang, punctuate,
              render, text, vcat, parens )
 
 import Utility ( void )
@@ -191,8 +191,15 @@ make_functions =
             Rule_Declaration rule -> Just (Rule.name rule, [rule])
             _ -> Nothing)
 
+
+{-
 instance Input Module where
   input = do
+-}
+parse ::
+    FilePath -> String ->
+    Parsec.GenParser Char () Module
+parse srcLoc srcText = do
     m <- Parsec.option ( read "Main" ) $ do
         reserved lexer "module"
         m <- input
@@ -201,8 +208,10 @@ instance Input Module where
     is <- Parsec.many input
     ds <- Parsec.many input
     return $ Module {
-        name = m , imports = is , declarations = ds,
-        functions = make_functions ds }
+        name = m, imports = is, declarations = ds,
+        functions = make_functions ds,
+        source_text = srcText,
+        source_location = srcLoc }
 
 instance Output Module where
   output p = vcat
@@ -212,4 +221,4 @@ instance Output Module where
     ]
 
 instance Show Module where show = render . output
-instance Read Module where readsPrec = parsec_reader
+-- instance Read Module where readsPrec = parsec_reader

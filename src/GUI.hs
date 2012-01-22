@@ -217,6 +217,10 @@ formatPitch p =
     in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
 
 
+{-
+TODO: handle the case that the module changed its name
+(might happen if user changes the text in the editor)
+-}
 modifyModule ::
     TVar Program ->
     TChan GuiUpdate ->
@@ -225,20 +229,14 @@ modifyModule ::
     Int ->
     Exc.ExceptionalT Exception.Message STM ()
 modifyModule program output moduleName sourceCode pos = do
-    m0 <-
-        Exc.mapExceptionT Program.messageFromParserError $
-        Exc.fromEitherT $ return $
-        Parsec.parse IO.input ( show moduleName ) sourceCode
-    -- TODO: handle the case that the module changed its name
-    -- (might happen if user changes the text in the editor)
     p <- lift $ readTVar program
     let Just previous = M.lookup moduleName $ modules p
-    let m = m0 { Module.source_location =
-                     Module.source_location previous
-               , Module.source_text = sourceCode
-               -- for now ignore renaming
-               , Module.name = moduleName
-               }
+    m <-
+        Exc.mapExceptionT Program.messageFromParserError $
+        Exc.fromEitherT $ return $
+        Parsec.parse
+            (Module.parse (Module.source_location previous) sourceCode)
+            ( show moduleName ) sourceCode
     lift . writeTVar program =<<
         (Exc.ExceptionalT $ return $
          Program.add_module m p)

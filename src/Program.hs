@@ -1,6 +1,5 @@
 module Program where
 
-import IO
 import Term ( Range (Range, start), Identifier (..) )
 import Module ( Module )
 import qualified Module
@@ -91,17 +90,15 @@ load ::
     [ FilePath ] -> Program -> String -> FilePath ->
     Exc.ExceptionalT Exception.Message IO Program
 load dirs p n ff = do
-    (parseResult, content) <-
+    parseResult <-
         Exc.mapExceptionT
             (\e -> Exception.Message
                 Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $
-        fmap (\s -> (parse input n s, s)) $ readFile ff
+        fmap (\s -> parse (Module.parse ff s) n s) $ readFile ff
     case parseResult of
         Left err -> Exc.throwT (messageFromParserError err)
-        Right m0 -> do
-            let m = m0 { Module.source_location = ff,
-                         Module.source_text = content }
+        Right m -> do
             lift $ Log.put $ show m
             pNew <- Exc.ExceptionalT $ return $ add_module m p
             foldM ( chaser dirs ) pNew $
