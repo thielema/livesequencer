@@ -3,6 +3,7 @@ module Module where
 import IO
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
+import qualified Type
 import qualified Term
 import qualified Rule
 
@@ -13,7 +14,9 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Token as Token
 import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
-import Text.PrettyPrint.HughesPJ ((<+>), ($$), empty, hsep, punctuate, render, text, vcat )
+import Text.PrettyPrint.HughesPJ
+           ( (<+>), ($$), empty, hsep, sep, hang, punctuate, nest,
+             render, text, vcat, parens )
 
 import Utility ( void )
 
@@ -22,7 +25,18 @@ data Import = Import { qualified :: Bool
                      , source :: Identifier
                      , rename :: Maybe Identifier
                      }
+    deriving (Show)
 
+{-
+A semicolon behind an import statement is necessary when parsing
+
+> import Prelude ;
+>
+> (+) :: a -> a -> a
+
+otherwise the parentheses around the plus
+would be interpreted as parentheses behind @Prelude@.
+-}
 instance Input Import where
     input = do
       reserved lexer "import"
@@ -35,8 +49,10 @@ instance Input Import where
           (do ident <- input
               void $ Parsec.option [] $ Token.parens lexer $
                   Token.commaSep lexer $ Token.identifier lexer
-              return ident) <|>
+              return ident)
+          <|>
           Term.parenOperator
+      void $ Parsec.option "" $ Token.semi lexer
       return $ Import { qualified = q, source = t, rename = r }
 
 instance Output Import where
@@ -49,32 +65,40 @@ instance Output Import where
                     ]
 
 
-data TypeSig = TypeSig [Identifier] String String
+data TypeSig = TypeSig [Identifier] [Term] Term
+    deriving (Show)
+
+parseIdentList :: Parsec.CharParser () [Identifier]
+parseIdentList =
+    Token.commaSep lexer
+        (input <|> Term.parenOperator)
 
 instance Input TypeSig where
     input = do
-        names <-
-            Token.commaSep lexer
-                (input <|> Term.parenOperator)
+        names <- parseIdentList
         reservedOp lexer "::"
-        context <-
-            (Parsec.try $
-             Parsec.manyTill
-                (Parsec.noneOf ";")
-                (Parsec.try $ reservedOp lexer "=>"))
-            <|>
-            return ""
-        typeExpr <- Parsec.many (Parsec.noneOf ";")
+        context <- Type.parseContext
+        typeExpr <- Type.parseExpression
         void $ Token.semi lexer
         return $ TypeSig names context typeExpr
 
 instance Output TypeSig where
-    output _ = empty
+    output (TypeSig names context typeExpr) =
+        hang
+            (hsep ( punctuate ( text "," ) $ map output names ) <+> text "::")
+            4
+            (sep
+                [if null context
+                   then empty
+                   else parens ( hsep ( punctuate ( text "," ) $
+                                 map output context ) ) <+> text "=>",
+                 output typeExpr <+> text ";"])
 
 
 data Data = Data { lhs :: Term
                  , rhs :: [ Term ]
                  }
+    deriving (Show)
 
 instance Input Data where
     input = do
@@ -87,16 +111,28 @@ instance Input Data where
 
 instance Output Data where
     output d = text "data" <+> output ( lhs d ) <+> text "="
-        $$ hsep ( punctuate ( text "|") $ map output ( rhs d ) ) <+> text ";"
+        $$ hsep ( punctuate ( text "|" ) $ map output ( rhs d ) ) <+> text ";"
 
 
 data Declaration = Rule_Declaration Rule
                  | Type_Declaration TypeSig
                  | Data_Declaration Data
+    deriving (Show)
 
 instance Input Declaration where
     input = fmap Data_Declaration input
-        <|> fmap Type_Declaration (Parsec.try input)
+        <|> fmap Type_Declaration (do
+                names <- Parsec.try $ do
+                    names <- parseIdentList
+                    reservedOp lexer "::"
+                    return names
+                context <-
+                    Parsec.try Type.parseContext
+                    <|>
+                    return []
+                typeExpr <- Type.parseExpression
+                void $ Token.semi lexer
+                return $ TypeSig names context typeExpr)
         <|> fmap Rule_Declaration input
 
 instance Output Declaration where

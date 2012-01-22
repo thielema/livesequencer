@@ -1,6 +1,6 @@
 module Term where
 
-import IO
+import IO ( Input, Output, input, output, parsec_reader )
 import Utility ( void )
 
 import qualified Text.ParserCombinators.Parsec.Token as T
@@ -124,7 +124,7 @@ identifier = T.identifier lexer
 
 parenOperator :: Parser Identifier
 parenOperator =
-    T.parens lexer $
+    T.parens lexer $ T.lexeme lexer $
     fmap (uncurry Identifier) $ ranged $
     liftM2 (:) operatorStart (Parsec.many operatorLetter)
 
