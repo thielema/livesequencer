@@ -1,6 +1,5 @@
 module Program where
 
-import IO
 import Term ( Range (Range, start), Identifier (..) )
 import Module ( Module )
 import qualified Module
@@ -28,10 +27,10 @@ import Data.List.HT ( chop )
 
 
 data Program = Program
-     { modules :: M.Map Identifier Module
+     { modules :: M.Map Module.Name Module
      , functions :: Module.FunctionDeclarations
      }
-    deriving (Show)
+--    deriving (Show)
 
 empty :: Program
 empty =
@@ -68,40 +67,39 @@ union_functions m0 m1 =
 
 -- | load from disk, with import chasing
 chase ::
-    [ FilePath ] -> Identifier ->
+    [ FilePath ] -> Module.Name ->
     Exc.ExceptionalT Exception.Message IO Program
 chase dirs n =
-    chaser dirs empty  n
+    chaser dirs empty n
 
 chaser ::
-    [ FilePath ] -> Program -> Identifier ->
+    [ FilePath ] -> Program -> Module.Name ->
     Exc.ExceptionalT Exception.Message IO Program
 chaser dirs p n = do
-    lift $ Log.put $ unwords [ "chasing", "module", show n ]
+    lift $ Log.put $ "chasing " ++ Module.tellName n
     case M.lookup n ( modules p ) of
         Just _ -> lift $ do
             Log.put $ "module is already loaded"
             return p
         Nothing ->
-            load dirs p (show n) =<<
-            chaseFile dirs
-                ( FP.addExtension (FP.joinPath $ chop ('.'==) $ Term.name n) "hs" )
+            let nn = Module.deconsName n
+            in  load dirs p nn =<<
+                chaseFile dirs
+                    ( FP.addExtension (FP.joinPath $ chop ('.'==) nn) "hs" )
 
 load ::
     [ FilePath ] -> Program -> String -> FilePath ->
     Exc.ExceptionalT Exception.Message IO Program
 load dirs p n ff = do
-    (parseResult, content) <-
+    parseResult <-
         Exc.mapExceptionT
             (\e -> Exception.Message
                 Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $
-        fmap (\s -> (parse input n s, s)) $ readFile ff
+        fmap (\s -> parse (Module.parseUntilEOF ff s) n s) $ readFile ff
     case parseResult of
         Left err -> Exc.throwT (messageFromParserError err)
-        Right m0 -> do
-            let m = m0 { Module.source_location = ff,
-                         Module.source_text = content }
+        Right m -> do
             lift $ Log.put $ show m
             pNew <- Exc.ExceptionalT $ return $ add_module m p
             foldM ( chaser dirs ) pNew $

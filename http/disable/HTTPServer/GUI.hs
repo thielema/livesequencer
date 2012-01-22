@@ -8,7 +8,7 @@ module HTTPServer.GUI (
 
 import qualified HTTPServer.Option as Option
 
-import Term ( Identifier )
+import qualified Module
 
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Controls ( TextCtrl )
@@ -38,9 +38,9 @@ methods :: (GuiUpdate -> IO ()) -> Methods
 methods _output = Methods
 
 update ::
-    (MVar Feedback -> Identifier -> String -> Int -> IO ()) ->
+    (MVar Feedback -> Module.Name -> String -> Int -> IO ()) ->
     WX.StatusField ->
-    IORef (M.Map Identifier (a, TextCtrl b, c)) ->
+    IORef (M.Map Module.Name (a, TextCtrl b, c)) ->
     GuiUpdate ->
     IO ()
 update _input _status _panels _req = return ()

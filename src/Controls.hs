@@ -32,10 +32,13 @@ data Event = EventBool Term.Identifier Bool
 data Control = CheckBox Bool
 
 
+moduleName :: Module.Name
+moduleName = Module.Name "Controls"
+
 get_controller_module :: Program.Program -> Module.Module
 get_controller_module p =
-        let Just m = M.lookup ( read "Controls" ) $ Program.modules p
-        in  m
+    let Just m = M.lookup moduleName $ Program.modules p
+    in  m
 
 change_controller_module ::
     Program.Program ->
@@ -62,7 +65,7 @@ controller_module controls =
             ( name, CheckBox deflt ) <- controls
             return $ Module.Rule_Declaration
                    $ controller_rule name deflt
-        m = Module.Module { Module.name = read "Controls"
+        m = Module.Module { Module.name = moduleName
                  , Module.imports = []
                  , Module.source_text = show m
                  , Module.source_location = "/dev/null"

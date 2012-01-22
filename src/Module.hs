@@ -1,6 +1,6 @@
 module Module where
 
-import IO
+import IO ( Input, Output, input, output )
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
 import qualified Type
@@ -15,17 +15,17 @@ import qualified Text.ParserCombinators.Parsec.Token as Token
 import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
 import Text.PrettyPrint.HughesPJ
-           ( (<+>), ($$), empty, hsep, sep, hang, punctuate, nest,
+           ( (<+>), ($$), empty, hsep, sep, hang, punctuate,
              render, text, vcat, parens )
 
 import Utility ( void )
 
 
 data Import = Import { qualified :: Bool
-                     , source :: Identifier
+                     , source :: Name
                      , rename :: Maybe Identifier
                      }
-    deriving (Show)
+--    deriving (Show)
 
 {-
 A semicolon behind an import statement is necessary when parsing
@@ -57,7 +57,7 @@ instance Input Import where
 
 instance Output Import where
     output i = hsep [ text "import"
-                    , if qualified i then text "qualified" else  empty
+                    , if qualified i then text "qualified" else empty
                     , output $ source i
                     , case rename i of
                         Nothing -> empty
@@ -149,13 +149,26 @@ instance Output Declaration where
 -- instead, the actual file name is kept in source_location (defined here)
 
 data Module = Module
-               { name :: Identifier
+               { name :: Name
                , imports :: [ Import ]
                , declarations :: [ Declaration ]
                , functions :: FunctionDeclarations
                , source_text :: String
                , source_location :: FilePath
                }
+
+newtype Name = Name {deconsName :: String}
+    deriving (Eq, Ord)
+
+instance Input Name where
+    input = fmap Name Term.identifier
+
+instance Output Name where
+    output (Name n) = text n
+
+tellName :: Name -> String
+tellName (Name n) = "module " ++ n
+
 
 type FunctionDeclarations = M.Map Identifier [Rule]
 
@@ -191,9 +204,16 @@ make_functions =
             Rule_Declaration rule -> Just (Rule.name rule, [rule])
             _ -> Nothing)
 
+
+{-
 instance Input Module where
   input = do
-    m <- Parsec.option ( read "Main" ) $ do
+-}
+parse ::
+    FilePath -> String ->
+    Parsec.GenParser Char () Module
+parse srcLoc srcText = do
+    m <- Parsec.option (Name "Main") $ do
         reserved lexer "module"
         m <- input
         reserved lexer "where"
@@ -201,8 +221,19 @@ instance Input Module where
     is <- Parsec.many input
     ds <- Parsec.many input
     return $ Module {
-        name = m , imports = is , declarations = ds,
-        functions = make_functions ds }
+        name = m, imports = is, declarations = ds,
+        functions = make_functions ds,
+        source_text = srcText,
+        source_location = srcLoc }
+
+parseUntilEOF ::
+    FilePath -> String ->
+    Parsec.GenParser Char () Module
+parseUntilEOF srcLoc srcText = do
+    m <- parse srcLoc srcText
+    Parsec.eof
+    return m
+
 
 instance Output Module where
   output p = vcat
@@ -212,4 +243,4 @@ instance Output Module where
     ]
 
 instance Show Module where show = render . output
-instance Read Module where readsPrec = parsec_reader
+-- instance Read Module where readsPrec = parsec_reader

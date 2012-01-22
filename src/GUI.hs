@@ -148,7 +148,7 @@ main = do
 
 -- | messages that are sent from GUI to machine
 data Action =
-     Modification (Maybe (MVar HTTPGui.Feedback)) Identifier String Int
+     Modification (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
    | Execution Execution
    | NextStep
@@ -164,7 +164,7 @@ data GuiUpdate =
      Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
    | Exception { _message :: Exception.Message }
    | Register Program [(Identifier, Controls.Control)]
-   | Refresh { _moduleName :: Identifier, _content :: String, _position :: Int }
+   | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
    | HTTP HTTPGui.GuiUpdate
    | Running { _runningMode :: Event.WaitMode }
@@ -217,28 +217,26 @@ formatPitch p =
     in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
 
 
+{-
+TODO: handle the case that the module changed its name
+(might happen if user changes the text in the editor)
+-}
 modifyModule ::
     TVar Program ->
     TChan GuiUpdate ->
-    Identifier ->
+    Module.Name ->
     [Char] ->
     Int ->
     Exc.ExceptionalT Exception.Message STM ()
 modifyModule program output moduleName sourceCode pos = do
-    m0 <-
-        Exc.mapExceptionT Program.messageFromParserError $
-        Exc.fromEitherT $ return $
-        Parsec.parse IO.input ( show moduleName ) sourceCode
-    -- TODO: handle the case that the module changed its name
-    -- (might happen if user changes the text in the editor)
     p <- lift $ readTVar program
     let Just previous = M.lookup moduleName $ modules p
-    let m = m0 { Module.source_location =
-                     Module.source_location previous
-               , Module.source_text = sourceCode
-               -- for now ignore renaming
-               , Module.name = moduleName
-               }
+    m <-
+        Exc.mapExceptionT Program.messageFromParserError $
+        Exc.fromEitherT $ return $
+        Parsec.parse
+            (Module.parseUntilEOF (Module.source_location previous) sourceCode)
+            ( Module.deconsName moduleName ) sourceCode
     lift . writeTVar program =<<
         (Exc.ExceptionalT $ return $
          Program.add_module m p)
@@ -319,7 +317,7 @@ machine input output importPaths progInit sq = do
                                 withMode Event.RealTime $ writeTMVar term t
             Modification feedback moduleName sourceCode pos -> do
                 Log.put $
-                    "module " ++ show moduleName ++
+                    Module.tellName moduleName ++
                     " has new input\n" ++ sourceCode
                 case feedback of
                     Nothing ->
@@ -653,7 +651,7 @@ gui input output = do
                 Left err ->
                     writeTChanIO output $
                     Exception $ Exception.Message Exception.InOut
-                        (Program.dummyRange (show moduleName))
+                        (Program.dummyRange (Module.deconsName moduleName))
                         (Err.ioeGetErrorString err)
                 Right () -> return ()
 
@@ -679,7 +677,7 @@ gui input output = do
                   content <- readFile path
                   set editor [ text := content ]
                   set status [
-                      text := "module " ++ show moduleName ++ " reloaded from " ++ path ]
+                      text := Module.tellName moduleName ++ " reloaded from " ++ path ]
           ]
 
     let getCurrentModule = do
@@ -697,7 +695,7 @@ gui input output = do
                 -- Log.put path
                 writeFile path content
                 set status [
-                    text := "module " ++ show moduleName ++ " saved to " ++ path ]
+                    text := Module.tellName moduleName ++ " saved to " ++ path ]
 
     set saveItem [
           on command := do
@@ -710,7 +708,7 @@ gui input output = do
               -- print (path,file)
               mfilename <- WX.fileSaveDialog
                   f False {- change current directory -} True
-                  ("Save module " ++ show moduleName) haskellFilenames path file
+                  ("Save " ++ Module.tellName moduleName) haskellFilenames path file
               forM_ mfilename $ \fileName -> do
                   saveModule (fileName, moduleName, content)
                   modifyIORef program $ \prg ->
@@ -728,7 +726,8 @@ gui input output = do
 
             updateErrorLog $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
-                    Term.name moduleName /= Pos.sourceName (Term.start errorRng)
+                    Module.deconsName moduleName /=
+                    Pos.sourceName (Term.start errorRng)
 
     set refreshItem
         [ on command := do
@@ -895,7 +894,7 @@ gui input output = do
     registerMyEvent f $ do
         msg <- readChan out
         let setColorHighlighters ::
-                M.Map Identifier [Identifier] -> Int -> Int -> Int -> IO ()
+                M.Map Module.Name [Identifier] -> Int -> Int -> Int -> IO ()
             setColorHighlighters m r g b = do
                 pnls <- readIORef panels
                 set_color nb ( highlighters pnls ) m ( rgb r g b )
@@ -909,19 +908,17 @@ gui input output = do
 
                         let m = M.fromList $ do
                               t <- target : maybeToList mrule
-                              (ident,_) <-
-                                  reads $ Pos.sourceName $ Term.start $ Term.range t
-                              return (ident, [t])
+                              return (Module.Name $ Pos.sourceName $ Term.start $ Term.range t, [t])
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 0 200 200
 
                     Rewrite.Data origin -> do
                         set reducer [ text := sr, cursor := 0 ]
 
-                        let m = M.fromList $ do
-                              (ident,_) <-
-                                  reads $ Pos.sourceName $ Term.start $ Term.range origin
-                              return (ident, [origin])
+                        let m = M.singleton
+                                    (Module.Name $ Pos.sourceName $
+                                     Term.start $ Term.range origin)
+                                    [origin]
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 200 200 0
 
@@ -937,7 +934,7 @@ gui input output = do
                     (\h -> set h [ text := s, cursor := pos ])
                     (M.lookup moduleName $ highlighters pnls)
                 set status [ text :=
-                    "module " ++ show moduleName ++ " reloaded into interpreter" ]
+                    Module.tellName moduleName ++ " reloaded into interpreter" ]
             InsertText str -> do
                 (_moduleName, (_panel, editor, _highlighter)) <-
                     getFromNotebook nb =<< readIORef panels
@@ -955,13 +952,13 @@ gui input output = do
                 writeIORef panels pnls
                 Fold.forM_ (M.mapWithKey (,) $ fmap fst3 pnls) $
                     \(moduleName,sub) ->
-                        WXCMZ.notebookAddPage nb sub (show moduleName) False (-1)
+                        WXCMZ.notebookAddPage nb sub (Module.deconsName moduleName) False (-1)
 
                 updateErrorLog (const Seq.empty)
 
                 set status [ text :=
                     "modules loaded: " ++
-                    (List.intercalate ", " $ map show $
+                    (List.intercalate ", " $ map Module.deconsName $
                      M.keys $ Program.modules prg) ]
 
             ResetDisplay -> do
@@ -998,7 +995,7 @@ displayModules ::
     [(Identifier, Controls.Control)] ->
     WXCore.Window b ->
     Program ->
-    IO (M.Map Identifier (Panel (), TextCtrl (), TextCtrl ()))
+    IO (M.Map Module.Name (Panel (), TextCtrl (), TextCtrl ()))
 displayModules input frameControls ctrls nb prog = do
     Controls.create frameControls ctrls
         $ \ e -> writeChan input ( Control e )

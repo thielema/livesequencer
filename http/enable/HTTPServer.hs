@@ -9,9 +9,9 @@ module HTTPServer (
     Error, notFound,
     ) where
 
-import Term ( Identifier )
-import qualified IO
 import qualified HTTPServer.Option as Option
+import qualified Module
+import qualified IO
 
 import qualified Network.Shed.Httpd as HTTPd
 import qualified Network.CGI as CGI
@@ -51,11 +51,11 @@ methodNotAllowed = Error 405
 
 data Methods =
     Methods {
-        getModuleList :: IO [Identifier],
+        getModuleList :: IO [Module.Name],
         getModuleContent ::
-            Identifier -> ExceptionalT Error IO String,
+            Module.Name -> ExceptionalT Error IO String,
         updateModuleContent ::
-            Identifier -> String ->
+            Module.Name -> String ->
             ExceptionalT Error IO (Maybe String, String)
     }
 
@@ -123,7 +123,7 @@ handleException =
 
 parseModuleName ::
     (Monad m) =>
-    String -> ExceptionalT Error m Identifier
+    String -> ExceptionalT Error m Module.Name
 parseModuleName modName =
     Exc.mapExceptionT
         (badRequest .
@@ -134,26 +134,26 @@ parseModuleName modName =
         (Parsec.between (return ()) Parsec.eof IO.input)
         "" modName
 
-formatModuleList :: [Identifier] -> String
+formatModuleList :: [Module.Name] -> String
 formatModuleList list =
     Html.renderHtml $
     Html.header (Html.thetitle << "Haskell Live Sequencer - Module list") +++
     Html.body (htmlFromModuleList list)
 
 formatModuleContent ::
-    [Identifier] -> Identifier -> (Maybe String, String) -> String
+    [Module.Name] -> Module.Name -> (Maybe String, String) -> String
 formatModuleContent list name (mmsg, content) =
     Html.renderHtml $
     Html.header (Html.thetitle <<
-        ("Haskell Live Sequencer - Module " ++ show name)) +++
+        ("Haskell Live Sequencer - " ++ Module.tellName name)) +++
     (Html.body $
         sideBySide
             (htmlFromModuleList list)
-            (Html.h1 << show name +++
+            (Html.h1 << Module.deconsName name +++
              maybe Html.noHtml
                  (\msg -> (Html.! [Html.color Html.red]) $ Html.font $
                      htmlFromMultiline $ "error:\n" ++ msg) mmsg +++
-             ((Html.! [Html.action $ show name, Html.method "post",
+             ((Html.! [Html.action $ Module.deconsName name, Html.method "post",
                        Html.HtmlAttr "accept-charset" "ISO-8859-1"]) $
               Html.form $
                   case splitProtected content of
@@ -202,8 +202,8 @@ sideBySide :: Html.Html -> Html.Html -> Html.Html
 sideBySide left right =
     Html.simpleTable [] [Html.valign "top"] [[left, right]]
 
-htmlFromModuleList :: [Identifier] -> Html.Html
+htmlFromModuleList :: [Module.Name] -> Html.Html
 htmlFromModuleList =
     (Html.! [Html.identifier "module-list"]) .
     Html.unordList . map
-       (\name -> (Html.anchor << show name) Html.! [Html.href $ show name])
+       (\name -> (Html.anchor << Module.deconsName name) Html.! [Html.href $ Module.deconsName name])
