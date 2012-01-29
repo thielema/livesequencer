@@ -13,9 +13,6 @@ import qualified Exception
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 
-import qualified Data.Map as M
-import Control.Monad ( forM )
-
 import qualified Graphics.UI.WX as WX
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
@@ -23,7 +20,9 @@ import Graphics.UI.WX.Classes
 import Graphics.UI.WX.Events
 import Graphics.UI.WX.Layout ( layout, container, row, widget )
 
-import Utility ( void )
+import qualified Data.Map as M
+import Control.Monad ( forM )
+import Control.Functor.HT ( void )
 
 
 data Event = EventBool Term.Identifier Bool

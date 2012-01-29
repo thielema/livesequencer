@@ -8,7 +8,7 @@ import Graphics.UI.WX.Controls ( TextCtrl, Notebook )
 -- import qualified Graphics.UI.WXCore.WxcClassesAL as WXCAL
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 
-import Utility ( void )
+import Control.Functor.HT ( void )
 
 
 cursor :: WX.Attr (TextCtrl a) Int

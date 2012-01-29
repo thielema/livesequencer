@@ -15,7 +15,7 @@ import qualified System.IO as IO
 
 import Data.Foldable ( forM_ )
 import Control.Monad ( (<=<) )
-import Utility ( void )
+import Control.Functor.HT ( void )
 
 
 data Sequencer mode =

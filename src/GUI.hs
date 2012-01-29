@@ -42,7 +42,6 @@ import qualified Option
 import qualified Log
 import Program ( Program, modules )
 import Term ( Term, Identifier )
-import Utility ( void )
 import Utility.Concurrent ( writeTMVar, writeTChanIO )
 import Utility.WX ( cursor, editable, notebookSelection )
 
@@ -90,6 +89,7 @@ import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad ( when, liftM2, forever, )
+import Control.Functor.HT ( void )
 import Data.Foldable ( forM_ )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos

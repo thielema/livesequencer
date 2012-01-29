@@ -2,7 +2,6 @@
 
 import Term
 import Program ( Program (..), chase )
-import Utility ( void )
 import qualified Event
 import qualified Rewrite
 import qualified Exception
@@ -22,6 +21,7 @@ import Control.Monad.Exception.Synchronous
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad ( forM_, (>=>) )
+import Control.Functor.HT ( void )
 
 import qualified System.IO as IO
 import qualified System.Exit as Exit

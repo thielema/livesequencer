@@ -30,7 +30,7 @@ import qualified Control.Monad.Trans.Class as MT
 import qualified Data.List.HT as ListHT
 import qualified Data.List as List
 import Data.Tuple.HT ( mapPair )
-import Utility ( void )
+import Control.Functor.HT ( void )
 
 
 headers :: [(String, String)]

@@ -1,7 +1,6 @@
 module Term where
 
 import IO ( Input, Output, input, output, parsec_reader )
-import Utility ( void )
 
 import qualified Text.ParserCombinators.Parsec.Token as T
 import qualified Text.ParserCombinators.Parsec.Language as L
@@ -18,6 +17,7 @@ import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
 import qualified Data.Set as S
 import Control.Monad.Exception.Synchronous ( Exceptional(Success,Exception) )
 import Control.Monad ( liftM2, mzero )
+import Control.Functor.HT ( void )
 import Data.Char (isUpper, isLower)
 import Data.Ord (comparing)
 
