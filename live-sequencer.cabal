@@ -84,7 +84,6 @@ Executable live-sequencer
   Main-is: Console.hs
   Other-Modules:
     ALSA
-    Utility
     Event
     IO
     Module
@@ -109,7 +108,7 @@ Executable live-sequencer
     data-accessor-transformers >=0.2.1 && <0.3,
     data-accessor >=0.2.1 && <0.3,
     strict >=0.3.2 && <0.4,
-    utility-ht >=0.0.6 && <0.1,
+    utility-ht >=0.0.8 && <0.1,
     containers >=0.3 && <0.5,
     process >=1.0 && <1.2,
     directory >=1.0 && <1.2,
@@ -121,7 +120,6 @@ Executable live-sequencer-gui
   Main-is: GUI.hs
   Other-Modules:
     ALSA
-    Utility
     Utility.Concurrent
     Utility.WX
     Event
@@ -155,7 +153,7 @@ Executable live-sequencer-gui
     data-accessor-transformers >=0.2.1 && <0.3,
     data-accessor >=0.2.1 && <0.3,
     strict >=0.3.2 && <0.4,
-    utility-ht >=0.0.6 && <0.1,
+    utility-ht >=0.0.8 && <0.1,
     containers >=0.3 && <0.5,
     process >=1.0 && <1.2,
     directory >=1.0 && <1.2,

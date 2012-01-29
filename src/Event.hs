@@ -2,7 +2,6 @@ module Event where
 
 import Term
 import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
-import Utility ( void )
 import qualified Exception
 import qualified Log
 
@@ -22,6 +21,7 @@ import qualified Control.Monad.Trans.Class as MT
 import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
+import Control.Functor.HT ( void )
 
 import qualified System.Process as Proc
 import qualified System.Exit as Exit

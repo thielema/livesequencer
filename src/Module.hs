@@ -18,7 +18,7 @@ import Text.PrettyPrint.HughesPJ
            ( (<+>), ($$), empty, hsep, sep, hang, punctuate,
              render, text, vcat, parens )
 
-import Utility ( void )
+import Control.Functor.HT ( void )
 
 
 data Import = Import { qualified :: Bool

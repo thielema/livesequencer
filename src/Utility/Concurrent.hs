@@ -5,7 +5,7 @@ import Control.Concurrent.STM.TMVar
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
-import Utility ( void )
+import Control.Functor.HT ( void )
 
 
 writeTMVar :: TMVar a -> a -> STM ()
