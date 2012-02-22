@@ -93,6 +93,9 @@ afterEach _y [] = [] ;
 afterEach y (x : xs) = x : y : afterEach y xs ;
 
 
+infixr 7 +:+ ;  {- like multiplication -}
+infixr 6 =:= ;  {- like addition -}
+
 (+:+) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
 xs +:+ ys  =  xs ++ ys ;
 

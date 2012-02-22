@@ -14,12 +14,19 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Token as Token
 import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
+import Text.ParserCombinators.Parsec.Expr
+           ( Assoc(AssocLeft, AssocRight, AssocNone) )
 import Text.PrettyPrint.HughesPJ
            ( (<+>), ($$), empty, hsep, sep, hang, punctuate,
-             render, text, vcat, parens )
+             render, text, comma, vcat, parens )
+import qualified Data.Char as Char
 
 import Control.Functor.HT ( void )
 
+
+
+nestDepth :: Int
+nestDepth = 4
 
 data Import = Import { qualified :: Bool
                      , source :: Name
@@ -86,7 +93,7 @@ instance Output TypeSig where
     output (TypeSig names context typeExpr) =
         hang
             (hsep ( punctuate ( text "," ) $ map output names ) <+> text "::")
-            4
+            nestDepth
             (sep
                 [if null context
                    then empty
@@ -114,13 +121,63 @@ instance Output Data where
         $$ hsep ( punctuate ( text "|" ) $ map output ( rhs d ) ) <+> text ";"
 
 
+data Infix = Infix Assoc Int [ Identifier ]
+
+showAssoc :: Assoc -> String
+showAssoc AssocLeft  = "AssocLeft"
+showAssoc AssocRight = "AssocRight"
+showAssoc AssocNone  = "AssocNone"
+
+instance Show Infix where
+    showsPrec p (Infix assoc prec idents) =
+       showParen (p>10) $
+       showString "Infix " .
+       showString (showAssoc assoc) .
+       showString " " .
+       shows prec .
+       showString " " .
+       shows idents
+
+instance Input Infix where
+    input = do
+        assoc <-
+           Parsec.try $
+           Token.lexeme lexer $
+           Parsec.string "infix" >>
+              ((Parsec.char 'l' >> return AssocLeft)
+               <|>
+               (Parsec.char 'r' >> return AssocRight)
+               <|>
+               return AssocNone)
+        prec <-
+           fmap (\c -> Char.ord c - Char.ord '0') $
+           Token.lexeme lexer Parsec.digit
+        ops <- Parsec.sepBy1 Term.infixOperator (Token.comma lexer)
+        void $ Parsec.option "" $ Token.semi lexer
+        return $ Infix assoc prec ops
+
+instance Output Infix where
+    output (Infix assoc prec idents) =
+        let assocStr =
+                case assoc of
+                    AssocLeft  -> "l"
+                    AssocRight -> "r"
+                    AssocNone  -> ""
+        in  hang
+                (text ( "infix" ++ assocStr ) <+> text ( show prec ))
+                nestDepth
+                (hsep ( punctuate comma $ map output idents ) <+> text ";")
+
+
 data Declaration = Rule_Declaration Rule
                  | Type_Declaration TypeSig
                  | Data_Declaration Data
+                 | Infix_Declaration Infix
     deriving (Show)
 
 instance Input Declaration where
     input = fmap Data_Declaration input
+        <|> fmap Infix_Declaration input
         <|> fmap Type_Declaration (do
                 names <- Parsec.try $ do
                     names <- parseIdentList
@@ -140,6 +197,7 @@ instance Output Declaration where
         Data_Declaration d -> output d
         Type_Declaration d -> output d
         Rule_Declaration d -> output d
+        Infix_Declaration d -> output d
 
 -- | on module parsing:
 -- identifiers contain information on their source location.
