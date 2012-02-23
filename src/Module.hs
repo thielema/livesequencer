@@ -102,8 +102,8 @@ instance Output TypeSig where
                  output typeExpr <+> text ";"])
 
 
-data Data = Data { lhs :: Term
-                 , rhs :: [ Term ]
+data Data = Data { dataLhs :: Term
+                 , dataRhs :: [ Term ]
                  }
     deriving (Show)
 
@@ -114,11 +114,33 @@ instance Input Data where
         reservedOp lexer "="
         rs <- Parsec.sepBy input ( reservedOp lexer "|" )
         void $ Token.semi lexer
-        return $ Data { lhs = l, rhs = rs }
+        return $ Data { dataLhs = l, dataRhs = rs }
 
 instance Output Data where
-    output d = text "data" <+> output ( lhs d ) <+> text "="
-        $$ hsep ( punctuate ( text "|" ) $ map output ( rhs d ) ) <+> text ";"
+    output d = text "data" <+> output ( dataLhs d ) <+> text "="
+        $$ hsep ( punctuate ( text "|" ) $ map output ( dataRhs d ) ) <+> text ";"
+
+
+data Type = Type { typeLhs :: Term
+                 , typeRhs :: Term
+                 }
+    deriving (Show)
+
+instance Input Type where
+    input = do
+        reserved lexer "type"
+        l <- input
+        reservedOp lexer "="
+        r <- input
+        void $ Token.semi lexer
+        return $ Type { typeLhs = l, typeRhs = r }
+
+instance Output Type where
+    output d =
+        hang
+            ( text "type" <+> output ( typeLhs d ) <+> text "=" )
+            nestDepth
+            ( output ( typeRhs d ) <+> text ";" )
 
 
 data Infix = Infix Assoc Int [ Identifier ]
@@ -169,8 +191,9 @@ instance Output Infix where
                 (hsep ( punctuate comma $ map output idents ) <+> text ";")
 
 
-data Declaration = Rule_Declaration Rule
-                 | Type_Declaration TypeSig
+data Declaration = Type_Signature TypeSig
+                 | Rule_Declaration Rule
+                 | Type_Declaration Type
                  | Data_Declaration Data
                  | Infix_Declaration Infix
     deriving (Show)
@@ -178,7 +201,8 @@ data Declaration = Rule_Declaration Rule
 instance Input Declaration where
     input = fmap Data_Declaration input
         <|> fmap Infix_Declaration input
-        <|> fmap Type_Declaration (do
+        <|> fmap Type_Declaration input
+        <|> fmap Type_Signature (do
                 names <- Parsec.try $ do
                     names <- parseIdentList
                     reservedOp lexer "::"
@@ -194,6 +218,7 @@ instance Input Declaration where
 
 instance Output Declaration where
     output decl = case decl of
+        Type_Signature d -> output d
         Data_Declaration d -> output d
         Type_Declaration d -> output d
         Rule_Declaration d -> output d
