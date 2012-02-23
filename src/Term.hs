@@ -62,7 +62,8 @@ lexer =
       L.opLetter = operatorLetter,
       L.caseSensitive = True,
       L.reservedNames = [ "module", "where", "import", "qualified"
-                        , "as", "data", "class", "instance", "case", "of" ],
+                        , "as", "data", "class", "instance", "case", "of"
+                        , "infix", "infixl", "infixr" ],
       L.reservedOpNames = [ "=", "::", "|" ]
       }
 
@@ -99,8 +100,8 @@ operators :: [[([Char], Assoc)]]
 operators =
   [ [ ( ".", AssocRight ), ( "!!", AssocLeft ) ]
   , [ ( "^", AssocRight) ]
-  , [ ( "*", AssocLeft), ("/", AssocLeft), ("%", AssocLeft) ]
-  , [ ( "+", AssocLeft), ("-", AssocLeft) ]
+  , [ ( "*", AssocLeft), ("/", AssocLeft), ("%", AssocLeft), ("+:+", AssocRight) ]
+  , [ ( "+", AssocLeft), ("-", AssocLeft), ("=:=", AssocRight) ]
   , [ ( ":", AssocRight ), ( "++", AssocRight ) ]
   , map ( \ s -> (s, AssocNone) ) [ "==", "/=", "<", "<=", ">=", ">" ]
   , [ ( "&&", AssocRight ) ]
@@ -127,6 +128,14 @@ parenOperator =
     T.parens lexer $ T.lexeme lexer $
     fmap (uncurry Identifier) $ ranged $
     liftM2 (:) operatorStart (Parsec.many operatorLetter)
+
+infixOperator :: Parser Identifier
+infixOperator =
+    T.lexeme lexer $
+    fmap (uncurry Identifier) $ ranged $
+       Parsec.between (Parsec.char '`') (Parsec.char '`') identifierCore
+       <|>
+       liftM2 (:) operatorStart (Parsec.many operatorLetter)
 
 symbol :: String -> Parser ()
 symbol = void . T.symbol lexer

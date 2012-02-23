@@ -93,7 +93,15 @@ afterEach _y [] = [] ;
 afterEach y (x : xs) = x : y : afterEach y xs ;
 
 
-merge :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+infixr 7 +:+ ;  {- like multiplication -}
+infixr 6 =:= ;  {- like addition -}
+
+(+:+) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+xs +:+ ys  =  xs ++ ys ;
+
+merge, (=:=) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+xs =:= ys  =  merge xs ys ;
+
 merge (Wait a : xs) (Wait b : ys) =
   mergeWait (a<b) (a-b) a xs b ys ;
 merge (Wait a : xs) (y : ys) =
@@ -123,5 +131,4 @@ mergeWait False d _a xs b ys =
   Wait b : merge (Wait d : xs) ys ;
 
 mergeMany :: [[Midi.Event a]] -> [Midi.Event a] ;
-mergeMany [] = [] ;
-mergeMany (x : xs) = merge x (mergeMany xs) ;
+mergeMany = foldl merge [] ;

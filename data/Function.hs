@@ -1,7 +1,12 @@
 module Function where
 
+
+infixr 9 . ;
+
 (.) :: (b -> c) -> (a -> b) -> a -> c ;
 (f . g) x = f (g x) ;
+
+infixr 0 $ ;
 
 ($) :: (a -> b) -> a -> b ;
 f $ x = f x ;

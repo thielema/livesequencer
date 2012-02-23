@@ -95,6 +95,9 @@ Executable live-sequencer
     Step
     Term
     Log
+  Other-Modules:
+    Render
+    Lilypond
   GHC-Options: -Wall -threaded
   Build-Depends:
     transformers >=0.2.2 && <0.3,
