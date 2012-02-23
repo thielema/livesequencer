@@ -11,8 +11,7 @@ import qualified Sound.ALSA.Sequencer.Event as Event
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 main = do
-    withSequencer "Mode" $ WX.start . gui
-
+    withSequencer "Mode" gui
 
 
 gui sq = WX.start $ do
