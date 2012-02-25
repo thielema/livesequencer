@@ -64,6 +64,32 @@ iterateInteger, iterateIntegerAux ::
 iterateInteger f = applyStrict (iterateIntegerAux f) ;
 iterateIntegerAux f x = x : iterateInteger f (f x) ;
 
+iterateIntegerList, iterateIntegerListAux ::
+   ([Integer] -> [Integer]) -> [Integer] -> [[Integer]] ;
+iterateIntegerList f = applyStrictList (iterateIntegerListAux f) ;
+iterateIntegerListAux f x = x : iterateIntegerList f (f x) ;
+
+{- even stricter: it always updates the accumulator, also if the updated value is not needed because the list is aborted earlier
+iterateInteger, iterateIntegerAux0 ::
+   (Integer -> Integer) -> Integer -> [Integer] ;
+iterateIntegerAux1 ::
+   (Integer -> Integer) -> Integer -> Integer -> [Integer] ;
+iterateInteger f = applyStrict (iterateIntegerAux0 f) ;
+iterateIntegerAux0 f x = applyStrict (iterateIntegerAux1 f x) (f x) ;
+iterateIntegerAux1 f x fx = x : iterateInteger f fx ;
+-}
+
+{- too strict for DeBruijn
+iterateIntegerList, iterateIntegerListAux0 ::
+   ([Integer] -> [Integer]) -> [Integer] -> [[Integer]] ;
+iterateIntegerListAux1 ::
+   ([Integer] -> [Integer]) -> [Integer] -> [Integer] -> [[Integer]] ;
+iterateIntegerList f = applyStrictList (iterateIntegerListAux0 f) ;
+iterateIntegerListAux0 f x = applyStrictList (iterateIntegerListAux1 f x) (f x) ;
+iterateIntegerListAux1 f x fx = x : iterateIntegerList f fx ;
+-}
+
+
 append :: [a] -> [a] -> [a] ;
 append = flip ( foldr cons ) ;
 

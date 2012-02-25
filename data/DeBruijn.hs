@@ -12,7 +12,7 @@ main :: [ Event (Channel Message) ] ;
 main =
    channel 0 $
    concatMap (note qn . makePitch) $
-   deBruijnSequence 4 2 ;
+   cycle $ deBruijnSequence 4 2 ;
 
 makePitch :: Integer -> Pitch ;
 makePitch 0 = c 4 ;
@@ -36,7 +36,7 @@ deBruijnSequence n k =
    concat $
    filter (isZero . mod k . length) $
    takeWhile (not . null) $
-   iterate (nextLyndonWord n k) [0] ;
+   iterateIntegerList (nextLyndonWord n k) [0] ;
 
 -- This is extremely inefficient in the live-sequencer.
 -- We may achieve more efficienty by encoding every lyndon word in an integer.
@@ -45,4 +45,4 @@ deBruijnSequence n k =
 -- * auxiliary
 
 qn :: Integer ;
-qn = 300 ;
+qn = 150 ;
