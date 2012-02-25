@@ -25,14 +25,22 @@ foldl _ a [] = a ;
 foldl f a (x : xs) = foldl f (f a x) xs ;
 
 length :: [a] -> Integer ;
-length = sum . map (const 1) ;
+length = sumInteger . map (const 1) ;
 
--- ToDo: think about a version with constant space usage
 sum :: (Num a) => [a] -> a ;
 sum = foldl add 0 ;
 
 add :: (Num a) => a -> a -> a ;
 add x y = x + y ;
+
+-- | constant space usage in contrast to 'sum'
+sumInteger :: [Integer] -> Integer ;
+sumInteger = sumIntegerAux 0 ;
+
+sumIntegerAux :: Integer -> [Integer] -> Integer ;
+sumIntegerAux 0 [] = 0 ;
+sumIntegerAux s [] = s ;
+sumIntegerAux s (x:xs) = sumIntegerAux (s+x) xs ;
 
 
 reverse :: [a] -> [a] ;
@@ -46,6 +54,14 @@ repeat s = s : repeat s ;
 
 cycle :: [a] -> [a] ;
 cycle s = s ++ cycle s ;
+
+iterate :: (a -> a) -> a -> [a] ;
+iterate f x = x : iterate f (f x) ;
+
+-- | constant space usage in contrast to 'iterate'
+iterateInteger :: (Integer -> Integer) -> Integer -> [Integer] ;
+iterateInteger f 0 = 0 : iterateInteger f (f 0) ;
+iterateInteger f x = x : iterateInteger f (f x) ;
 
 append :: [a] -> [a] -> [a] ;
 append = flip ( foldr cons ) ;
