@@ -75,6 +75,21 @@ cons x xs = x : xs ;
 concat :: [[a]] -> [a] ;
 concat = foldr append [];
 
+concatMap :: (a -> [b]) -> [a] -> [b] ;
+concatMap f = concat . map f ;
+
+head :: [a] -> a ;
+head (x:_) = x ;
+head [] = error "head: empty list" ;
+
+tail :: [a] -> [a] ;
+tail (_:xs) = xs ;
+tail [] = error "tail: empty list" ;
+
+null :: [a] -> Bool ;
+null [] = True ;
+null _ = False ;
+
 (!!) :: [a] -> Integer -> a ;
 (x:_)  !! 0 = x ;
 (_:xs) !! n = xs !! (n-1) ;
@@ -108,6 +123,28 @@ consFirst x p = Pair (x : fst p) (snd p) ;
 afterEach :: a -> [a] -> [a] ;
 afterEach _y [] = [] ;
 afterEach y (x : xs) = x : y : afterEach y xs ;
+
+
+filter :: (a -> Bool) -> [a] -> [a] ;
+filter p =
+   foldr (filterElem p) [] ;
+
+filterElem :: (a -> Bool) -> a -> [a] -> [a] ;
+filterElem p x xs = ifThenElse (p x) (x:xs) xs ;
+
+takeWhile :: (a -> Bool) -> [a] -> [a] ;
+takeWhile p =
+   foldr (takeWhileElem p) [] ;
+
+takeWhileElem :: (a -> Bool) -> a -> [a] -> [a] ;
+takeWhileElem p x xs = ifThenElse (p x) (x:xs) [] ;
+
+dropWhileRev :: (a -> Bool) -> [a] -> [a] ;
+dropWhileRev p =
+   foldr (dropWhileRevElem p) [] ;
+
+dropWhileRevElem :: (a -> Bool) -> a -> [a] -> [a] ;
+dropWhileRevElem p x xs = ifThenElse (p x && null xs) [] (x:xs) ;
 
 
 infixr 7 +:+ ;  {- like multiplication -}
