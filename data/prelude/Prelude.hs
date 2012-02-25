@@ -20,3 +20,6 @@ x == y  =  isZero (x-y) ;
 min x y = ifThenElse (x<y) x y ;
 
 negate x = 0 - x ;
+
+succ x = x+1 ;
+pred x = x-1 ;
