@@ -11,6 +11,11 @@ infixr 0 $ ;
 ($) :: (a -> b) -> a -> b ;
 f $ x = f x ;
 
+-- $!
+applyStrict :: (Integer -> a) -> (Integer -> a) ;
+applyStrict f 0 = f 0 ;
+applyStrict f x = f x ;
+
 flip :: (b -> a -> c) -> a -> b -> c ;
 flip f x y = f y x ;
 

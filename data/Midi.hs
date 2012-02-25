@@ -1,5 +1,7 @@
 module Midi where
 
+import Function
+
 
 data Event a = Wait Integer | Say String | Event a ;
 
@@ -11,8 +13,18 @@ data Message =
    | On Integer Integer
    | Off Integer Integer ;
 
+{- |
+This function is strict in the pitch
+and thus asserts that the pitch for NoteOn and NoteOff
+are evaluated at the same time to the same value.
+This way we assert that a pressed note
+will be released later.
+-}
 note :: Integer -> Integer -> [Event Message] ;
-note duration pitch =
+note duration = applyStrict (noteLazy duration) ;
+
+noteLazy :: Integer -> Integer -> [Event Message] ;
+noteLazy duration pitch =
   [ Event (On pitch normalVelocity)
   , Wait duration
   , Event (Off pitch normalVelocity)

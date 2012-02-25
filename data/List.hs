@@ -59,9 +59,10 @@ iterate :: (a -> a) -> a -> [a] ;
 iterate f x = x : iterate f (f x) ;
 
 -- | constant space usage in contrast to 'iterate'
-iterateInteger :: (Integer -> Integer) -> Integer -> [Integer] ;
-iterateInteger f 0 = 0 : iterateInteger f (f 0) ;
-iterateInteger f x = x : iterateInteger f (f x) ;
+iterateInteger, iterateIntegerAux ::
+   (Integer -> Integer) -> Integer -> [Integer] ;
+iterateInteger f = applyStrict (iterateIntegerAux f) ;
+iterateIntegerAux f x = x : iterateInteger f (f x) ;
 
 append :: [a] -> [a] -> [a] ;
 append = flip ( foldr cons ) ;
