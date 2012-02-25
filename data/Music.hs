@@ -59,7 +59,7 @@ major s = Par [ s, up 4 s, up 7 s ] ;
 minor s = Par [ s, up 3 s, up 7 s ] ;
 minor7 s = Par [ s, up 3 s, up 7 s, up 11 s ] ;
 
-times :: Int -> Music a -> Music a ;
+times :: Integer -> Music a -> Music a ;
 times k s = Seq ( replicate k s ) ;
 
 emap :: (a -> b) -> Music (Event a) -> Music (Event b) ;

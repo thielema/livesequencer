@@ -3,7 +3,8 @@ module List where
 import Midi
 import Tuple
 import Function
-import Prelude ( (-), (+), (<), negate, Num, Int, Integer, Bool(False,True), error )
+import Bool
+import Prelude ( (-), (+), (<), negate, Num, Integer, Bool(False,True), error )
 
 
 map :: (a -> b) -> [a] -> [b] ;
@@ -23,7 +24,7 @@ foldl :: (b -> a -> b) -> b -> [a] -> b ;
 foldl _ a [] = a ;
 foldl f a (x : xs) = foldl f (f a x) xs ;
 
-length :: [a] -> Int ;
+length :: [a] -> Integer ;
 length = sum . map (const 1) ;
 
 -- ToDo: think about a version with constant space usage
@@ -37,7 +38,7 @@ add x y = x + y ;
 reverse :: [a] -> [a] ;
 reverse = foldl (flip cons) [] ;
 
-replicate :: Int -> a -> [a] ;
+replicate :: Integer -> a -> [a] ;
 replicate n x = take n ( repeat x ) ;
 
 repeat :: a -> [a] ;
@@ -58,19 +59,19 @@ cons x xs = x : xs ;
 concat :: [[a]] -> [a] ;
 concat = foldr append [];
 
-(!!) :: [a] -> Int -> a ;
+(!!) :: [a] -> Integer -> a ;
 (x:_)  !! 0 = x ;
 (_:xs) !! n = xs !! (n-1) ;
 [] !! _ = error "!!: index too large" ;
 
-take :: Int -> [a] -> [a] ;
+take :: Integer -> [a] -> [a] ;
 take n xs = foldr takeElem (const []) xs n ;
 
-takeElem :: a -> (Int -> [a]) -> Int -> [a] ;
+takeElem :: a -> (Integer -> [a]) -> Integer -> [a] ;
 takeElem _ _go 0 = [] ;
 takeElem x go m = x : go (m-1) ;
 
-drop :: Int -> [b] -> [b] ;
+drop :: Integer -> [b] -> [b] ;
 drop 0 xs = xs ;
 drop _ [] = [] ;
 drop n (_ : xs) = drop (n-1) xs ;
@@ -79,7 +80,7 @@ drop n (_ : xs) = drop (n-1) xs ;
 This does not work well and fails for infinite lists,
 because consFirst matches strictly on Pair.
 -}
-splitAt :: Int -> [a] -> Tuple.Pair [a] [a] ;
+splitAt :: Integer -> [a] -> Tuple.Pair [a] [a] ;
 splitAt 0 xs = Pair [] xs ;
 splitAt _ [] = Pair [] [] ;
 splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
