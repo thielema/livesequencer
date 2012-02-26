@@ -1,12 +1,11 @@
 module Speisekarte where
 
-import Chords
 import Pitch
 import Midi
 import List
-import Prelude ( (*), (+), (-), ($), negate )
+import Prelude ( (*), ($), negate )
 
-
+main, loop, choir :: [Event (Channel Message)] ;
 main = loop ;
 
 loop = choir ++ loop ;
@@ -24,30 +23,25 @@ choir =
    [] ;
 
 
+sopranoTrack, contraltoITrack, contraltoIITrack, 
+   tenorTrack, bassITrack, bassIITrack
+      :: [Event (Channel Message)] ;
+
 sopranoTrack =
    sopranoChannel (
       flute ++
-      controller attackCC 30 ++
-      controller releaseCC 70 ++
-      controller brightnessCC 0 ++
       transpose 12 sopranoMelody
    ) ;
 
 contraltoITrack =
    contraltoChannel (
       piano ++
-      controller attackCC 30 ++
-      controller releaseCC 70 ++
-      controller brightnessCC 0 ++
       contraltoIMelody
    ) ;
 
 contraltoIITrack =
    contraltoChannel (
       piano ++
-      controller attackCC 30 ++
-      controller releaseCC 70 ++
-      controller brightnessCC 0 ++
       contraltoIIMelody
    ) ;
 
@@ -55,30 +49,26 @@ tenorTrack =
    tenorChannel (
       violin ++
       controller volumeCC 64 ++
-      controller attackCC 30 ++
-      controller releaseCC 70 ++
-      controller brightnessCC 0 ++
       tenorMelody
    ) ;
 
 bassITrack =
    bassChannel (
       piano ++
-      controller attackCC 30 ++
-      controller releaseCC 70 ++
-      controller brightnessCC 0 ++
       bassIMelody
    ) ;
 
 bassIITrack =
    bassChannel (
       piano ++
-      controller attackCC 30 ++
-      controller releaseCC 70 ++
-      controller brightnessCC 0 ++
       transpose (negate 12) bassIIMelody
    ) ;
 
+
+sopranoLoop,
+   sopranoMelody, contraltoIMelody, contraltoIIMelody,
+   tenorMelody, bassIMelody, bassIIMelody
+      :: [Event Message] ;
 
 sopranoLoop = sopranoMelody ++ sopranoLoop ;
 
@@ -171,6 +161,8 @@ bassIIMelody =
 
 -- * durations
 
+en, qn, dqn, hn, dhn, wn, dwn, wn2 :: Time ;
+
 en = 230 ;
 qn = 2 * en ; dqn = 3 * en ;
 hn = 2 * qn ; dhn = 3 * qn ;
@@ -180,6 +172,7 @@ wn2 = 2 * wn ;
 
 -- * MIDI program
 
+piano, violin, flute :: [Event Message] ;
 piano = program 0 ;
 violin = program 48 ;
 flute = program 73 ;
@@ -187,6 +180,8 @@ flute = program 73 ;
 
 -- * MIDI channels
 
+sopranoChannel, contraltoChannel, tenorChannel, bassChannel ::
+   [Event a] -> [Event (Channel a)] ;
 sopranoChannel   = channel 0 ;
 contraltoChannel = channel 1 ;
 tenorChannel     = channel 2 ;
@@ -195,8 +190,5 @@ bassChannel      = channel 3 ;
 
 -- * MIDI controllers
 
+volumeCC :: Controller ;
 volumeCC = 7 ;
-brightnessCC = 70 ;
-attackCC = 73 ;
-decayCC = 73 ;
-releaseCC = 72 ;

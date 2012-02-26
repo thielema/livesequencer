@@ -1,12 +1,12 @@
 module GloriousKingdom where
 
-import Chords
 import Pitch
 import Midi
 import List
-import Prelude ( (*), (+), (-) )
+import Prelude ( (*) )
 
 
+main, melodyTrack :: [Midi.Event (Midi.Channel Midi.Message)] ;
 main =
    mergeMany
       [ melodyTrack ,
@@ -31,6 +31,7 @@ melodyTrack =
       melodyLoop
    ) ;
 
+melodyLoop, melody0, melody1, melody2 :: [Midi.Event Midi.Message] ;
 melodyLoop =
    melody0 ++ melody1 ++ melody2 ++ melodyLoop ;
 
@@ -64,6 +65,8 @@ melody2 =
    [] ;
 
 
+marimbaLoop, marimbaPattern0, marimbaPattern1, marimbaPattern2
+   :: [Midi.Event Midi.Message] ;
 marimbaLoop =
    abba marimbaPattern0 marimbaPattern1 ++
    acba marimbaPattern0 marimbaPattern1 marimbaPattern2 ++
@@ -78,12 +81,18 @@ marimbaPattern1 =
 marimbaPattern2 =
    marimbaPattern (e 4) (d 4) (c 4) ;
 
+marimbaPattern ::
+  Pitch -> Pitch -> Pitch ->
+  [Midi.Event Midi.Message] ;
 marimbaPattern p0 p1 p2 =
    rest en ++
    note qn p0 ++ note en p0 ++
    note en p0 ++ note en p0 ++
    note en p1 ++ note en p2 ;
 
+
+bassLoop, bassPattern0, bassPattern1, bassPattern2
+   :: [Midi.Event Midi.Message] ;
 bassLoop =
    abba bassPattern0 bassPattern1 ++
    acba bassPattern0 bassPattern1 bassPattern2 ++
@@ -98,26 +107,36 @@ bassPattern1 =
 bassPattern2 =
    bassPattern (c 2) (e 2) (g 2) ;
 
+bassPattern ::
+  Pitch -> Pitch -> Pitch ->
+  [Midi.Event Midi.Message] ;
 bassPattern p0 p1 p2 =
    note dqn p0 ++ note dqn p1 ++ note qn p2 ;
 
-abba a b =
-   a ++ b ++ b ++ a ;
+abba :: [a] -> [a] -> [a] ;
+abba pa pb =
+   pa ++ pb ++ pb ++ pa ;
 
-acba a b c =
-   a ++ c ++ b ++ a ;
+acba :: [a] -> [a] -> [a] -> [a] ;
+acba pa pb pc =
+   pa ++ pc ++ pb ++ pa ;
 
 
 -- * concatenation
 
+double :: [a] -> [a] ;
 double x = concat [ x, x ] ;
 
+quad :: [a] -> [a] ;
 quad x = concat [ x, x, x, x ] ;
 
+quadAlt :: [a] -> [a] -> [a] ;
 quadAlt x y = concat [ x, x, x, y] ;
 
 
 -- * durations
+
+en, qn, dqn, hn, dhn, wn, dwn, wn2 :: Midi.Time ;
 
 en = 170 ;
 qn = 2 * en ; dqn = 3 * en ;
@@ -128,6 +147,8 @@ wn2 = 2 * wn ;
 
 -- * MIDI program
 
+ping, slap, bell, pad, bass :: [Midi.Event Midi.Message] ;
+
 ping = program 0 ;
 slap = program 2 ;
 bell = program 3 ;
@@ -137,6 +158,9 @@ bass = program 9 ;
 
 -- * MIDI channels
 
+melodyChannel, patternChannel, padChannel, bassChannel
+   :: [Midi.Event a] -> [Midi.Event (Midi.Channel a)] ;
+
 melodyChannel  = channel 0 ;
 patternChannel = channel 1 ;
 padChannel     = channel 2 ;
@@ -144,6 +168,8 @@ bassChannel    = channel 3 ;
 
 
 -- * MIDI controllers
+
+volumeCC, brightnessCC, attackCC, decayCC, releaseCC :: Midi.Controller ;
 
 volumeCC = 7 ;
 brightnessCC = 70 ;
