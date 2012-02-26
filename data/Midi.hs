@@ -1,7 +1,7 @@
 module Midi where
 
 import Function
-import Pitch
+import Pitch ( Pitch )
 
 
 type Time = Integer ;
