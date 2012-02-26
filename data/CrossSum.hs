@@ -3,6 +3,7 @@ module CrossSum where
 import Midi ;
 import List ;
 import Pitch ;
+import Function ;
 import Prelude ( Integer, ($), (.), (+), mod, div, succ ) ;
 
 
@@ -10,7 +11,7 @@ main :: [ Event (Channel Message) ] ;
 main =
    channel 0 $
    concatMap (note qn . makePitch) $
-   modCrossSums 3 ;
+   modCrossSums 4 ;
 
 makePitch :: Integer -> Pitch ;
 makePitch 0 = c 4 ;
@@ -39,7 +40,7 @@ modCrossSumsList n =
 
 extList :: Integer -> [Integer] -> [Integer] ;
 extList n y =
-   extList2 n $ map (incList n y) $
+   applyStrictListList (extList2 n) $ map (incList n y) $
    take n $ iterateInteger succ 0 ;
 
 extList2 :: Integer -> [[Integer]] -> [Integer] ;
