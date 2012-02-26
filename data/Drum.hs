@@ -1,9 +1,11 @@
 module Drum where
 
-import Midi ( Event, Message, Channel, note, channel )
+import Midi ( Event, Time, Message, Channel, note, channel )
 
 
-drum :: Integer -> Integer -> [Event Message] ;
+type Drum = Integer ;
+
+drum :: Drum -> Time -> [Event Message] ;
 drum kind dur = note dur kind ;
 
 drumChannel :: [Event a] -> [Event (Channel a)] ;
@@ -20,7 +22,7 @@ acousticBassDrum, bassDrum1, sideStick, acousticSnare,
   highAgogo, lowAgogo, cabasa, maracas, 
   shortWhistle, longWhistle, shortGuiro, longGuiro, 
   claves, hiWoodBlock, lowWoodBlock, muteCuica, 
-  openCuica, muteTriangle, openTriangle :: Integer ;
+  openCuica, muteTriangle, openTriangle :: Drum ;
 
 
 -- general MIDI drum aliases
