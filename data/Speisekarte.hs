@@ -4,7 +4,7 @@ import Chords
 import Pitch
 import Midi
 import List
-import Prelude ( (*), (+), (-) )
+import Prelude ( (*), (+), (-), ($), negate )
 
 
 main = loop ;
@@ -12,23 +12,25 @@ main = loop ;
 loop = choir ++ loop ;
 
 choir =
-   mergeMany [
-      sopranoTrack,
-      contraltoITrack,
-      contraltoIITrack,
-      tenorTrack,
-      bassITrack,
-      bassIITrack,
-   ] ;
+   mergeMany $
+{-
+      sopranoTrack :
+      contraltoITrack :
+      contraltoIITrack :
+      tenorTrack :
+      bassITrack :
+-}
+      bassIITrack :
+   [] ;
 
 
 sopranoTrack =
    sopranoChannel (
-      piano ++
+      flute ++
       controller attackCC 30 ++
       controller releaseCC 70 ++
       controller brightnessCC 0 ++
-      sopranoMelody
+      transpose 12 sopranoMelody
    ) ;
 
 contraltoITrack =
@@ -51,7 +53,8 @@ contraltoIITrack =
 
 tenorTrack =
    tenorChannel (
-      piano ++
+      violin ++
+      controller volumeCC 64 ++
       controller attackCC 30 ++
       controller releaseCC 70 ++
       controller brightnessCC 0 ++
@@ -73,7 +76,7 @@ bassIITrack =
       controller attackCC 30 ++
       controller releaseCC 70 ++
       controller brightnessCC 0 ++
-      bassIIMelody
+      transpose (negate 12) bassIIMelody
    ) ;
 
 
@@ -148,8 +151,10 @@ bassIMelody =
    rest qn ++ note en (e 3) ++ note en (g 3) ++ note qn (g 3) ++
    rest qn ++ note en (g 3) ++ note en (cis 4) ++ note qn (cis 4) ++
    rest qn ++ note en (d 4) ++ note en (fis 3) ++ note qn (fis 3) ++
-   rest qn ++ note en (b 3) ++ note en (g 3) ++ note qn (g 3) ++
-   rest qn ++ note en (a 3) ++ note en (e 3) ++ note en (e 3) ++ note en (e 3) ++ note qn (fis 3) ++ rest en ++
+--   rest qn ++ note en (b 3) ++ note en (g 3) ++ note qn (g 3) ++
+   rest en ++ note en (fis 3) ++ note en (b 3) ++ note en (g 3) ++ note qn (g 3) ++
+--   rest qn ++ note en (a 3) ++ note en (e 3) ++ note en (e 3) ++ note en (e 3) ++ note qn (fis 3) ++ rest en ++
+   rest en ++ note en (g 3) ++ note en (a 3) ++ note en (e 3) ++ note en (e 3) ++ note en (e 3) ++ note qn (fis 3) ++ rest en ++
    [] ;
 
 bassIIMelody =
@@ -176,6 +181,8 @@ wn2 = 2 * wn ;
 -- * MIDI program
 
 piano = program 0 ;
+violin = program 48 ;
+flute = program 73 ;
 
 
 -- * MIDI channels
