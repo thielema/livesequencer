@@ -1,17 +1,24 @@
 module Midi where
 
 import Function
+import Pitch
 
 
-data Event a = Wait Integer | Say String | Event a ;
+type Time = Integer ;
+type Velocity = Integer ;
+type Program = Integer ;
+type Controller = Integer ;
+type Chan = Integer ;
+
+data Event a = Wait Time | Say String | Event a ;
 
 data Channel a = Channel Integer a ;
 
 data Message =
-     PgmChange Integer
-   | Controller Integer Integer
-   | On Integer Integer
-   | Off Integer Integer ;
+     PgmChange Program
+   | Controller Controller Integer
+   | On Pitch Velocity
+   | Off Pitch Velocity ;
 
 {- |
 This function is strict in the pitch
@@ -20,32 +27,32 @@ are evaluated at the same time to the same value.
 This way we assert that a pressed note
 will be released later.
 -}
-note :: Integer -> Integer -> [Event Message] ;
+note :: Time -> Pitch -> [Event Message] ;
 note duration = applyStrict (noteLazy duration) ;
 
-noteLazy :: Integer -> Integer -> [Event Message] ;
+noteLazy :: Time -> Pitch -> [Event Message] ;
 noteLazy duration pitch =
   [ Event (On pitch normalVelocity)
   , Wait duration
   , Event (Off pitch normalVelocity)
   ] ;
 
-rest :: Integer -> [Event a] ;
+rest :: Time -> [Event a] ;
 rest duration =
   [ Wait duration ] ;
 
-program :: Integer -> [Event Message] ;
+program :: Program -> [Event Message] ;
 program n =
   [ Event ( PgmChange n ) ] ;
 
-controller :: Integer -> Integer -> [Event Message] ;
+controller :: Controller -> Integer -> [Event Message] ;
 controller cc x =
   [ Event ( Controller cc x ) ] ;
 
-channel :: Integer -> [Event a] -> [Event (Channel a)] ;
+channel :: Chan -> [Event a] -> [Event (Channel a)] ;
 channel chan = map ( channelEvent chan ) ;
 
-channelEvent :: Integer -> Event a -> Event (Channel a) ;
+channelEvent :: Chan -> Event a -> Event (Channel a) ;
 channelEvent chan (Event event) = Event (Channel chan event) ;
 channelEvent _chan (Wait duration) = Wait duration ;
 channelEvent _chan (Say text) = Say text ;
@@ -60,12 +67,12 @@ transposeEvent d (Event (Off pitch velocity)) = Event (Off (pitch+d) velocity) ;
 transposeEvent _d event = event ;
 
 
-controlCurve :: Integer -> Integer -> [Integer] -> [Event Message] ;
+controlCurve :: Time -> Controller -> [Integer] -> [Event Message] ;
 controlCurve _d _cc [] = [] ;
 controlCurve d cc (x : xs) =
     Event (Controller cc x) : Wait d : controlCurve d cc xs ;
 
-normalVelocity :: Integer ;
+normalVelocity :: Velocity ;
 normalVelocity = 64 ;
 
 emphasize :: Integer -> [Event Message] -> [Event Message] ;
