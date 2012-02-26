@@ -213,3 +213,23 @@ mergeWait False d _a xs b ys =
 
 mergeMany :: [[Midi.Event a]] -> [Midi.Event a] ;
 mergeMany = foldl merge [] ;
+
+
+
+
+applyStrictList :: ([Integer] -> a) -> ([Integer] -> a) ;
+applyStrictList f xs = applyStrictListAux f [] (reverse xs) ;
+
+applyStrictListAux :: ([Integer] -> a) -> [Integer] -> ([Integer] -> a) ;
+applyStrictListAux f ys [] = f ys ;
+applyStrictListAux f ys (0:xs) = applyStrictListAux f (0:ys) xs ;
+applyStrictListAux f ys (x:xs) = applyStrictListAux f (x:ys) xs ;
+
+
+applyStrictListList :: ([[Integer]] -> a) -> ([[Integer]] -> a) ;
+applyStrictListList f xs = applyStrictListListAux f [] (reverse xs) ;
+
+applyStrictListListAux :: ([[Integer]] -> a) -> [[Integer]] -> ([[Integer]] -> a) ;
+applyStrictListListAux f ys [] = f ys ;
+applyStrictListListAux f ys (x:xs) =
+   applyStrictList (applyStrictListListAux f . flip cons ys) x xs ;

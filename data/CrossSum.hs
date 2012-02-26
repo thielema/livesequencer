@@ -4,7 +4,7 @@ import Midi ;
 import List ;
 import Pitch ;
 import Function ;
-import Prelude ( Integer, ($), (.), (+), mod, div, succ ) ;
+import Prelude ( Integer, (+), mod, div, succ ) ;
 
 
 main :: [ Event (Channel Message) ] ;

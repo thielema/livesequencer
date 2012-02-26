@@ -17,24 +17,6 @@ applyStrict f 0 = f 0 ;
 applyStrict f x = f x ;
 
 
-applyStrictList :: ([Integer] -> a) -> ([Integer] -> a) ;
-applyStrictList f xs = applyStrictListAux f [] (reverse xs) ;
-
-applyStrictListAux :: ([Integer] -> a) -> [Integer] -> ([Integer] -> a) ;
-applyStrictListAux f ys [] = f ys ;
-applyStrictListAux f ys (0:xs) = applyStrictListAux f (0:ys) xs ;
-applyStrictListAux f ys (x:xs) = applyStrictListAux f (x:ys) xs ;
-
-
-applyStrictListList :: ([[Integer]] -> a) -> ([[Integer]] -> a) ;
-applyStrictListList f xs = applyStrictListListAux f [] (reverse xs) ;
-
-applyStrictListListAux :: ([[Integer]] -> a) -> [[Integer]] -> ([[Integer]] -> a) ;
-applyStrictListListAux f ys [] = f ys ;
-applyStrictListListAux f ys (x:xs) =
-   applyStrictList (applyStrictListListAux f . flip cons ys) x xs ;
-
-
 flip :: (b -> a -> c) -> a -> b -> c ;
 flip f x y = f y x ;
 
