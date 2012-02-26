@@ -38,8 +38,8 @@ deBruijnSequence n k =
    takeWhile (not . null) $
    iterateIntegerList (nextLyndonWord n k) [0] ;
 
--- This is extremely inefficient in the live-sequencer.
--- We may achieve more efficienty by encoding every lyndon word in an integer.
+
+-- Another efficient approach might be encoding the Lyndon words as integers.
 
 
 -- * auxiliary
