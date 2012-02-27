@@ -6,23 +6,24 @@ import List
 import Instrument
 import Prelude ( (*), ($), negate )
 
-main, loop, choir :: [Event (Channel Message)] ;
-main = loop ;
+main, cascade, loop, choir :: [Event (Channel Message)] ;
+main = cascade ;
+
+cascade =
+   concat $ scanl merge [] $ reverse tracks ;
 
 loop = choir ++ loop ;
+choir = mergeMany tracks ;
 
-choir =
-   mergeMany $
-{-
-      sopranoTrack :
-      contraltoITrack :
-      contraltoIITrack :
-      tenorTrack :
-      bassITrack :
--}
-      bassIITrack :
+tracks :: [Event (Channel Message)] ;
+tracks =
+   sopranoTrack :
+   contraltoITrack :
+   contraltoIITrack :
+   tenorTrack :
+   bassITrack :
+   bassIITrack :
    [] ;
-
 
 sopranoTrack, contraltoITrack, contraltoIITrack, 
    tenorTrack, bassITrack, bassIITrack

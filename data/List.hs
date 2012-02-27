@@ -43,6 +43,18 @@ sumIntegerAux s [] = s ;
 sumIntegerAux s (x:xs) = sumIntegerAux (s+x) xs ;
 
 
+scanl :: (a -> b -> a) -> a -> [b] -> [a] ;
+scanl _ a [] = [a] ;
+scanl f a (x : xs) = a : scanl f (f a x) xs ;
+
+scanr :: (b -> a -> a) -> a -> [b] -> [a] ;
+scanr _ a [] = [a] ;
+scanr f a (x : xs) = scanrAux f x (scanr f a xs) ;
+
+scanrAux :: (b -> a -> a) -> b -> [a] -> [a] ;
+scanrAux f x ys = f x (head ys) : ys ;
+
+
 reverse :: [a] -> [a] ;
 reverse = foldl (flip cons) [] ;
 
