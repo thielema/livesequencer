@@ -3,6 +3,7 @@ module Speisekarte where
 import Pitch
 import Midi
 import List
+import Instrument
 import Prelude ( (*), ($), negate )
 
 main, loop, choir :: [Event (Channel Message)] ;
@@ -29,38 +30,38 @@ sopranoTrack, contraltoITrack, contraltoIITrack,
 
 sopranoTrack =
    sopranoChannel (
-      flute ++
+      flutePgm ++
       transpose 12 sopranoMelody
    ) ;
 
 contraltoITrack =
    contraltoChannel (
-      piano ++
+      pianoPgm ++
       contraltoIMelody
    ) ;
 
 contraltoIITrack =
    contraltoChannel (
-      piano ++
+      pianoPgm ++
       contraltoIIMelody
    ) ;
 
 tenorTrack =
    tenorChannel (
-      violin ++
+      violinPgm ++
       controller volumeCC 64 ++
       tenorMelody
    ) ;
 
 bassITrack =
    bassChannel (
-      piano ++
+      pianoPgm ++
       bassIMelody
    ) ;
 
 bassIITrack =
    bassChannel (
-      piano ++
+      pianoPgm ++
       transpose (negate 12) bassIIMelody
    ) ;
 
@@ -172,10 +173,10 @@ wn2 = 2 * wn ;
 
 -- * MIDI program
 
-piano, violin, flute :: [Event Message] ;
-piano = program 0 ;
-violin = program 48 ;
-flute = program 73 ;
+pianoPgm, violinPgm, flutePgm :: [Event Message] ;
+pianoPgm  = program acousticGrandPiano ;
+violinPgm = program stringEnsemble1 ;
+flutePgm  = program flute ;
 
 
 -- * MIDI channels
