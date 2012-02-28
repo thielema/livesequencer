@@ -140,33 +140,43 @@ play sq waitChan throwAsync x = case Term.viewNode x of
 
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) ->
-            withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan -> do
-                case Term.viewNode body of
-                    Just ("On", [pn, vn]) ->
-                        withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
-                        withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
-                        runIO $
-                        sendNote sq SeqEvent.NoteOn chan p v
-                    Just ("Off", [pn, vn]) ->
-                        withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
-                        withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
-                        runIO $
-                        sendNote sq SeqEvent.NoteOff chan p v
-                    Just ("PgmChange", [pn]) ->
-                        withRangeCheck "program" CM.toProgram CM.fromProgram pn $ \p ->
-                        runIO $
-                        sendEvent sq $ SeqEvent.CtrlEv SeqEvent.PgmChange $
-                            MidiAlsa.programChangeEvent chan p
-                    Just ("Controller", [ccn, vn]) ->
-                        withRangeCheck "controller" CM.toController CM.fromController ccn $ \cc ->
-                        withRangeCheck "controller value" ControllerValue fromControllerValue vn $ \(ControllerValue v) ->
-                        runIO $
-                        sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
-                            MidiAlsa.controllerEvent chan cc (fromIntegral v)
-                    _ -> termException "unknown channel event: " x
-                MT.lift $ wait sq waitChan Nothing
-        _ -> termException "Event must contain Channel, but not " x
+            withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
+                processChannelMsg sq waitChan chan body
+        _ -> processChannelMsg sq waitChan (CM.toChannel 0) event
+           -- termException "Event must contain Channel, but not " x
     _ -> termException "can only process Wait or Event, but not " x
+
+processChannelMsg ::
+    (SndSeq.AllowOutput mode) =>
+    Sequencer mode ->
+    Chan WaitResult ->
+    CM.Channel -> Term ->
+    ExceptionalT Exception.Message (MS.StateT State IO) ()
+processChannelMsg sq waitChan chan body = do
+    case Term.viewNode body of
+        Just ("On", [pn, vn]) ->
+            withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
+            withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
+            runIO $
+            sendNote sq SeqEvent.NoteOn chan p v
+        Just ("Off", [pn, vn]) ->
+            withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
+            withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
+            runIO $
+            sendNote sq SeqEvent.NoteOff chan p v
+        Just ("PgmChange", [pn]) ->
+            withRangeCheck "program" CM.toProgram CM.fromProgram pn $ \p ->
+            runIO $
+            sendEvent sq $ SeqEvent.CtrlEv SeqEvent.PgmChange $
+                MidiAlsa.programChangeEvent chan p
+        Just ("Controller", [ccn, vn]) ->
+            withRangeCheck "controller" CM.toController CM.fromController ccn $ \cc ->
+            withRangeCheck "controller value" ControllerValue fromControllerValue vn $ \(ControllerValue v) ->
+            runIO $
+            sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
+                MidiAlsa.controllerEvent chan cc (fromIntegral v)
+        _ -> termException "invalid channel event: " body
+    MT.lift $ wait sq waitChan Nothing
 
 
 wait ::
