@@ -17,8 +17,7 @@ Description:
    .
    @
    timidity -iA &
-   ./live-sequencer Stream &
-   aconnect Rewrite-Sequence TiMidity &
+   ./live-sequencer-gui --connect-to TiMidity Stream &
    @
    .
    this should give you an ongoing stream
@@ -38,11 +37,12 @@ Description:
    only strict pattern matching and
    pattern matching only at the definition level (no case),
    no local bindings (no lambda, let, where),
-   no types (no type signatures, no type inference)
+   no types (no type inference, type signatures and type declarations are skipped)
    .
    semantics is similar to lazy evaluation,
+   but we have no sharing,
    the value of @main@ is a stream of midi events
-   (@On/Off channel pitch velocity@)
+   (@On/Off pitch velocity@)
    or (@Wait milliseconds@)
    .
    in each step, the head of the stream gets reduced
