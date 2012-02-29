@@ -77,6 +77,11 @@ Source-Repository head
   Type: git
   Location: git://dfa.imn.htwk-leipzig.de/srv/git/seq/
 
+Source-Repository this
+  Type: git
+  Tag: 0.0
+  Location: http://code.haskell.org/~thielema/livesequencer/
+
 Flag httpServer
   Description: Enable access to modules via a web browser
 
