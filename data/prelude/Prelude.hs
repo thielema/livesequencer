@@ -23,3 +23,9 @@ negate x = 0 - x ;
 
 succ x = x+1 ;
 pred x = x-1 ;
+
+-- fromInteger :: Integer -> Int ;
+fromInteger x = x ;
+
+-- fromIntegral :: Int -> Integer ;
+fromIntegral x = x ;

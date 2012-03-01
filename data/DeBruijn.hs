@@ -5,7 +5,7 @@ import List ;
 import Pitch ;
 import Bool ;
 import Integer ;
-import Prelude ( Integer, ($), (.), (+), (-), (<), mod ) ;
+import Prelude ( Integer, fromInteger, fromIntegral, ($), (.), (+), (-), (<), mod ) ;
 
 
 main :: [ Event (Channel Message) ] ;
@@ -25,7 +25,7 @@ makePitch _ = c 5 ;
 
 nextLyndonWord :: Integer -> Integer -> [Integer] -> [Integer] ;
 nextLyndonWord n k =
-   foldr (checkLyndonElement n) [] . take k . cycle ;
+   foldr (checkLyndonElement n) [] . take (fromInteger k) . cycle ;
 
 checkLyndonElement :: Integer -> Integer -> [Integer] -> [Integer] ;
 checkLyndonElement n x [] = ifThenElse (x<n-1) [x+1] [] ;
@@ -34,7 +34,7 @@ checkLyndonElement _ x xs = x:xs ;
 deBruijnSequence :: Integer -> Integer -> [Integer] ;
 deBruijnSequence n k =
    concat $
-   filter (isZero . mod k . length) $
+   filter (isZero . mod k . fromIntegral . length) $
    takeWhile (not . null) $
    iterateIntegerList (nextLyndonWord n k) [0] ;
 

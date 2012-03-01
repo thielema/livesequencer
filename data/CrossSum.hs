@@ -4,7 +4,7 @@ import Midi ;
 import List ;
 import Pitch ;
 import Function ;
-import Prelude ( Integer, (+), mod, div, succ ) ;
+import Prelude ( Integer, fromInteger, (+), mod, div, succ ) ;
 
 
 main :: [ Event (Channel Message) ] ;
@@ -41,7 +41,7 @@ modCrossSumsList n =
 extList :: Integer -> [Integer] -> [Integer] ;
 extList n y =
    applyStrictListList (extList2 n) $ map (incList n y) $
-   take n $ iterateInteger succ 0 ;
+   take (fromInteger n) $ iterateInteger succ 0 ;
 
 extList2 :: Integer -> [[Integer]] -> [Integer] ;
 extList2 n z =

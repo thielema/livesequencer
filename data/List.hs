@@ -4,7 +4,7 @@ import Midi
 import Tuple
 import Function
 import Bool
-import Prelude ( (-), (+), (<), negate, Num, Integer, Bool(False,True), error )
+import Prelude ( (-), (+), (<), negate, Num, Int, Integer, Integral, Bool(False,True), error )
 
 
 map :: (a -> b) -> [a] -> [b] ;
@@ -24,7 +24,7 @@ foldl :: (b -> a -> b) -> b -> [a] -> b ;
 foldl _ a [] = a ;
 foldl f a (x : xs) = foldl f (f a x) xs ;
 
-length :: [a] -> Integer ;
+length :: [a] -> Int ;
 length = sumInteger . map (const 1) ;
 
 sum :: (Num a) => [a] -> a ;
@@ -34,10 +34,10 @@ add :: (Num a) => a -> a -> a ;
 add x y = x + y ;
 
 -- | constant space usage in contrast to 'sum'
-sumInteger :: [Integer] -> Integer ;
+sumInteger :: (Integral a) => [a] -> a ;
 sumInteger = sumIntegerAux 0 ;
 
-sumIntegerAux :: Integer -> [Integer] -> Integer ;
+sumIntegerAux :: (Integral a) => a -> [a] -> a ;
 sumIntegerAux 0 [] = 0 ;
 sumIntegerAux s [] = s ;
 sumIntegerAux s (x:xs) = sumIntegerAux (s+x) xs ;
@@ -58,7 +58,7 @@ scanrAux f x ys = f x (head ys) : ys ;
 reverse :: [a] -> [a] ;
 reverse = foldl (flip cons) [] ;
 
-replicate :: Integer -> a -> [a] ;
+replicate :: Int -> a -> [a] ;
 replicate n x = take n ( repeat x ) ;
 
 repeat :: a -> [a] ;
@@ -129,19 +129,19 @@ null :: [a] -> Bool ;
 null [] = True ;
 null _ = False ;
 
-(!!) :: [a] -> Integer -> a ;
+(!!) :: [a] -> Int -> a ;
 (x:_)  !! 0 = x ;
 (_:xs) !! n = xs !! (n-1) ;
 [] !! _ = error "!!: index too large" ;
 
-take :: Integer -> [a] -> [a] ;
+take :: Int -> [a] -> [a] ;
 take n xs = foldr takeElem (const []) xs n ;
 
-takeElem :: a -> (Integer -> [a]) -> Integer -> [a] ;
+takeElem :: a -> (Int -> [a]) -> Int -> [a] ;
 takeElem _ _go 0 = [] ;
 takeElem x go m = x : go (m-1) ;
 
-drop :: Integer -> [b] -> [b] ;
+drop :: Int -> [b] -> [b] ;
 drop 0 xs = xs ;
 drop _ [] = [] ;
 drop n (_ : xs) = drop (n-1) xs ;
@@ -150,7 +150,7 @@ drop n (_ : xs) = drop (n-1) xs ;
 This does not work well and fails for infinite lists,
 because consFirst matches strictly on Pair.
 -}
-splitAt :: Integer -> [a] -> Tuple.Pair [a] [a] ;
+splitAt :: Int -> [a] -> Tuple.Pair [a] [a] ;
 splitAt 0 xs = Pair [] xs ;
 splitAt _ [] = Pair [] [] ;
 splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
@@ -212,9 +212,9 @@ It is important that the match against 0 is really performed
 and is not shadowed by a failing preceding match, say, against the result of (a<b).
 -}
 mergeWait ::
-  Bool -> Integer ->
-  Integer -> [Midi.Event a] ->
-  Integer -> [Midi.Event a] ->
+  Bool -> Midi.Time ->
+  Midi.Time -> [Midi.Event a] ->
+  Midi.Time -> [Midi.Event a] ->
   [Midi.Event a] ;
 mergeWait _eq 0 a xs _b ys =
   Wait a : merge xs ys ;
