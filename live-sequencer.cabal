@@ -105,18 +105,20 @@ Library
     event-list >=0.0.11 && <0.2,
     base >=4.2 && <5
   Exposed-Modules:
+    Render
     Bool
     Chords
     Drum
     Function
     Instrument
     Integer
-    List
+    ListLive
     Midi
     Music
     Pitch
-    Render
     Tuple
+  Other-Modules:
+    List
 
 
 Executable live-sequencer

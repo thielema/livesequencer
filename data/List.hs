@@ -1,10 +1,35 @@
-module List where
+module List (
+    map,
+    zipWith,
+    foldr,
+    foldl,
+    length,
+    sum,
+    add,
+    scanl,
+    scanr,
+    reverse,
+    replicate,
+    repeat,
+    cycle,
+    iterate,
+    (++),
+    concat,
+    concatMap,
+    head,
+    tail,
+    null,
+    (!!),
+    take,
+    drop,
+    filter,
+    takeWhile,
+    ) where
 
-import Midi
-import Tuple
+import ListLive
 import Function
 import Bool
-import Prelude ( (-), (+), (<), negate, Num, Int, Integer, Integral, Bool(False,True), error )
+import Prelude ( (-), (+), Num, Int, Bool(False,True), error )
 
 
 map :: (a -> b) -> [a] -> [b] ;
@@ -32,15 +57,6 @@ sum = foldl add 0 ;
 
 add :: (Num a) => a -> a -> a ;
 add x y = x + y ;
-
--- | constant space usage in contrast to 'sum'
-sumInteger :: (Integral a) => [a] -> a ;
-sumInteger = sumIntegerAux 0 ;
-
-sumIntegerAux :: (Integral a) => a -> [a] -> a ;
-sumIntegerAux 0 [] = 0 ;
-sumIntegerAux s [] = s ;
-sumIntegerAux s (x:xs) = sumIntegerAux (s+x) xs ;
 
 
 scanl :: (a -> b -> a) -> a -> [b] -> [a] ;
@@ -70,46 +86,9 @@ cycle s = s ++ cycle s ;
 iterate :: (a -> a) -> a -> [a] ;
 iterate f x = x : iterate f (f x) ;
 
--- | constant space usage in contrast to 'iterate'
-iterateInteger, iterateIntegerAux ::
-   (Integer -> Integer) -> Integer -> [Integer] ;
-iterateInteger f = applyStrict (iterateIntegerAux f) ;
-iterateIntegerAux f x = x : iterateInteger f (f x) ;
-
-iterateIntegerList, iterateIntegerListAux ::
-   ([Integer] -> [Integer]) -> [Integer] -> [[Integer]] ;
-iterateIntegerList f = applyStrictList (iterateIntegerListAux f) ;
-iterateIntegerListAux f x = x : iterateIntegerList f (f x) ;
-
-{- even stricter: it always updates the accumulator, also if the updated value is not needed because the list is aborted earlier
-iterateInteger, iterateIntegerAux0 ::
-   (Integer -> Integer) -> Integer -> [Integer] ;
-iterateIntegerAux1 ::
-   (Integer -> Integer) -> Integer -> Integer -> [Integer] ;
-iterateInteger f = applyStrict (iterateIntegerAux0 f) ;
-iterateIntegerAux0 f x = applyStrict (iterateIntegerAux1 f x) (f x) ;
-iterateIntegerAux1 f x fx = x : iterateInteger f fx ;
--}
-
-{- too strict for DeBruijn
-iterateIntegerList, iterateIntegerListAux0 ::
-   ([Integer] -> [Integer]) -> [Integer] -> [[Integer]] ;
-iterateIntegerListAux1 ::
-   ([Integer] -> [Integer]) -> [Integer] -> [Integer] -> [[Integer]] ;
-iterateIntegerList f = applyStrictList (iterateIntegerListAux0 f) ;
-iterateIntegerListAux0 f x = applyStrictList (iterateIntegerListAux1 f x) (f x) ;
-iterateIntegerListAux1 f x fx = x : iterateIntegerList f fx ;
--}
-
-
-append :: [a] -> [a] -> [a] ;
-append = flip ( foldr cons ) ;
 
 (++) :: [a] -> [a] -> [a] ;
 xs ++ ys = foldr cons ys xs ;
-
-cons :: a -> [a] -> [a] ;
-cons x xs = x : xs ;
 
 concat :: [[a]] -> [a] ;
 concat = foldr append [];
@@ -146,23 +125,6 @@ drop 0 xs = xs ;
 drop _ [] = [] ;
 drop n (_ : xs) = drop (n-1) xs ;
 
-{-
-This does not work well and fails for infinite lists,
-because consFirst matches strictly on Pair.
--}
-splitAt :: Int -> [a] -> Tuple.Pair [a] [a] ;
-splitAt 0 xs = Pair [] xs ;
-splitAt _ [] = Pair [] [] ;
-splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
-
-consFirst :: a -> Tuple.Pair [a] [a] -> Tuple.Pair [a] [a] ;
-consFirst x p = Pair (x : fst p) (snd p) ;
-
-
-afterEach :: a -> [a] -> [a] ;
-afterEach _y [] = [] ;
-afterEach y (x : xs) = x : y : afterEach y xs ;
-
 
 filter :: (a -> Bool) -> [a] -> [a] ;
 filter p =
@@ -177,71 +139,3 @@ takeWhile p =
 
 takeWhileElem :: (a -> Bool) -> a -> [a] -> [a] ;
 takeWhileElem p x xs = ifThenElse (p x) (x:xs) [] ;
-
-dropWhileRev :: (a -> Bool) -> [a] -> [a] ;
-dropWhileRev p =
-   foldr (dropWhileRevElem p) [] ;
-
-dropWhileRevElem :: (a -> Bool) -> a -> [a] -> [a] ;
-dropWhileRevElem p x xs = ifThenElse (p x && null xs) [] (x:xs) ;
-
-
-infixr 7 +:+ ;  {- like multiplication -}
-infixr 6 =:= ;  {- like addition -}
-
-(+:+) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
-xs +:+ ys  =  xs ++ ys ;
-
-merge, (=:=) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
-xs =:= ys  =  merge xs ys ;
-
-merge (Wait a : xs) (Wait b : ys) =
-  mergeWait (a<b) (a-b) a xs b ys ;
-merge (Wait a : xs) (y : ys) =
-  y : merge (Wait a : xs) ys ;
-merge (x : xs) ys = x : merge xs ys ;
-merge [] ys = ys ;
-
-{-
-This looks a bit cumbersome,
-but it is necessary for avoiding stacks of unevaluated subtractions.
-We use or abuse the way of how the interpreter performs pattern matching.
-By matching against 0 we force the evaluation of the difference d.
-The evaluated difference is hold throughout the matching of all patterns.
-It is important that the match against 0 is really performed
-and is not shadowed by a failing preceding match, say, against the result of (a<b).
--}
-mergeWait ::
-  Bool -> Midi.Time ->
-  Midi.Time -> [Midi.Event a] ->
-  Midi.Time -> [Midi.Event a] ->
-  [Midi.Event a] ;
-mergeWait _eq 0 a xs _b ys =
-  Wait a : merge xs ys ;
-mergeWait True d a xs _b ys =
-  Wait a : merge xs (Wait (negate d) : ys) ;
-mergeWait False d _a xs b ys =
-  Wait b : merge (Wait d : xs) ys ;
-
-mergeMany :: [[Midi.Event a]] -> [Midi.Event a] ;
-mergeMany = foldl merge [] ;
-
-
-
-
-applyStrictList :: ([Integer] -> a) -> ([Integer] -> a) ;
-applyStrictList f xs = applyStrictListAux f [] (reverse xs) ;
-
-applyStrictListAux :: ([Integer] -> a) -> [Integer] -> ([Integer] -> a) ;
-applyStrictListAux f ys [] = f ys ;
-applyStrictListAux f ys (0:xs) = applyStrictListAux f (0:ys) xs ;
-applyStrictListAux f ys (x:xs) = applyStrictListAux f (x:ys) xs ;
-
-
-applyStrictListList :: ([[Integer]] -> a) -> ([[Integer]] -> a) ;
-applyStrictListList f xs = applyStrictListListAux f [] (reverse xs) ;
-
-applyStrictListListAux :: ([[Integer]] -> a) -> [[Integer]] -> ([[Integer]] -> a) ;
-applyStrictListListAux f ys [] = f ys ;
-applyStrictListListAux f ys (x:xs) =
-   applyStrictList (applyStrictListListAux f . flip cons ys) x xs ;

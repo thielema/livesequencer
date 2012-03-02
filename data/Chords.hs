@@ -1,7 +1,6 @@
 module Chords where
 
 import Midi
-import List
 
 chord3 ::
    Integer ->

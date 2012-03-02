@@ -1,8 +1,9 @@
 module Music where
 
 import Midi ( Event(Wait, Event, Say), Message, Channel(Channel),
-              note, transposeEvent )
-import List ( map, replicate, repeat, concat, mergeMany, afterEach )
+              note, transposeEvent, mergeMany )
+import ListLive ( afterEach )
+import List ( map, replicate, repeat, concat )
 import Prelude ( (*), div, (.), ($), negate, Int, Integer, Integral, String )
 
 

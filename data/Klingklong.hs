@@ -196,9 +196,7 @@ pattern1BassPad =
 
 pattern2BassPad =
     mergeMany [
-      append
-        (quad pattern2a)
-        (quadAlt pattern2a pattern2b),
+      quad pattern2a ++ quadAlt pattern2a pattern2b,
       double (bassNote (a 1)),
       pad2, double sweep
     ]

@@ -1,4 +1,28 @@
-module Midi where
+module Midi (
+    Time,
+    Velocity,
+    Program,
+    Controller,
+    Chan,
+    Event(..),
+    Channel(..),
+    Message(..),
+
+    note,
+    rest,
+    program,
+    controller,
+    channel,
+    transpose, transposeEvent,
+    controlCurve,
+    normalVelocity,
+    emphasize,
+
+    (+:+),
+    merge, (=:=),
+    mergeWait,
+    mergeMany,
+    ) where
 
 import Function
 import Pitch ( Pitch )
@@ -86,3 +110,44 @@ and this is handled more efficiently by the MIDI message encoding.
 emphasizeEvent :: Integer -> Event Message -> Event Message ;
 emphasizeEvent v (Event (On pitch velocity)) = Event (On pitch (velocity+v)) ;
 emphasizeEvent _v event = event ;
+
+
+infixr 7 +:+ ;  {- like multiplication -}
+infixr 6 =:= ;  {- like addition -}
+
+(+:+) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+xs +:+ ys  =  xs ++ ys ;
+
+merge, (=:=) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+xs =:= ys  =  merge xs ys ;
+
+merge (Wait a : xs) (Wait b : ys) =
+  mergeWait (a<b) (a-b) a xs b ys ;
+merge (Wait a : xs) (y : ys) =
+  y : merge (Wait a : xs) ys ;
+merge (x : xs) ys = x : merge xs ys ;
+merge [] ys = ys ;
+
+{-
+This looks a bit cumbersome,
+but it is necessary for avoiding stacks of unevaluated subtractions.
+We use or abuse the way of how the interpreter performs pattern matching.
+By matching against 0 we force the evaluation of the difference d.
+The evaluated difference is hold throughout the matching of all patterns.
+It is important that the match against 0 is really performed
+and is not shadowed by a failing preceding match, say, against the result of (a<b).
+-}
+mergeWait ::
+  Bool -> Midi.Time ->
+  Midi.Time -> [Midi.Event a] ->
+  Midi.Time -> [Midi.Event a] ->
+  [Midi.Event a] ;
+mergeWait _eq 0 a xs _b ys =
+  Wait a : merge xs ys ;
+mergeWait True d a xs _b ys =
+  Wait a : merge xs (Wait (negate d) : ys) ;
+mergeWait False d _a xs b ys =
+  Wait b : merge (Wait d : xs) ys ;
+
+mergeMany :: [[Midi.Event a]] -> [Midi.Event a] ;
+mergeMany = foldl merge [] ;
