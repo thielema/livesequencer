@@ -1,3 +1,49 @@
+* Module system:
+  allow adding modules
+  allow closing modules
+  allow renaming modules:
+    when reloading a module,
+    check whether the name has changed and whether the name clashes with other modules,
+    if rename is possible, then alter tab name
+    also alter the imports of the other modules
+  hierarchical module names
+  if an import is added, load the module
+  flush unimported modules
+  qualify identifiers
+
+* Library part
+  Move modules into module hierarchy.
+
+* pair syntax (a,b)
+  We could make "," a regular infix operator with low precendence.
+  This would give us operator section syntax.
+  However it conflicts with commas in list syntax.
+
+* Are newlines in module content from HTTP handled correctly?
+  WWW uses CR+LF
+  I have observed, that Windows/InternetExplorer submits CR+LF in the modified text lines.
+  The question is, what kind of line end is expected by WxWidgets?
+
+* higher order functions:
+  support operator sections like (+) and (:)
+    Can expressions like (a+) and (+b) be handled by postfix and prefix operators?
+    This won't work, because operator sections are only allowed in parentheses.
+    E.g. (a + + b) is not valid syntax.
+    However it is allowed to write (a+b+).
+    But due to the left-associativity it is not allowed to write (+a+b).
+    Is it allowed to use the same operator as infix and postfix symbol?
+    Maybe at the beginning I should only support (+), but not (a+) and (+a).
+    Since operator section is only allowed in parentheses
+       we can handle it in the parser of syntactic atoms.
+  support lambda
+
+* Gtk-CRITICAL warnings: eliminate them
+  sometimes the program crashes on exit
+
+* GUI graphical error:
+  between menu and tab handles there is a short line,
+    that looks like the top border of another handle
+  does it have a meaning?
 
 * precise ALSA timing
   For precise timing it is certainly better
@@ -5,6 +51,12 @@
   Currently we wait using ALSA echo events
   and then send the actual event immediately.
   The proposed change increases latency of changes in the source files.
+  Current term and highlighting should be updated
+  when the delayed MIDI event is played.
+  We can achieve this by sending an Echo message to ourselve.
+
+* Dirk Richter proposes to store old module contents when updating a module.
+  This way you can later reproduce what you did in a live performance.
 
 * allocate multiple ALSA ports and extend the Channel constructor by a port field
   Multiple ports allow to connect to different ALSA nodes
@@ -16,8 +68,26 @@
   haskell-src: no support for precedence and associativity
   haskell-src-ext: no support for source locations
 
-* highlight "the data (Number) that is
-  currently being output" in the editor
+* Can we use reactive-banana-wx in order to write safer GUI?
+  Maybe we can simplify:
+     mutual exclusive menu items
+     consistency Map Module.Name Page with GUI pages
+     synchronization of ALSA and WX and HTTP,
+        e.g. various inputs to the text field; execution modes
+  Peter Pepper: "Acausal programming"
+
+* demand trace/"backtrace"/GUI:
+  distinguish between musical and operational highlighting
+  as described below, highlighting according to NoteOn and NoteOff won't work
+  and it would also not solve the problem of dependencies
+  We could maintain a map of currently played notes
+     in order to switch off highlighting for these notes,
+     when NoteOff is send.
+     This would correctly de-highlight notes,
+     but the backtrace would still be cumulative.
+  Interesting observation:
+     in a 'repeat' the last notes are turned back to normal appearance
+     if the loop starts again
 
 * compositional highlighting
   The composition of note streams shall also compose their highlighting animations.
@@ -36,9 +106,20 @@
 * merge editor and highlighter window
   track all inputs of the editor window and
   adapt the information in the syntax tree accordingly
+  I am not sure that this is an advantage.
+  Maybe there should be two windows:
+  One with the editor and one with the interpreter content and the current term.
+  This way you can project the interpreter content to the wall
+  and edit in the editor privately.
+
+* Maybe we should use WxWidgets feature for external GUI description.
+  This way, the user can choose the arrangement
+  of editor, highlighter and current term area.
+  We could also have translated versions without recompilation.
 
 * add a type checker to the implementation
-  (and data declarations to the language)
+  Try to incorporate Helium/parser/type-checker or Typing Haskell in Haskell.
+  Can one of the special Haskell editors Yi or Leksah be of help?
 
 * support different import modes, qualified identifiers
   and clashing identifiers in modules
@@ -67,23 +148,19 @@
   check whether modules in 'data' can be parsed by our parser
   check whether modules in 'data' directory can be compiled by GHC
 
-* default path for data files
-  Option.importPaths deflt should contain the paths from the Paths module.
-  This makes working with an installation from Hackage easy,
-  but makes working in the GIT working copy awful,
-  because after every change in data/ you have to reinstall the files.
-
-* log to a MIDI file
-  Button "Open log": open a raw file that we log into
-     alternatively there should be an option '--log' for opening the file
-  Button "Close log": copy the raw file into a valid MIDI file
-     closing and wrapping the log should also performed at Quit
-  We could also let an external program log the events,
-  but then we must use ALSA time stamps for precise timing.
-  We could also provide a module that interprets a static program
-  and generates a MIDI file from it like Haskore.
-
 * maybe split Term into Parser and Term module
 
-* allow to enter lyrics
-  show them in status line or in a new window
+* allow IO or restricted IO monad
+    such that the live program can send the messages itself
+
+* single step mode: allow finer steps
+  For finer steps we have to break the recursion and remember the application focus.
+  How to do this?
+  Using a Zipper on the Term?
+  Using a Map Id Node and an Id that points to the focus?
+  Do not represent a focus but extend the Term tree
+    such that each node contains a sequence of reductions.
+    Flattening all sequences should give a sequence of term trees.
+    Since the flattening is lazy,
+    we can decide later what information to present to the user.
+    We could even reverse steps back to the last sent event.
