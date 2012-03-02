@@ -34,6 +34,17 @@ data Import = Import { qualified :: Bool
                      }
 --    deriving (Show)
 
+parsePortList ::
+    Parsec.GenParser Char () [Identifier]
+parsePortList =
+    Token.parens lexer $ flip Parsec.sepEndBy (Token.comma lexer) $
+    (do ident <- input
+        void $ Parsec.option [] $ Token.parens lexer $
+            Token.commaSep lexer $ Token.identifier lexer
+        return ident)
+    <|>
+    Term.parenOperator
+
 {-
 A semicolon behind an import statement is necessary when parsing
 
@@ -51,14 +62,7 @@ instance Input Import where
       t <- input
       r <- Parsec.optionMaybe $ reserved lexer "as" >> input
       void $ Parsec.optionMaybe $ reserved lexer "hiding"
-      void $ Parsec.optionMaybe $
-          Token.parens lexer $ Token.commaSep lexer $
-          (do ident <- input
-              void $ Parsec.option [] $ Token.parens lexer $
-                  Token.commaSep lexer $ Token.identifier lexer
-              return ident)
-          <|>
-          Term.parenOperator
+      void $ Parsec.optionMaybe $ parsePortList
       void $ Parsec.option "" $ Token.semi lexer
       return $ Import { qualified = q, source = t, rename = r }
 
@@ -289,6 +293,10 @@ make_functions =
 
 
 {-
+We do not define the instance Input Module,
+because for proper module parsing
+the caller should provide the source file path and content.
+
 instance Input Module where
   input = do
 -}
@@ -299,6 +307,7 @@ parse srcLoc srcText = do
     m <- Parsec.option (Name "Main") $ do
         reserved lexer "module"
         m <- input
+        void $ Parsec.optionMaybe $ parsePortList
         reserved lexer "where"
         return m
     is <- Parsec.many input

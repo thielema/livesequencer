@@ -4,9 +4,9 @@ module Midi (
     Program,
     Controller,
     Chan,
-    Event(..),
-    Channel(..),
-    Message(..),
+    Event(Wait, Say, Event),
+    Channel(Channel),
+    Message(PgmChange, Controller, On, Off),
 
     note,
     rest,
