@@ -3,15 +3,18 @@ module Pattern where
 import Pitch
 import Midi
 import List
-import Prelude ( (*), ($) )
+import Prelude ( Int, (*), ($) )
 
 
+main, voice :: [Event (Channel Message)] ;
 main = voice ;
 
+en, qn, hn :: Time ;
 en = 200 ;
 qn = 2 * en ;
 hn = 2 * qn ;
 
+harmonies :: [[Pitch]] ;
 harmonies =
     [ c 4, e 4, g 4, c 5 ] :
     [ d 4, f 4, a 4, c 5 ] :
@@ -19,16 +22,17 @@ harmonies =
     [ c 4, e 4, g 4, c 5 ] :
     [];
 
+pattern :: [ Int ] ;
 pattern = [0, 1, 2, 1, 2, 3, 2, 1] ;
 
 voice =
     channel 0 (program 0 ++
-        concat (
-            map ( note en ) $
+        concatMap ( note en ) (
             zipWith index
-                ( concat $ map ( replicate 8 ) $
+                ( concatMap ( replicate 8 ) $
                   cycle harmonies )
                 ( cycle pattern )
         ) ) ;
 
+index :: [a] -> Int -> a ;
 index xs n = xs !! n ;

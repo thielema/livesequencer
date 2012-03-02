@@ -15,7 +15,7 @@ cascade =
 loop = choir ++ loop ;
 choir = mergeMany tracks ;
 
-tracks :: [Event (Channel Message)] ;
+tracks :: [ [ Event (Channel Message) ] ] ;
 tracks =
    sopranoTrack :
    contraltoITrack :

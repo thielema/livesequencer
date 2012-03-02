@@ -6,8 +6,10 @@ import List
 import Prelude ( (*) )
 
 
+main, voice1, voice2 :: [Event (Channel Message)] ;
 main = cycle ( merge voice1 voice2 ) ;
 
+qn, hn :: Time ;
 qn = 600 ;
 hn = 2 * qn ;
 

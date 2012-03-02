@@ -72,6 +72,7 @@ Data-Files:
   data/List.hs
   data/Midi.hs
   data/Music.hs
+  data/Pattern.hs
   data/Pitch.hs
   data/Render.hs
   data/Tuple.hs
@@ -119,6 +120,8 @@ Library
     Tuple
   Other-Modules:
     List
+    Pattern
+    Finite
 
 
 Executable live-sequencer

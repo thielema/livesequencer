@@ -8,8 +8,10 @@ import List
 import Prelude ( (*) )
 
 
-main = merge ( cycle song ) ( cycle drums ) ;
+main, song, mel, drums :: [Event (Channel Message)] ;
+main = cycle song =:= cycle drums ;
 
+en, qn, hn, wn :: Time ;
 en = 100 ;
 qn = 2*en ;
 hn = 2*qn ;
@@ -22,6 +24,7 @@ mel = channel 3 ( concat
      [ note hn (c 4)
       , note hn (f 4), note hn (e 4), note hn (c 4) ] ) ;
 
+part1, part2, part3 :: [Event (Channel Message)] ;
 part1 = twice ( channel 0 ( concat
     [ quad ( major qn (c 4) )
     , quad ( major qn (c 4) )
@@ -43,10 +46,12 @@ part2 = twice ( channel 0 ( concat
 
 part3 = [] ;
 
+twice, quad :: [a] -> [a] ;
 quad x = concat [ x, x, x, x ] ;
 twice x = concat [ x, x];
 
 
+bass, snare :: Time -> [Event Message] ;
 bass dur = emphasize 36 (drum bassDrum1 dur) ;
 snare dur = emphasize 16 (drum electricSnare dur) ;
 

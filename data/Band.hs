@@ -5,10 +5,12 @@ import Chords
 import Pitch
 import Midi
 import List
-import Prelude ( (*) )
+import Prelude ( (*) ) ;
 
+main, chords, drums :: [Event (Channel Message)] ;
 main = merge ( cycle chords ) ( cycle drums ) ;
 
+en, qn, hn, wn :: Time ;
 en = 100 ;
 qn = 2 * en ;
 hn = 2 * qn ;
@@ -28,4 +30,5 @@ drums =
         , quad ( drum acousticSnare en )
         ] ) ;
 
+quad :: [a] -> [a] ;
 quad x = concat [ x, x, x, x ] ;
