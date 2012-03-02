@@ -30,19 +30,13 @@ data Option = Option {
         httpOption :: HTTP.Option
     }
 
-{-
-These are the paths that might be used for tests without installation.
--}
-defltPaths :: [ FilePath ]
-defltPaths = [ "data", "data" </> "prelude" ]
-
-deflt :: IO Option
-deflt = do
+getDeflt :: IO Option
+getDeflt = do
     dataDir <- Paths.getDataDir
     return $
         Option {
             moduleName = error "no module specified",
-            importPaths = map (dataDir </>) defltPaths,
+            importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
             connectTo = Nothing,
             connectFrom = Nothing,
             httpOption = HTTP.deflt
@@ -53,20 +47,21 @@ deflt = do
 Guide for common Linux/Unix command-line options:
   http://www.faqs.org/docs/artu/ch10s05.html
 -}
-description :: [Opt.OptDescr (Option -> IO Option)]
-description =
+description :: Option -> [ Opt.OptDescr (Option -> IO Option) ]
+description deflt =
     Opt.Option ['h'] ["help"]
         (NoArg $ \ _flags -> do
             programName <- getProgName
             putStrLn $
-                usageInfo ("Usage: " ++ programName ++ " [OPTIONS]") description
+                usageInfo ("Usage: " ++ programName ++ " [OPTIONS]") $
+                description deflt
             Exit.exitSuccess)
         "show options" :
     Opt.Option ['i'] ["import-paths"]
         (flip ReqArg "PATHS" $ \str flags ->
             return $ flags{importPaths = chop (searchPathSeparator==) str})
         ("colon separated import paths,\ndefault " ++
-         intercalate ":" defltPaths) :
+         intercalate ":" (importPaths deflt)) :
     Opt.Option ['p'] ["connect-to"]
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectTo = Just str})
@@ -84,14 +79,16 @@ description =
 get :: IO Option
 get = do
     argv <- getArgs
-    let (opts, files, errors) = getOpt RequireOrder description argv
+    deflt <- getDeflt
+    let (opts, files, errors) =
+            getOpt RequireOrder (description deflt) argv
     when (not $ null errors) $
         exitFailureMsg (init (concat errors))
 
     dir <- getCurrentDirectory
     parsedOpts <-
         fmap (\o -> o { importPaths = map (dir </>) $ importPaths o } ) $
-        foldl (>>=) deflt opts
+        foldl (>>=) (return deflt) opts
 
     case files of
         [] -> exitFailureMsg "no module specified"
