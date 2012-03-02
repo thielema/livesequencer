@@ -7,6 +7,7 @@ import qualified HTTPServer.Option as HTTP
 
 import qualified Text.ParserCombinators.Parsec as Parsec
 
+import qualified Paths_live_sequencer as Paths
 import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
           (getOpt, ArgOrder(..), ArgDescr(..), usageInfo, )
@@ -29,15 +30,23 @@ data Option = Option {
         httpOption :: HTTP.Option
     }
 
-deflt :: Option
-deflt =
-    Option {
-        moduleName = error "no module specified",
-        importPaths = [ ".", "data", "data" </> "prelude" ],
-        connectTo = Nothing,
-        connectFrom = Nothing,
-        httpOption = HTTP.deflt
-    }
+{-
+These are the paths that might be used for tests without installation.
+-}
+defltPaths :: [ FilePath ]
+defltPaths = [ "data", "data" </> "prelude" ]
+
+deflt :: IO Option
+deflt = do
+    dataDir <- Paths.getDataDir
+    return $
+        Option {
+            moduleName = error "no module specified",
+            importPaths = map (dataDir </>) defltPaths,
+            connectTo = Nothing,
+            connectFrom = Nothing,
+            httpOption = HTTP.deflt
+        }
 
 
 {-
@@ -57,7 +66,7 @@ description =
         (flip ReqArg "PATHS" $ \str flags ->
             return $ flags{importPaths = chop (searchPathSeparator==) str})
         ("colon separated import paths,\ndefault " ++
-         intercalate ":" (importPaths deflt)) :
+         intercalate ":" defltPaths) :
     Opt.Option ['p'] ["connect-to"]
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectTo = Just str})
@@ -82,7 +91,7 @@ get = do
     dir <- getCurrentDirectory
     parsedOpts <-
         fmap (\o -> o { importPaths = map (dir </>) $ importPaths o } ) $
-        foldl (>>=) (return deflt) opts
+        foldl (>>=) deflt opts
 
     case files of
         [] -> exitFailureMsg "no module specified"

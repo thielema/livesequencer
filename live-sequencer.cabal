@@ -62,6 +62,9 @@ Data-Files:
   data/Simplesong.hs
   data/Sweep.hs
   data/UD.hs
+  data/CrossSum.hs
+  data/Fibonacci.hs
+  data/DeBruijn.hs
 
   data/Bool.hs
   data/Chords.hs
@@ -70,6 +73,7 @@ Data-Files:
   data/Instrument.hs
   data/Integer.hs
   data/List.hs
+  data/ListLive.hs
   data/Midi.hs
   data/Music.hs
   data/Pattern.hs
@@ -95,6 +99,7 @@ Source-Repository this
 
 Flag httpServer
   Description: Enable access to modules via a web browser
+  Default: True
 
 
 Library
@@ -122,6 +127,9 @@ Library
     List
     Pattern
     Finite
+    CrossSum
+    DeBruijn
+    Fibonacci
 
 
 Executable live-sequencer
@@ -140,6 +148,7 @@ Executable live-sequencer
     Step
     Term
     Log
+    Paths_live_sequencer
   Other-Modules:
     Lilypond
   GHC-Options: -Wall -threaded
@@ -182,6 +191,7 @@ Executable live-sequencer-gui
     Step
     Term
     Log
+    Paths_live_sequencer
   GHC-Options: -threaded -Wall
   If impl(ghc>=7.0)
     GHC-Options: -fwarn-tabs -fwarn-incomplete-uni-patterns
