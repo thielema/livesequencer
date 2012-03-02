@@ -147,6 +147,7 @@ Executable live-sequencer
     Rule
     Step
     Term
+    Type
     Log
     Paths_live_sequencer
   Other-Modules:
@@ -190,6 +191,7 @@ Executable live-sequencer-gui
     Rule
     Step
     Term
+    Type
     Log
     Paths_live_sequencer
   GHC-Options: -threaded -Wall
