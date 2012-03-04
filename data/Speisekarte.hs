@@ -45,39 +45,39 @@ sopranoTrack, contraltoITrack, contraltoIITrack,
 
 sopranoTrack =
    sopranoChannel (
-      flutePgm ++
+      program flute ++
       transpose 12 sopranoMelody
    ) ;
 
 contraltoITrack =
-   contraltoChannel (
-      pianoPgm ++
+   contraltoIChannel (
+      program harpsichord ++
       contraltoIMelody
    ) ;
 
 contraltoIITrack =
-   contraltoChannel (
-      pianoPgm ++
+   contraltoIIChannel (
+      program acousticGrandPiano ++
       contraltoIIMelody
    ) ;
 
 tenorTrack =
    tenorChannel (
-      violinPgm ++
+      program stringEnsemble1 ++
       controller volumeCC 64 ++
       tenorMelody
    ) ;
 
 bassITrack =
-   bassChannel (
-      pianoPgm ++
+   bassIChannel (
+      program fretlessBass ++
       bassIMelody
    ) ;
 
 bassIITrack =
-   bassChannel (
-      pianoPgm ++
-      transpose (negate 12) bassIIMelody
+   bassIIChannel (
+      program pizzicatoStrings ++
+      bassIIMelody
    ) ;
 
 
@@ -149,12 +149,12 @@ contraltoIIMelody =
 
 tenorMelody =
    rest en ++ rest qn ++
-   note en (a 3) ++ note en (b 3) ++ note hn (a 3) ++
-   note qn (a 3) ++ note qn (d 4) ++ note qn (fis 4) ++
+   note en (a 3) ++ note en (b 3) ++ note dhn (a 3) ++
+   note qn (d 4) ++ note qn (fis 4) ++
    note en (e 4) ++ note en (fis 4) ++ note en (e 4) ++ note en (fis 4) ++ note en (e 4) ++ note en (d 4) ++
    note hn (cis 4) ++ rest qn ++
-   note en (d 4) ++ note en (b 3) ++ note hn (b 3) ++
-   note qn (b 3) ++ note qn (e 4) ++ note en (b 3) ++ note en (e 4) ++
+   note en (d 4) ++ note en (b 3) ++ note dhn (b 3) ++
+   note qn (e 4) ++ note en (b 3) ++ note en (e 4) ++
    note en (cis 4) ++ note en (d 4) ++ note en (cis 4) ++ note en (d 4) ++ note en (cis 4) ++ note en (b 3) ++
    note qn (a 3) ++ rest en ++
    [] ;
@@ -195,22 +195,17 @@ wn = 2 * hn ; dwn = 3 * hn ;
 wn2 = 2 * wn ;
 
 
--- * MIDI program
-
-pianoPgm, violinPgm, flutePgm :: [Event Message] ;
-pianoPgm  = program acousticGrandPiano ;
-violinPgm = program stringEnsemble1 ;
-flutePgm  = program flute ;
-
-
 -- * MIDI channels
 
-sopranoChannel, contraltoChannel, tenorChannel, bassChannel ::
-   [Event a] -> [Event (Channel a)] ;
-sopranoChannel   = channel 0 ;
-contraltoChannel = channel 1 ;
-tenorChannel     = channel 2 ;
-bassChannel      = channel 3 ;
+sopranoChannel, contraltoIChannel, contraltoIIChannel,
+   tenorChannel, bassIChannel, bassIIChannel
+      :: [Event a] -> [Event (Channel a)] ;
+sopranoChannel     = channel 0 ;
+contraltoIChannel  = channel 1 ;
+contraltoIIChannel = channel 2 ;
+tenorChannel       = channel 3 ;
+bassIChannel       = channel 4 ;
+bassIIChannel      = channel 5 ;
 
 
 -- * MIDI controllers
