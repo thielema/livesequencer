@@ -50,8 +50,25 @@ Description:
    and the first arg of the @:@ gets fully expanded
    and it must be a midi event.
    .
-   In the library interface we provide the basic Live-Sequencer modules
-   in order to allow offline rendering of Live-Sequencer music.
+   3. Offline rendering *****
+   .
+   In the library interface of this package
+   we provide the basic Live-Sequencer modules
+   in order to allow offline rendering of music
+   that you programmed within the Live-Sequencer.
+   You may generate a standard MIDI file
+   using function from the "Render" module.
+   To this end load your song module into GHCi and call
+   .
+   >YourModule> Render.writeStream "yoursong.mid" yourSong
+   .
+   4. HTTP access *****
+   .
+   You may open a browser and view all modules under
+   <http://localhost:8080/>.
+   If the user of the GUI inserts comments like this @----------------@,
+   then it is possible to modify the content below this mark via HTTP.
+   This way multiple people can participate in the composition process.
 Build-Type: Simple
 
 Data-Files:
