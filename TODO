@@ -45,6 +45,18 @@
     that looks like the top border of another handle
   does it have a meaning?
 
+* merge term in realtime
+  We might play a new term
+    by replacing currentTerm by (currentTerm =:= markedTerm)
+  This way you can add tracks while the music is playing.
+  However this way the new term will be played
+  only after the current Wait is completed.
+  In order to stay independent from particular function names like "merge",
+  we could just provide a menu item that considers the marked term
+    a function term and apply that function to the current term.
+  Then we can merge new things using (merge newTerm)
+    or append something using (flip append newTerm).
+
 * precise ALSA timing
   For precise timing it is certainly better
   to send ALSA events with future time stamps.
