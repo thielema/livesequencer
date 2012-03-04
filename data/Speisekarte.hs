@@ -67,6 +67,15 @@ bassIITrack =
    ) ;
 
 
+vibnote :: Time -> Pitch -> [Event Message] ;
+vibnote dur p =
+   note dur p
+   =:=
+   ( [ Wait (div dur 2) ] ++
+     controller modulationCC 127 ++
+     [ Wait (div dur 2) ] ++
+     controller modulationCC 0 );
+
 sopranoLoop,
    sopranoMelody, contraltoIMelody, contraltoIIMelody,
    tenorMelody, bassIMelody, bassIIMelody
@@ -76,28 +85,28 @@ sopranoLoop = sopranoMelody ++ sopranoLoop ;
 
 sopranoMelody =
    rest dqn ++
-   note qn (d 5) ++ note en (a 4) ++
+   vibnote qn (d 5) ++ note en (a 4) ++
    note en (d 5) ++ note en (d 5) ++
    note en (d 5) ++
-   note qn (d 5) ++ note en (a 4) ++
+   vibnote qn (d 5) ++ note en (a 4) ++
    note en (d 5) ++ note en (d 5) ++
    note en (d 5) ++
-   note qn (e 5) ++ note en (a 4) ++
+   vibnote qn (e 5) ++ note en (a 4) ++
    note en (e 5) ++ note en (e 5) ++
    note en (e 5) ++
-   note qn (e 5) ++ note en (a 4) ++
+   vibnote qn (e 5) ++ note en (a 4) ++
    note en (e 5) ++ note en (cis 5) ++
    note en (a 4) ++
-   note qn (fis 5) ++ note en (fis 5) ++
+   vibnote qn (fis 5) ++ note en (fis 5) ++
    note en (e 5) ++ note en (d 5) ++
    note en (cis 5) ++
-   note qn (b 4) ++ rest en ++
+   vibnote qn (b 4) ++ rest en ++
    note en (g 5) ++ note en (e 5) ++
    note en (b 4) ++
    note en (cis 5) ++ note en (a 4) ++
    note en (a 4) ++ note en (a 4) ++
    note en (b 4) ++ note en (cis 5) ++
-   note qn (d 5) ++ rest en ++
+   vibnote qn (d 5) ++ rest en ++
    [] ;
 
 contraltoIMelody =
@@ -192,5 +201,6 @@ bassChannel      = channel 3 ;
 
 -- * MIDI controllers
 
-volumeCC :: Controller ;
+volumeCC, modulationCC :: Controller ;
 volumeCC = 7 ;
+modulationCC = 1 ;
