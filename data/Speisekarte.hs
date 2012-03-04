@@ -4,6 +4,7 @@ import Pitch
 import Midi
 import List
 import Instrument
+import Drum
 import Prelude ( (*), ($), negate )
 
 main, cascade, loop, choir :: [Event (Channel Message)] ;
@@ -14,6 +15,19 @@ cascade =
 
 loop = choir ++ loop ;
 choir = mergeMany tracks ;
+
+drumTrack, drumLoop :: [ Event (Channel Message) ] ;
+drumTrack = rest dqn ++ drumLoop ;
+
+drumLoop =
+   drumChannel (
+      drum bassDrum1 qn ++
+      drum pedalHiHat qn ++
+      drum pedalHiHat qn ++
+      emphasize (negate 20) (drum electricSnare qn) ++
+      drum pedalHiHat qn ++
+      drum pedalHiHat qn
+   ) ++ drumLoop ;
 
 tracks :: [ [ Event (Channel Message) ] ] ;
 tracks =
