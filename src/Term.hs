@@ -169,6 +169,10 @@ instance Show Term where show = render . output
 instance Read Term where readsPrec = parsec_reader
 
 
+mainName :: Term
+mainName = read "main"
+
+
 {- |
 simplifies case analysis
 -}

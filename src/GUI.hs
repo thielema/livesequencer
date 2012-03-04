@@ -41,7 +41,7 @@ import qualified Rewrite
 import qualified Option
 import qualified Log
 import Program ( Program, modules )
-import Term ( Term, Identifier )
+import Term ( Term, Identifier, mainName )
 import Utility.Concurrent ( writeTMVar, writeTChanIO )
 import Utility.WX ( cursor, editable, notebookSelection )
 
@@ -262,7 +262,6 @@ machine :: Chan Action -- ^ machine reads program text from here
         -> IO ()
 machine input output importPaths progInit sq = do
     program <- newTVarIO progInit
-    let mainName = read "main"
     term <- newTMVarIO mainName
     waitChan <- newChan
 
@@ -401,8 +400,7 @@ execute program term output sq waitChan =
                 Just ("Wait", _) ->
                     liftIO $ STM.atomically $ output ResetDisplay
                 _ -> return ())
-        (let mainName = read "main"
-         in  Exc.mapExceptionalT (liftIO . STM.atomically) $
+        (Exc.mapExceptionalT (liftIO . STM.atomically) $
              flip Exc.catchT (\(pos,msg) -> do
                  lift $ putTMVar term mainName
                  Exc.throwT $ Exception.Message Exception.Term pos msg) $ do

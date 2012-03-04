@@ -45,7 +45,7 @@ main = do
             ( Option.connectFrom opt ) ( Option.connectTo opt )
         ALSA.startQueue sq
         flip MS.evalStateT (Event.RealTime, 0) $
-            execute p sq waitChan ( read "main" )
+            execute p sq waitChan mainName
 
 writeExcMsg :: Exception.Message -> IO ()
 writeExcMsg = putStrLn . Exception.statusFromMessage
