@@ -1,5 +1,7 @@
 module ALSA where
 
+import qualified Option
+
 import qualified Sound.ALSA.Sequencer.Address as Addr
 import qualified Sound.ALSA.Sequencer.Client as Client
 import qualified Sound.ALSA.Sequencer.Port as Port
@@ -115,13 +117,13 @@ parseAndConnect sq from to = do
 
 
 withSequencer ::
-   (SndSeq.OpenMode mode) =>
-   String -> (Sequencer mode -> IO ()) -> IO ()
-withSequencer name act =
+   (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
+   Option.Option -> (Sequencer mode -> IO ()) -> IO ()
+withSequencer opt act =
    flip AlsaExc.catch
       (\e -> IO.hPutStrLn IO.stderr $ "alsa_exception: " ++ AlsaExc.show e) $ do
    SndSeq.with SndSeq.defaultName SndSeq.Block $ \h -> do
-   Client.setName h name
+   Client.setName h $ Option.sequencerName opt
    Port.withSimple h "inout"
       (Port.caps [Port.capRead, Port.capSubsRead,
                   Port.capWrite, Port.capSubsWrite])
@@ -131,4 +133,7 @@ withSequencer name act =
       (Port.caps [Port.capRead, Port.capWrite])
       (Port.types [Port.typeSpecific]) $ \ private -> do
    Queue.with h $ \q -> do
-   act $ Sequencer h public private q
+   let sq = Sequencer h public private q
+   parseAndConnect sq
+       ( Option.connectFrom opt ) ( Option.connectTo opt )
+   act sq

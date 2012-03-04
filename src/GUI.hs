@@ -134,9 +134,7 @@ main = do
     input <- newChan
     output <- newTChanIO
     writeTChanIO output $ Register p ctrls
-    ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
-        ALSA.parseAndConnect sq
-            ( Option.connectFrom opt ) ( Option.connectTo opt )
+    ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
             void $ forkIO $ machine input output (Option.importPaths opt) p sq

@@ -38,11 +38,9 @@ main = do
             IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
             Exit.exitFailure) $
         Program.chase (Option.importPaths opt) $ Option.moduleName opt
-    ALSA.withSequencer "Rewrite-Sequencer" $ \sq -> do
+    ALSA.withSequencer opt $ \sq -> do
         waitChan <- newChan
         void $ forkIO $ Event.listen sq print waitChan
-        ALSA.parseAndConnect sq
-            ( Option.connectFrom opt ) ( Option.connectTo opt )
         ALSA.startQueue sq
         flip MS.evalStateT (Event.RealTime, 0) $
             execute p sq waitChan mainName

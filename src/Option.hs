@@ -27,6 +27,7 @@ data Option = Option {
         moduleName :: Module.Name,
         importPaths :: [FilePath],
         connectTo, connectFrom :: Maybe String,
+        sequencerName :: String,
         httpOption :: HTTP.Option
     }
 
@@ -39,6 +40,7 @@ getDeflt = do
             importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
             connectTo = Nothing,
             connectFrom = Nothing,
+            sequencerName = "Rewrite-Sequencer",
             httpOption = HTTP.deflt
         }
 
@@ -70,6 +72,11 @@ description deflt =
         (flip ReqArg "ALSA-PORT" $ \str flags ->
             return $ flags{connectFrom = Just str})
         ("connect from an ALSA port at startup") :
+    Opt.Option [] ["sequencer-name"]
+        (flip ReqArg "NAME" $ \str flags ->
+            return $ flags{sequencerName = str})
+        ("name of the ALSA sequencer client,\ndefault " ++
+         sequencerName deflt) :
     map (fmapOptDescr $ \update old -> do
              newHTTP <- update $ httpOption old
              return $ old {httpOption = newHTTP})
