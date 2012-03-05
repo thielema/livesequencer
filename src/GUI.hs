@@ -103,7 +103,6 @@ import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
 import qualified Data.Accessor.Monad.Trans.State as AccM
-import qualified Data.Accessor.Tuple as AccTuple
 
 import qualified Data.Traversable as Trav
 import qualified Data.Foldable as Fold
@@ -361,7 +360,7 @@ machine input output importPaths progInit sq = do
             ( writeTChanIO output . InsertText . formatPitch )
             waitChan
     ALSA.startQueue sq
-    flip MS.evalStateT (Event.RealTime, Mn.mempty) $
+    Event.runState $
         execute program term ( writeTChan output ) sq waitChan
 
 
@@ -387,7 +386,7 @@ execute program term output sq waitChan =
             We have to alter the mode directly,
             since the channel is only read when we wait for a duration other than Nothing
             -}
-            AccM.set AccTuple.first Event.SingleStep
+            AccM.set Event.stateWaitMode Event.SingleStep
             Event.wait sq waitChan Nothing)
         (\x -> do
             let writeExcMsg = STM.atomically . output . Exception

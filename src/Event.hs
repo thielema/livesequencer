@@ -24,7 +24,7 @@ import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
 import Control.Functor.HT ( void )
 
-import Data.Monoid ( mappend )
+import Data.Monoid ( mempty, mappend )
 
 import qualified System.Process as Proc
 import qualified System.Exit as Exit
@@ -32,7 +32,7 @@ import qualified System.IO.Strict as StrictIO
 import qualified System.IO as IO
 
 import qualified Data.Accessor.Monad.Trans.State as AccM
-import qualified Data.Accessor.Tuple as AccTuple
+import qualified Data.Accessor.Basic as Acc
 import Data.Accessor.Basic ((^.), )
 
 import Data.Maybe ( isJust )
@@ -108,7 +108,21 @@ instance Bounded ControllerValue where
     minBound = ControllerValue 0
     maxBound = ControllerValue 127
 
-type State = (WaitMode, Time)
+
+data State = State {stateWaitMode_ :: WaitMode, stateTime_ :: Time}
+
+stateWaitMode :: Acc.T State WaitMode
+stateWaitMode = Acc.fromSetGet (\x s -> s{stateWaitMode_ = x}) stateWaitMode_
+
+stateTime :: Acc.T State Time
+stateTime = Acc.fromSetGet (\x s -> s{stateTime_ = x}) stateTime_
+
+initState :: State
+initState = State Event.RealTime mempty
+
+runState :: (Monad m) => MS.StateT State m a -> m a
+runState = flip MS.evalStateT Event.initState
+
 
 play ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
@@ -197,10 +211,10 @@ wait sq waitChan mdur = do
            liftIO $ Log.put $ "read from waitChan: " ++ show ev
            case ev of
                ModeChange newMode -> do
-                   oldMode <- MS.gets fst
+                   oldMode <- AccM.get stateWaitMode
                    if newMode /= oldMode
                      then do
-                         AccM.set AccTuple.first newMode
+                         AccM.set stateWaitMode newMode
                          (cont,newTarget) <- prepare sq mdur
                          when cont $ loop newTarget
                      else loop target
@@ -210,7 +224,7 @@ wait sq waitChan mdur = do
                            let reached =
                                    Time.nanoseconds $ RealTime.toInteger rt
                            in  if Just reached == target
-                                 then AccM.set AccTuple.second reached
+                                 then AccM.set stateTime reached
                                  else loop target
                        _ -> loop target
                NextStep ->
@@ -226,7 +240,7 @@ prepare ::
     MS.StateT State IO (Bool, Maybe Time)
 prepare sq mt = do
     liftIO $ Log.put $ "prepare waiting for " ++ show mt
-    (waitMode,currentTime) <- MS.get
+    (State waitMode currentTime) <- MS.get
     case waitMode of
         RealTime -> do
             case mt of
