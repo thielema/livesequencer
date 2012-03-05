@@ -394,9 +394,10 @@ execute program term output sq waitChan =
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
-            Exc.resolveT
-                (liftIO . writeExcMsg)
-                (Event.play sq waitChan writeExcMsg x)
+            mdur <- Exc.resolveT
+                (liftIO . fmap (const Nothing) . writeExcMsg)
+                (Event.play sq writeExcMsg x)
+            Event.wait sq waitChan mdur
             case Term.viewNode x of
                 Just ("Wait", _) ->
                     liftIO $ STM.atomically $ output ResetDisplay

@@ -66,9 +66,10 @@ execute p sq waitChan =
             case Term.viewNode s of
                 Just ("[]", []) -> return ()
                 Just (":", [x, xs]) -> do
-                    lift $ resolveT
-                        (liftIO . writeExcMsg)
-                        (Event.play sq waitChan writeExcMsg x)
+                    mdur <- lift $ resolveT
+                        (liftIO . fmap (const Nothing) . writeExcMsg)
+                        (Event.play sq writeExcMsg x)
+                    lift $ Event.wait sq waitChan mdur
                     go xs
                 _ -> throwT
                         (termRange s,

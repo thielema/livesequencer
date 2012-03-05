@@ -55,14 +55,14 @@ data WaitResult =
 
 termException ::
     (Monad m) =>
-    String -> Term -> ExceptionalT Exception.Message m ()
+    String -> Term -> ExceptionalT Exception.Message m a
 termException msg s =
     throwT $
     Exception.Message Exception.Term
         (termRange s) (msg ++ " " ++ show s)
 
 
-runIO :: (MonadIO m) => IO () -> ExceptionalT Exception.Message m ()
+runIO :: (MonadIO m) => IO a -> ExceptionalT Exception.Message m a
 runIO action = MT.lift $ liftIO action
 
 {-
@@ -74,15 +74,15 @@ withRangeCheck ::
     (Bounded a, Monad m) =>
     String -> (Int -> a) -> (a -> Int) ->
     Term ->
-    (a -> ExceptionalT Exception.Message m ()) ->
-    ExceptionalT Exception.Message m ()
+    (a -> ExceptionalT Exception.Message m b) ->
+    ExceptionalT Exception.Message m b
 withRangeCheck typ fromInt0 toInt0 (Number rng x) =
     let aux ::
             (Monad m) =>
             (Int -> a) -> (a -> Int) ->
             a -> a ->
-            (a -> ExceptionalT Exception.Message m ()) ->
-            ExceptionalT Exception.Message m ()
+            (a -> ExceptionalT Exception.Message m b) ->
+            ExceptionalT Exception.Message m b
         aux fromInt toInt minb maxb f =
             if' (x < fromIntegral (toInt minb))
                 (throwT $ Exception.Message Exception.Term rng $
@@ -113,14 +113,12 @@ type State = (WaitMode, Time)
 play ::
     (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
     Sequencer mode ->
-    Chan WaitResult ->
     (Exception.Message -> IO ()) ->
     Term ->
-    ExceptionalT Exception.Message (MS.StateT State IO) ()
-play sq waitChan throwAsync x = case Term.viewNode x of
+    ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
+play sq throwAsync x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) ->
---        Time.pause $ Time.milliSeconds $ fromInteger n
-        MT.lift $ wait sq waitChan $ Just $ Time.milliseconds n
+        return $ Just $ Time.milliseconds n
 
     Just ( "Say", [String_Literal rng arg] ) -> runIO $ do
         let cmd = unwords
@@ -142,21 +140,22 @@ play sq waitChan throwAsync x = case Term.viewNode x of
                     throwAsync $
                     Exception.Message Exception.Term rng errText
 
+        return Nothing
+
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) ->
             withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
-                processChannelMsg sq waitChan chan body
-        _ -> processChannelMsg sq waitChan (CM.toChannel 0) event
+                processChannelMsg sq chan body
+        _ -> processChannelMsg sq (CM.toChannel 0) event
            -- termException "Event must contain Channel, but not " x
     _ -> termException "can only process Wait or Event, but not " x
 
 processChannelMsg ::
     (SndSeq.AllowOutput mode) =>
     Sequencer mode ->
-    Chan WaitResult ->
     CM.Channel -> Term ->
-    ExceptionalT Exception.Message (MS.StateT State IO) ()
-processChannelMsg sq waitChan chan body = do
+    ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
+processChannelMsg sq chan body = do
     case Term.viewNode body of
         Just ("On", [pn, vn]) ->
             withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
@@ -180,7 +179,7 @@ processChannelMsg sq waitChan chan body = do
             sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
                 MidiAlsa.controllerEvent chan cc (fromIntegral v)
         _ -> termException "invalid channel event: " body
-    MT.lift $ wait sq waitChan Nothing
+    return Nothing
 
 
 wait ::
