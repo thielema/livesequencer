@@ -55,8 +55,8 @@ data WaitResult =
 
 termException ::
     (Monad m) =>
-    String -> Term -> ExceptionalT Exception.Message m a
-termException msg s =
+    Term -> String -> ExceptionalT Exception.Message m a
+termException s msg =
     throwT $
     Exception.Message Exception.Term
         (termRange s) (msg ++ " " ++ show s)
@@ -117,7 +117,9 @@ play ::
     Term ->
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
 play sq throwAsync x = case Term.viewNode x of
-    Just ("Wait", [Number _ n]) ->
+    Just ("Wait", [Number _ n]) -> do
+        when (n<0) $ termException x $
+            "pause of negative duration: " ++ show n
         return $ Just $ Time.milliseconds n
 
     Just ( "Say", [String_Literal rng arg] ) -> runIO $ do
@@ -147,8 +149,8 @@ play sq throwAsync x = case Term.viewNode x of
             withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
                 processChannelMsg sq chan body
         _ -> processChannelMsg sq (CM.toChannel 0) event
-           -- termException "Event must contain Channel, but not " x
-    _ -> termException "can only process Wait or Event, but not " x
+           -- termException x "Event must contain Channel, but not "
+    _ -> termException x "can only process Wait or Event, but not "
 
 processChannelMsg ::
     (SndSeq.AllowOutput mode) =>
@@ -178,7 +180,7 @@ processChannelMsg sq chan body = do
             runIO $
             sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
                 MidiAlsa.controllerEvent chan cc (fromIntegral v)
-        _ -> termException "invalid channel event: " body
+        _ -> termException body "invalid channel event: "
     return Nothing
 
 
