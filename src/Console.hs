@@ -22,6 +22,7 @@ import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
 import Control.Monad ( forM_, (>=>) )
 import Control.Functor.HT ( void )
+import Data.Monoid ( mempty )
 
 import qualified System.IO as IO
 import qualified System.Exit as Exit
@@ -42,7 +43,7 @@ main = do
         waitChan <- newChan
         void $ forkIO $ Event.listen sq print waitChan
         ALSA.startQueue sq
-        flip MS.evalStateT (Event.RealTime, 0) $
+        flip MS.evalStateT (Event.RealTime, mempty) $
             execute p sq waitChan mainName
 
 writeExcMsg :: Exception.Message -> IO ()

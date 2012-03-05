@@ -33,6 +33,7 @@ Waits for and responds to incoming HTTP requests.
 
 import qualified IO
 import qualified Term
+import qualified Time
 import qualified Program
 import qualified Exception
 import qualified Module
@@ -109,6 +110,8 @@ import qualified Data.Foldable as Fold
 import qualified Data.Sequence as Seq
 import qualified Data.Map as M
 import Data.Maybe ( maybeToList, fromMaybe )
+
+import qualified Data.Monoid as Mn
 
 import qualified Data.Char as Char
 import qualified Data.List as List
@@ -358,7 +361,7 @@ machine input output importPaths progInit sq = do
             ( writeTChanIO output . InsertText . formatPitch )
             waitChan
     ALSA.startQueue sq
-    flip MS.evalStateT (Event.RealTime, 0) $
+    flip MS.evalStateT (Event.RealTime, Mn.mempty) $
         execute program term ( writeTChan output ) sq waitChan
 
 
@@ -757,15 +760,17 @@ gui input output = do
                   else return marked
             writeChan input . Execution . PlayTerm $ expr ]
 
-    waitDuration <- newIORef 500
+    waitDuration <- newIORef $ Time.milliseconds 500
 
     let updateSlowMotionDur = do
             dur <- readIORef waitDuration
             writeChan input $ Execution $ Mode $ Event.SlowMotion dur
+        slowmoUnit = Time.milliseconds 100
 
     set fasterItem [
         on command := do
-            modifyIORef waitDuration (\d -> max 100 (d-100))
+            modifyIORef waitDuration $
+                \d -> max slowmoUnit (Time.sub d slowmoUnit)
             updateSlowMotionDur
             d <- readIORef waitDuration
             set status [ text :=
@@ -773,7 +778,7 @@ gui input output = do
 
     set slowerItem [
         on command := do
-            modifyIORef waitDuration (100+)
+            modifyIORef waitDuration $ Mn.mappend slowmoUnit
             updateSlowMotionDur
             d <- readIORef waitDuration
             set status [ text :=

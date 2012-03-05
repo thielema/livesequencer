@@ -2,6 +2,7 @@ module Event where
 
 import Term
 import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
+import qualified Time
 import qualified Exception
 import qualified Log
 
@@ -23,6 +24,8 @@ import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
 import Control.Functor.HT ( void )
 
+import Data.Monoid ( mappend )
+
 import qualified System.Process as Proc
 import qualified System.Exit as Exit
 import qualified System.IO.Strict as StrictIO
@@ -36,12 +39,13 @@ import Data.Maybe ( isJust )
 import Data.Bool.HT ( if' )
 
 import Control.Concurrent.Chan ( Chan, readChan, writeChan )
-import Control.Concurrent ( forkIO {- threadDelay -} )
+import Control.Concurrent ( forkIO )
 
 
-type Time = Integer
 
-data WaitMode = RealTime | SlowMotion Time | SingleStep
+type Time = Time.Nanoseconds Integer
+
+data WaitMode = RealTime | SlowMotion (Time.Milliseconds Integer) | SingleStep
     deriving (Eq, Show)
 
 data WaitResult =
@@ -115,8 +119,8 @@ play ::
     ExceptionalT Exception.Message (MS.StateT State IO) ()
 play sq waitChan throwAsync x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) ->
---        threadDelay (fromIntegral n * 1000)
-        MT.lift $ wait sq waitChan $ Just (n * 10^(6::Int))
+--        Time.pause $ Time.milliSeconds $ fromInteger n
+        MT.lift $ wait sq waitChan $ Just $ Time.milliseconds n
 
     Just ( "Say", [String_Literal rng arg] ) -> runIO $ do
         let cmd = unwords
@@ -202,7 +206,8 @@ wait sq waitChan mdur = do
                ReachedTime stamp ->
                    case stamp of
                        SeqEvent.RealTime rt ->
-                           let reached = RealTime.toInteger rt
+                           let reached =
+                                   Time.nanoseconds $ RealTime.toInteger rt
                            in  if Just reached == target
                                  then AccM.set AccTuple.second reached
                                  else loop target
@@ -226,11 +231,11 @@ prepare sq mt = do
             case mt of
                 Nothing -> return (False, Nothing)
                 Just dur -> do
-                    let t = currentTime + dur
+                    let t = mappend currentTime dur
                     sendEcho sq t
                     return (True, Just t)
         SlowMotion dur -> do
-            let t = currentTime + dur * 10^(6::Int)
+            let t = mappend currentTime $ Time.up $ Time.up dur
             sendEcho sq t
             return (True, Just t)
         SingleStep ->
@@ -241,7 +246,7 @@ sendEcho ::
     (MonadIO io, SndSeq.AllowOutput mode) =>
     Sequencer mode -> Time ->
     io ()
-sendEcho sq t = do
+sendEcho sq (Time.Time t) = do
     c <- liftIO $ Client.getId (handle sq)
 
     {-

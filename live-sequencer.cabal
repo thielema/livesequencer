@@ -164,6 +164,7 @@ Executable live-sequencer
     Rule
     Step
     Term
+    Time
     Type
     Log
     Paths_live_sequencer
@@ -208,6 +209,7 @@ Executable live-sequencer-gui
     Rule
     Step
     Term
+    Time
     Type
     Log
     Paths_live_sequencer
