@@ -114,6 +114,10 @@ Source-Repository this
   Tag: 0.0
   Location: http://code.haskell.org/~thielema/livesequencer/
 
+Flag gui
+  Description: Build the wxWidgets GUI for the sequencer
+  Default: True
+
 Flag httpServer
   Description: Enable access to modules via a web browser
   Default: True
@@ -191,6 +195,31 @@ Executable live-sequencer
     base >=4.2 && <5
 
 Executable live-sequencer-gui
+  If flag(gui)
+    Build-Depends:
+      wx >=0.12.1 && <0.13,
+      wxcore >=0.12.1 && <0.13,
+      stm >=2.2 && <2.3,
+      transformers >=0.2.2 && <0.3,
+      explicit-exception >=0.1.5 && <0.2,
+      parsec >=2.1 && <3.2,
+      pretty >=1.0 && <1.2,
+      midi-alsa >=0.1.1 && <0.2,
+      midi >=0.1.5 && <0.2,
+      alsa-seq >=0.5 && <0.6,
+      alsa-core >=0.5 && <0.6,
+      data-accessor-transformers >=0.2.1 && <0.3,
+      data-accessor >=0.2.1 && <0.3,
+      strict >=0.3.2 && <0.4,
+      utility-ht >=0.0.8 && <0.1,
+      containers >=0.3 && <0.5,
+      process >=1.0 && <1.2,
+      directory >=1.0 && <1.2,
+      filepath >=1.1 && <1.4,
+      base >=4.2 && <5
+  Else
+    Buildable: False
+
   Hs-Source-Dirs: src
   Main-is: GUI.hs
   Other-Modules:
@@ -213,34 +242,10 @@ Executable live-sequencer-gui
     Type
     Log
     Paths_live_sequencer
+
   GHC-Options: -threaded -Wall
   If impl(ghc>=7.0)
     GHC-Options: -fwarn-tabs -fwarn-incomplete-uni-patterns
-  Build-Depends:
-    wx >=0.12.1 && <0.13,
-    wxcore >=0.12.1 && <0.13,
-    stm >=2.2 && <2.3,
-    transformers >=0.2.2 && <0.3,
-    explicit-exception >=0.1.5 && <0.2,
-    parsec >=2.1 && <3.2,
-    pretty >=1.0 && <1.2,
-    midi-alsa >=0.1.1 && <0.2,
-    midi >=0.1.5 && <0.2,
-    alsa-seq >=0.5 && <0.6,
-    alsa-core >=0.5 && <0.6,
-    data-accessor-transformers >=0.2.1 && <0.3,
-    data-accessor >=0.2.1 && <0.3,
-    strict >=0.3.2 && <0.4,
-    utility-ht >=0.0.8 && <0.1,
-    containers >=0.3 && <0.5,
-    process >=1.0 && <1.2,
-    directory >=1.0 && <1.2,
-    filepath >=1.1 && <1.4,
-    base >=4.2 && <5
-
-  Other-Modules:
-    HTTPServer.Option
-    HTTPServer.GUI
 
   If flag(httpServer)
     Hs-Source-Dirs: http/enable
@@ -253,3 +258,7 @@ Executable live-sequencer-gui
       html >=1.0 && <1.1
   Else
     Hs-Source-Dirs: http/disable
+
+  Other-Modules:
+    HTTPServer.Option
+    HTTPServer.GUI
