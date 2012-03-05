@@ -109,16 +109,24 @@ instance Bounded ControllerValue where
     maxBound = ControllerValue 127
 
 
-data State = State {stateWaitMode_ :: WaitMode, stateTime_ :: Time}
+data State =
+    State {
+        stateWaitMode_ :: WaitMode,
+        stateWaiting_ :: Bool,
+        stateTime_ :: Time
+    }
 
 stateWaitMode :: Acc.T State WaitMode
 stateWaitMode = Acc.fromSetGet (\x s -> s{stateWaitMode_ = x}) stateWaitMode_
+
+stateWaiting :: Acc.T State Bool
+stateWaiting = Acc.fromSetGet (\x s -> s{stateWaiting_ = x}) stateWaiting_
 
 stateTime :: Acc.T State Time
 stateTime = Acc.fromSetGet (\x s -> s{stateTime_ = x}) stateTime_
 
 initState :: State
-initState = State Event.RealTime mempty
+initState = State Event.RealTime False mempty
 
 runState :: (Monad m) => MS.StateT State m a -> m a
 runState = flip MS.evalStateT Event.initState
@@ -134,9 +142,11 @@ play sq throwAsync x = case Term.viewNode x of
     Just ("Wait", [Number _ n]) -> do
         when (n<0) $ termException x $
             "pause of negative duration: " ++ show n
+        MT.lift $ AccM.set stateWaiting True
         return $ Just $ Time.milliseconds n
 
-    Just ( "Say", [String_Literal rng arg] ) -> runIO $ do
+    Just ( "Say", [String_Literal rng arg] ) ->
+            MT.lift $ (AccM.set stateWaiting False >>) $ liftIO $ do
         let cmd = unwords
                       [ "echo", show arg, "|", "festival", "--tts" ]
         Log.put cmd
@@ -172,6 +182,7 @@ processChannelMsg ::
     CM.Channel -> Term ->
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
 processChannelMsg sq chan body = do
+    MT.lift $ AccM.set stateWaiting False
     case Term.viewNode body of
         Just ("On", [pn, vn]) ->
             withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
@@ -240,7 +251,7 @@ prepare ::
     MS.StateT State IO (Bool, Maybe Time)
 prepare sq mt = do
     liftIO $ Log.put $ "prepare waiting for " ++ show mt
-    (State waitMode currentTime) <- MS.get
+    (State waitMode _ currentTime) <- MS.get
     case waitMode of
         RealTime -> do
             case mt of

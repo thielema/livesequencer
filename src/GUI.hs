@@ -43,7 +43,7 @@ import qualified Option
 import qualified Log
 import Program ( Program, modules )
 import Term ( Term, Identifier, mainName )
-import Utility.Concurrent ( writeTMVar, writeTChanIO )
+import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
 import Utility.WX ( cursor, editable, notebookSelection )
 
 import qualified HTTPServer.GUI as HTTPGui
@@ -372,64 +372,72 @@ execute :: TVar Program
         -> Chan Event.WaitResult
         -> MS.StateT Event.State IO ()
 execute program term output sq waitChan =
-    forever $
+    forever $ do
+        (mdur,outputs) <- MW.runWriterT $ do
+            waiting <- lift $ AccM.get Event.stateWaiting
+            when waiting $ writeUpdate ResetDisplay
+            executeStep program term
+                (STM.atomically . output . Exception) sq
+        liftIO $ STM.atomically $ mapM_ output outputs
+        Event.wait sq waitChan mdur
 
+executeStep ::
+    TVar Program ->
+    TMVar Term ->
+    ( Exception.Message -> IO () ) ->
+    ALSA.Sequencer SndSeq.DuplexMode ->
+    MW.WriterT [ GuiUpdate ]
+        ( MS.StateT Event.State IO ) ( Maybe Event.Time )
+executeStep program term writeExcMsg sq =
     excSwitchT
         (\e -> do
-            liftIO $ do
-                ALSA.stopQueue sq
-                -- writeChan waitChan $ Event.ModeChange Event.SingleStep
-                STM.atomically $ do
-                    output $ Exception e
-                    output $ Running Event.SingleStep
+            liftIO $ ALSA.stopQueue sq
+            -- writeChan waitChan $ Event.ModeChange Event.SingleStep
+            writeUpdate $ Exception e
+            writeUpdate $ Running Event.SingleStep
             {-
             We have to alter the mode directly,
             since the channel is only read when we wait for a duration other than Nothing
             -}
-            AccM.set Event.stateWaitMode Event.SingleStep
-            Event.wait sq waitChan Nothing)
+            lift $ AccM.set Event.stateWaitMode Event.SingleStep
+            return Nothing)
         (\x -> do
-            let writeExcMsg = STM.atomically . output . Exception
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
-            mdur <- Exc.resolveT
-                (liftIO . fmap (const Nothing) . writeExcMsg)
-                (Event.play sq writeExcMsg x)
-            Event.wait sq waitChan mdur
-            case Term.viewNode x of
-                Just ("Wait", _) ->
-                    liftIO $ STM.atomically $ output ResetDisplay
-                _ -> return ())
-        (Exc.mapExceptionalT (liftIO . STM.atomically) $
-             flip Exc.catchT (\(pos,msg) -> do
-                 lift $ putTMVar term mainName
-                 Exc.throwT $ Exception.Message Exception.Term pos msg) $ do
-             t <- lift $ takeTMVar term
-             p <- lift $ readTVar program
-                 {- this happens anew at each click
-                    since the program text might have changed in the editor -}
-             (s,log) <-
-                 Exc.mapExceptionalT
-                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
-                      MW.runWriterT) $
-                 Rewrite.runEval p (Rewrite.force_head t)
-             {-
-             This way the term will be pretty printed in the GUI thread
-             which may block the GUI thread.
-             However evaluating it here may defer playing notes,
-             which is not better.
-             -}
-             lift $ output . Term log . show $ s
-             case Term.viewNode s of
-                 Just (":", [x, xs]) -> do
-                     lift $ putTMVar term xs
-                     return x
-                 Just ("[]", []) ->
-                     Exc.throwT (Term.termRange s, "finished.")
-                 _ ->
-                     Exc.throwT (Term.termRange s,
-                         "I do not know how to handle this term: " ++ show s))
+            Exc.resolveT
+                (fmap (const Nothing) . writeUpdate . Exception)
+                (Exc.mapExceptionalT lift $
+                 Event.play sq writeExcMsg x))
+        (Exc.mapExceptionalT (MW.mapWriterT (liftIO . STM.atomically)) $
+            flip Exc.catchT (\(pos,msg) -> do
+                liftSTM $ putTMVar term mainName
+                Exc.throwT $ Exception.Message Exception.Term pos msg) $ do
+            t <- liftSTM $ takeTMVar term
+            p <- liftSTM $ readTVar program
+                {- this happens anew at each click
+                   since the program text might have changed in the editor -}
+            (s,log) <-
+                Exc.mapExceptionalT
+                    (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
+                     MW.runWriterT) $
+                Rewrite.runEval p (Rewrite.force_head t)
+            {-
+            This way the term will be pretty printed in the GUI thread
+            which may block the GUI thread.
+            However evaluating it here may defer playing notes,
+            which is not better.
+            -}
+            lift $ writeUpdate . Term log . show $ s
+            case Term.viewNode s of
+                Just (":", [x, xs]) -> do
+                    liftSTM $ putTMVar term xs
+                    return x
+                Just ("[]", []) ->
+                    Exc.throwT (Term.termRange s, "finished.")
+                _ ->
+                    Exc.throwT (Term.termRange s,
+                        "I do not know how to handle this term: " ++ show s))
 
 -- also available in explicit-exception>=0.1.7
 excSwitchT ::
@@ -437,6 +445,11 @@ excSwitchT ::
     (e -> m b) -> (a -> m b) ->
     Exc.ExceptionalT e m a -> m b
 excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
+
+writeUpdate ::
+    (Monad m) =>
+    GuiUpdate -> MW.WriterT [GuiUpdate] m ()
+writeUpdate update = MW.tell [update]
 
 
 -- | following code taken from http://snipplr.com/view/17538/

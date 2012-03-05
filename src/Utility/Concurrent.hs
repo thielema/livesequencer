@@ -5,6 +5,12 @@ import Control.Concurrent.STM.TMVar
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
+import qualified Control.Monad.Trans.Class as MT
+import qualified Control.Monad.Trans.State as MS
+import qualified Control.Monad.Trans.Writer as MW
+import qualified Control.Monad.Exception.Synchronous as Exc
+import Data.Monoid ( Monoid )
+
 import Control.Functor.HT ( void )
 
 
@@ -19,3 +25,19 @@ clearTMVar var =
 writeTChanIO :: TChan a -> a -> IO ()
 writeTChanIO chan a =
     STM.atomically $ writeTChan chan a
+
+
+class Monad m => MonadSTM m where
+    liftSTM :: STM a -> m a
+
+instance MonadSTM STM where
+    liftSTM = id
+
+instance (MonadSTM m, Monoid w) => MonadSTM (MW.WriterT w m) where
+    liftSTM = MT.lift . liftSTM
+
+instance MonadSTM m => MonadSTM (MS.StateT s m) where
+    liftSTM = MT.lift . liftSTM
+
+instance MonadSTM m => MonadSTM (Exc.ExceptionalT e m) where
+    liftSTM = MT.lift . liftSTM
