@@ -27,6 +27,7 @@ type Milli = EM3 One
 type Micro = EM3 Milli
 type Nano  = EM3 Micro
 
+type Seconds      a = Time One   a
 type Milliseconds a = Time Milli a  -- unit in Wait constructor
 type Microseconds a = Time Micro a  -- unit of threadDelay
 type Nanoseconds  a = Time Nano  a  -- unit of ALSA realtime
@@ -64,3 +65,46 @@ nanoseconds =
 
 pause :: Time Micro Int -> IO ()
 pause (Time t) = threadDelay t
+
+
+
+-- | we check by the types whether we can format the time value or not
+class Format factor where
+    formatUnit :: Time factor a -> String
+
+instance Format One where
+    formatUnit = const "s"
+
+
+class Format1 factor where
+    formatUnit1 :: Time (EM3 factor) a -> String
+
+instance Format1 One where
+    formatUnit1 = const "ms"
+
+instance Format1 factor => Format (EM3 factor) where
+    formatUnit = formatUnit1
+
+
+class Format2 factor where
+    formatUnit2 :: Time (EM3 (EM3 factor)) a -> String
+
+instance Format2 One where
+    formatUnit2 = const "us"
+
+instance Format2 factor => Format1 (EM3 factor) where
+    formatUnit1 = formatUnit2
+
+
+class Format3 factor where
+    formatUnit3 :: Time (EM3 (EM3 (EM3 factor))) a -> String
+
+instance Format3 One where
+    formatUnit3 = const "ns"
+
+instance Format3 factor => Format2 (EM3 factor) where
+    formatUnit2 = formatUnit3
+
+
+format :: (Format factor, Show a) => Time factor a -> String
+format time@(Time t) = show t ++ formatUnit time

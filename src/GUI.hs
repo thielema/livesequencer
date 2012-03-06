@@ -796,7 +796,7 @@ gui input output = do
             updateSlowMotionDur
             d <- readIORef waitDuration
             set status [ text :=
-                "decreased pause to " ++ show d ++ "ms" ] ]
+                "decreased pause to " ++ Time.format d ] ]
 
     set slowerItem [
         on command := do
@@ -804,7 +804,7 @@ gui input output = do
             updateSlowMotionDur
             d <- readIORef waitDuration
             set status [ text :=
-                "increased pause to " ++ show d ++ "ms" ] ]
+                "increased pause to " ++ Time.format d ] ]
 
     let setRealTime b = do
             set realTimeItem [ checked := b ]
@@ -997,7 +997,7 @@ gui input output = do
                     Event.SlowMotion dur -> do
                         set status [ text :=
                             ("interpreter in slow-motion mode with pause " ++
-                             show dur ++ "ms") ]
+                             Time.format dur) ]
                         activateSlowMotion
                     Event.SingleStep -> do
                         set status [ text :=
