@@ -927,8 +927,6 @@ gui input output = do
                         setColorHighlighters m 0 200 200
 
                     Rewrite.Data origin -> do
-                        set reducer [ text := sr, cursor := 0 ]
-
                         let m = M.singleton
                                     (Module.Name $ Pos.sourceName $
                                      Term.start $ Term.range origin)
