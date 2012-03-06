@@ -402,14 +402,26 @@ executeStep program term writeExcMsg sq =
             -}
             lift $ AccM.set Event.stateWaitMode Event.SingleStep
             return Nothing)
-        (\x -> do
+        (\(x,s) -> do
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
-            Exc.resolveT
+            wait <- Exc.resolveT
                 (fmap (const Nothing) . writeUpdate . Exception)
                 (Exc.mapExceptionalT lift $
-                 Event.play sq writeExcMsg x))
+                 Event.play sq writeExcMsg x)
+
+            waitMode <- lift $ AccM.get Event.stateWaitMode
+            waiting  <- lift $ AccM.get Event.stateWaiting
+            {-
+            This way the term will be pretty printed in the GUI thread
+            which may block the GUI thread.
+            However evaluating it here may defer playing notes,
+            which is not better.
+            -}
+            when (waiting || waitMode /= Event.RealTime) $
+                writeUpdate $ CurrentTerm $ show s
+            return wait)
         (Exc.mapExceptionalT (MW.mapWriterT (liftIO . STM.atomically)) $
             flip Exc.catchT (\(pos,msg) -> do
                 liftSTM $ putTMVar term mainName
@@ -423,21 +435,16 @@ executeStep program term writeExcMsg sq =
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                      MW.runWriterT) $
                 Rewrite.runEval p (Rewrite.force_head t)
-            {-
-            This way the term will be pretty printed in the GUI thread
-            which may block the GUI thread.
-            However evaluating it here may defer playing notes,
-            which is not better.
-            -}
             lift $ writeUpdate $ ReductionSteps log
-            lift $ writeUpdate $ CurrentTerm $ show s
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do
                     liftSTM $ putTMVar term xs
-                    return x
-                Just ("[]", []) ->
+                    return (x,s)
+                Just ("[]", []) -> do
+                    lift $ writeUpdate $ CurrentTerm $ show s
                     Exc.throwT (Term.termRange s, "finished.")
-                _ ->
+                _ -> do
+                    lift $ writeUpdate $ CurrentTerm $ show s
                     Exc.throwT (Term.termRange s,
                         "I do not know how to handle this term: " ++ show s))
 
