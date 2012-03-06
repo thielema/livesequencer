@@ -15,7 +15,7 @@ import qualified Sound.MIDI.ALSA as MIDI
 
 import qualified System.IO as IO
 
-import Data.Foldable ( forM_ )
+import Data.Foldable ( Foldable, forM_ )
 import Control.Monad ( (<=<) )
 import Control.Functor.HT ( void )
 
@@ -102,9 +102,9 @@ allNotesOff sq = do
          [minBound .. maxBound]
 
 parseAndConnect ::
-   (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
+   (SndSeq.AllowInput mode, SndSeq.AllowOutput mode, Foldable f) =>
    Sequencer mode ->
-   Maybe String -> Maybe String -> IO ()
+   f String -> f String -> IO ()
 parseAndConnect sq from to = do
    forM_ from
       (SndSeq.connectFrom (handle sq) (publicPort sq)

@@ -26,7 +26,7 @@ import Data.List ( intercalate )
 data Option = Option {
         moduleName :: Module.Name,
         importPaths :: [FilePath],
-        connectTo, connectFrom :: Maybe String,
+        connectTo, connectFrom :: [String],
         sequencerName :: String,
         httpOption :: HTTP.Option
     }
@@ -38,8 +38,8 @@ getDeflt = do
         Option {
             moduleName = error "no module specified",
             importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
-            connectTo = Nothing,
-            connectFrom = Nothing,
+            connectTo = [],
+            connectFrom = [],
             sequencerName = "Rewrite-Sequencer",
             httpOption = HTTP.deflt
         }
@@ -66,11 +66,11 @@ description deflt =
          intercalate ":" (importPaths deflt)) :
     Opt.Option ['p'] ["connect-to"]
         (flip ReqArg "ALSA-PORT" $ \str flags ->
-            return $ flags{connectTo = Just str})
+            return $ flags{connectTo = str : connectTo flags})
         ("connect to an ALSA port at startup") :
     Opt.Option [] ["connect-from"]
         (flip ReqArg "ALSA-PORT" $ \str flags ->
-            return $ flags{connectFrom = Just str})
+            return $ flags{connectFrom = str : connectFrom flags})
         ("connect from an ALSA port at startup") :
     Opt.Option [] ["sequencer-name"]
         (flip ReqArg "NAME" $ \str flags ->
@@ -102,5 +102,10 @@ get = do
         _:_:_ -> exitFailureMsg "more than one module specified"
         [modu] ->
             case Parsec.parse IO.input "" modu of
-                Right name -> return $ parsedOpts {moduleName = name}
+                Right name ->
+                    return $ parsedOpts {
+                        connectTo = reverse $ connectTo parsedOpts,
+                        connectFrom = reverse $ connectFrom parsedOpts,
+                        moduleName = name
+                        }
                 Left _ -> exitFailureMsg $ show modu ++ " is not a module name"
