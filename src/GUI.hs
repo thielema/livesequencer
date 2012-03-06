@@ -161,7 +161,8 @@ data Execution =
 
 -- | messages that are sent from machine to GUI
 data GuiUpdate =
-     Term { _steps :: [ Rewrite.Message ], _currentTerm :: String }
+     ReductionSteps { _steps :: [ Rewrite.Message ] }
+   | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
@@ -428,7 +429,8 @@ executeStep program term writeExcMsg sq =
             However evaluating it here may defer playing notes,
             which is not better.
             -}
-            lift $ writeUpdate . Term log . show $ s
+            lift $ writeUpdate $ ReductionSteps log
+            lift $ writeUpdate $ CurrentTerm $ show s
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do
                     liftSTM $ putTMVar term xs
@@ -912,10 +914,13 @@ gui input output = do
             setColorHighlighters m r g b = do
                 pnls <- readIORef panels
                 set_color nb ( highlighters pnls ) m ( rgb r g b )
+
         case msg of
-            Term steps sr -> do
+            CurrentTerm sr -> do
                 get reducerVisibleItem checked >>=
                     flip when ( set reducer [ text := sr, cursor := 0 ] )
+
+            ReductionSteps steps -> do
                 forM_ steps $ \step ->
                   case step of
                     Rewrite.Step target mrule -> do
