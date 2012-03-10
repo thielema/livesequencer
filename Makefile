@@ -2,7 +2,7 @@ ghci:
 	ghci -Wall -i:data `ls -1 data/*.hs | fgrep -v BandControlled`
 
 ghci-prg:
-	ghci -Wall -i:src src/Module.hs
+	ghci -Wall -i:src:dist/build/autogen:http/enable src/Module.hs
 
 SIZE = 1280x720
 PATTERN = /tmp/klingklong/%04d.png
