@@ -1,5 +1,5 @@
 Name:          live-sequencer
-Version:       0.0.0.1
+Version:       0.0.1
 Author:        Henning Thielemann and Johannes Waldmann
 Maintainer:    Johannes Waldmann <waldmann@imn.htwk-leipzig.de>, Henning Thielemann <haskell@henning-thielemann.de>
 Category:      Sound, Music, GUI
@@ -180,9 +180,9 @@ Executable live-sequencer
     explicit-exception >=0.1.5 && <0.2,
     parsec >=2.1 && <3.2,
     pretty >=1.0 && <1.2,
-    midi-alsa >=0.1.1 && <0.2,
-    midi >=0.1.5 && <0.2,
-    alsa-seq >=0.5 && <0.6,
+    midi-alsa >=0.2 && <0.3,
+    midi >=0.2 && <0.3,
+    alsa-seq >=0.6 && <0.7,
     alsa-core >=0.5 && <0.6,
     data-accessor-transformers >=0.2.1 && <0.3,
     data-accessor >=0.2.1 && <0.3,
@@ -204,9 +204,9 @@ Executable live-sequencer-gui
       explicit-exception >=0.1.5 && <0.2,
       parsec >=2.1 && <3.2,
       pretty >=1.0 && <1.2,
-      midi-alsa >=0.1.1 && <0.2,
-      midi >=0.1.5 && <0.2,
-      alsa-seq >=0.5 && <0.6,
+      midi-alsa >=0.2 && <0.3,
+      midi >=0.2 && <0.3,
+      alsa-seq >=0.6 && <0.7,
       alsa-core >=0.5 && <0.6,
       data-accessor-transformers >=0.2.1 && <0.3,
       data-accessor >=0.2.1 && <0.3,

@@ -10,8 +10,9 @@ import qualified Sound.MIDI.Message.Channel as CM
 import qualified Sound.MIDI.Message.Channel.Voice as VM
 import qualified Sound.MIDI.ALSA as MidiAlsa
 
-import qualified Sound.ALSA.Sequencer.Address as Addr
 import qualified Sound.ALSA.Sequencer.RealTime as RealTime
+import qualified Sound.ALSA.Sequencer.Time as ATime
+import qualified Sound.ALSA.Sequencer.Address as Addr
 import qualified Sound.ALSA.Sequencer.Client as Client
 import qualified Sound.ALSA.Sequencer.Port as Port
 import qualified Sound.ALSA.Sequencer.Event as SeqEvent
@@ -49,7 +50,7 @@ data WaitMode = RealTime | SlowMotion (Time.Milliseconds Integer) | SingleStep
     deriving (Eq, Show)
 
 data WaitResult =
-         ModeChange WaitMode | ReachedTime SeqEvent.TimeStamp | NextStep
+         ModeChange WaitMode | ReachedTime Time | NextStep
     deriving (Show)
 
 
@@ -229,15 +230,10 @@ wait sq waitChan mdur = do
                          (cont,newTarget) <- prepare sq mdur
                          when cont $ loop newTarget
                      else loop target
-               ReachedTime stamp ->
-                   case stamp of
-                       SeqEvent.RealTime rt ->
-                           let reached =
-                                   Time.nanoseconds $ RealTime.toInteger rt
-                           in  if Just reached == target
-                                 then AccM.set stateTime reached
-                                 else loop target
-                       _ -> loop target
+               ReachedTime reached ->
+                   if Just reached == target
+                     then AccM.set stateTime reached
+                     else loop target
                NextStep ->
                    when (isJust target) $ loop target
 
@@ -290,8 +286,8 @@ sendEcho sq (Time.Time t) = do
           (Addr.Cons c Port.unknown)
           (SeqEvent.CustomEv SeqEvent.Echo (SeqEvent.Custom 0 0 0)))
           { SeqEvent.queue = queue sq
-          , SeqEvent.timestamp =
-                SeqEvent.RealTime $ RealTime.fromInteger t
+          , SeqEvent.time =
+               ATime.consAbs $ ATime.Real $ RealTime.fromInteger t
           , SeqEvent.dest = dest
           }
 
@@ -328,7 +324,11 @@ listen sq noteInput waitChan = do
             SeqEvent.CustomEv SeqEvent.Echo _ ->
                 when (dest == SeqEvent.dest ev) $ do
                     Log.put "write waitChan"
-                    writeChan waitChan $ ReachedTime $ SeqEvent.timestamp ev
+                    case SeqEvent.time ev of
+                       ATime.Cons ATime.Absolute (ATime.Real rt) ->
+                          writeChan waitChan $ ReachedTime $ 
+                          Time.nanoseconds $ RealTime.toInteger rt
+                       _ -> return ()
             _ -> return ()
 
 

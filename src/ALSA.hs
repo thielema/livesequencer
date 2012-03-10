@@ -2,6 +2,7 @@ module ALSA where
 
 import qualified Option
 
+import qualified Sound.ALSA.Sequencer.Connect as Connect
 import qualified Sound.ALSA.Sequencer.Address as Addr
 import qualified Sound.ALSA.Sequencer.Client as Client
 import qualified Sound.ALSA.Sequencer.Port as Port
@@ -40,7 +41,7 @@ sendEvent sq ev = do
 queueControl ::
    Sequencer mode -> Event.QueueEv -> IO ()
 queueControl sq cmd =
-   Queue.control (handle sq) (queue sq) cmd 0 Nothing
+   Queue.control (handle sq) (queue sq) cmd Nothing
 
 drainOutput ::
    (SndSeq.AllowOutput mode) =>
@@ -107,11 +108,11 @@ parseAndConnect ::
    f String -> f String -> IO ()
 parseAndConnect sq from to = do
    forM_ from
-      (SndSeq.connectFrom (handle sq) (publicPort sq)
+      (Connect.createFrom (handle sq) (publicPort sq)
        <=<
        Addr.parse (handle sq))
    forM_ to
-      (SndSeq.connectTo (handle sq) (publicPort sq)
+      (Connect.createTo (handle sq) (publicPort sq)
        <=<
        Addr.parse (handle sq))
 
