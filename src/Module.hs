@@ -11,6 +11,7 @@ import qualified Data.Map as M
 import Data.Maybe ( mapMaybe )
 
 import qualified Text.ParserCombinators.Parsec as Parsec
+import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Token as Token
 import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
@@ -255,6 +256,10 @@ instance Output Name where
 
 tellName :: Name -> String
 tellName (Name n) = "module " ++ n
+
+nameFromIdentifier :: Identifier -> Name
+nameFromIdentifier =
+    Name . Pos.sourceName . Term.start . Term.range
 
 
 type FunctionDeclarations = M.Map Identifier [Rule]

@@ -934,14 +934,13 @@ gui input output = do
 
                         let m = M.fromList $ do
                               t <- target : maybeToList mrule
-                              return (Module.Name $ Pos.sourceName $ Term.start $ Term.range t, [t])
+                              return (Module.nameFromIdentifier t, [t])
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 0 200 200
 
                     Rewrite.Data origin -> do
                         let m = M.singleton
-                                    (Module.Name $ Pos.sourceName $
-                                     Term.start $ Term.range origin)
+                                    (Module.nameFromIdentifier origin)
                                     [origin]
                         void $ varUpdate highlights $ M.unionWith (++) m
                         setColorHighlighters m 200 200 0
