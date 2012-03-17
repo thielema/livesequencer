@@ -172,6 +172,7 @@ Executable live-sequencer
     Type
     Log
     Paths_live_sequencer
+    Utility.NonEmptyList
   Other-Modules:
     Lilypond
   GHC-Options: -Wall -threaded
@@ -224,8 +225,6 @@ Executable live-sequencer-gui
   Main-is: GUI.hs
   Other-Modules:
     ALSA
-    Utility.Concurrent
-    Utility.WX
     Event
     IO
     Exception
@@ -242,6 +241,9 @@ Executable live-sequencer-gui
     Type
     Log
     Paths_live_sequencer
+    Utility.NonEmptyList
+    Utility.Concurrent
+    Utility.WX
 
   GHC-Options: -threaded -Wall
   If impl(ghc>=7.0)
