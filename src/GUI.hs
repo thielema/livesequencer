@@ -884,8 +884,7 @@ gui input output = do
               let activateText textField = do
                       h <- MaybeT.MaybeT $ return $
                            M.lookup moduleIdent textField
-                      i <- liftIO $ textPosFromSourcePos h $ Term.start errorRng
-                      j <- liftIO $ textPosFromSourcePos h $ Term.end errorRng
+                      (i,j) <- liftIO $ textRangeFromRange h errorRng
                       liftIO $ set h [ cursor := i ]
                       liftIO $ WXCMZ.textCtrlSetSelection h i j
               case typ of
@@ -925,13 +924,15 @@ gui input output = do
 
             ReductionSteps steps -> do
                 hls <- fmap highlighters $ readIORef panels
+                visibleModule <- fmap fst $ getFromNotebook nb hls
                 let highlight ::
                         Int -> Int -> Int -> [Identifier] -> IO ()
                     highlight r g b idents = do
-                        let m = M.fromList $
+                        let m = M.fromListWith (++) $
+                                filter ((visibleModule==) . fst) $
                                 map (\ident -> (Module.nameFromIdentifier ident, [ident])) idents
                         void $ varUpdate highlights $ M.unionWith (++) $ m
-                        setColor nb hls ( rgb r g b ) m
+                        setColor hls ( rgb r g b ) m
 
                 let prep step =
                         case step of
@@ -987,7 +988,7 @@ gui input output = do
 
             ResetDisplay -> do
                 hls <- fmap highlighters $ readIORef panels
-                setColor nb hls WXCore.white
+                setColor hls WXCore.white
                     =<< varSwap highlights M.empty
 
             Running mode -> do
@@ -1038,7 +1039,7 @@ displayModules input frameControls ctrls nb prog = do
 
 
 getFromNotebook ::
-    Notebook b -> M.Map k a -> IO (k, a)
+    Notebook b -> M.Map Module.Name a -> IO (Module.Name, a)
 getFromNotebook nb m =
     fmap (flip M.elemAt m) $ get nb notebookSelection
 
@@ -1048,6 +1049,13 @@ textPosFromSourcePos textArea pos =
     WXCMZ.textCtrlXYToPosition textArea
        $ Point (Pos.sourceColumn pos - 1)
                (Pos.sourceLine   pos - 1)
+
+textRangeFromRange ::
+    TextCtrl a -> Term.Range -> IO (Int, Int)
+textRangeFromRange textArea rng = do
+    from <- textPosFromSourcePos textArea $ Term.start rng
+    to   <- textPosFromSourcePos textArea $ Term.end   rng
+    return (from, to)
 
 textColumnRowFromPos ::
     TextCtrl a -> Int -> IO (Int, Int)
@@ -1061,20 +1069,19 @@ textColumnRowFromPos textArea pos =
 
 setColor ::
     (Ord k) =>
-    Notebook a ->
     M.Map k (TextCtrl a) ->
     Color ->
     M.Map k [Identifier] ->
     IO ()
-setColor nb highlighters hicolor positions = do
-    (p, highlighter) <- getFromNotebook nb highlighters
-    attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
-    bracket
-        (WXCMZ.textAttrGetBackgroundColour attr)
-        (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
-            WXCMZ.textAttrSetBackgroundColour attr hicolor
-            forM_ (M.lookup p positions) $ mapM_ $ \ ident -> do
-                let rng = Term.range ident
-                from <- textPosFromSourcePos highlighter $ Term.start rng
-                to   <- textPosFromSourcePos highlighter $ Term.end   rng
-                WXCMZ.textCtrlSetStyle highlighter from to attr
+setColor highlighters hicolor positions = do
+    forM_ (M.intersectionWith (,) highlighters positions) $
+        \(highlighter, idents) -> do
+            attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
+            bracket
+                (WXCMZ.textAttrGetBackgroundColour attr)
+                (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
+                    WXCMZ.textAttrSetBackgroundColour attr hicolor
+                    forM_ idents $ \ ident -> do
+                        (from, to) <-
+                            textRangeFromRange highlighter $ Term.range ident
+                        WXCMZ.textCtrlSetStyle highlighter from to attr
