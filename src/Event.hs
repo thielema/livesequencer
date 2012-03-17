@@ -66,48 +66,35 @@ termException s msg =
 runIO :: (MonadIO m) => IO a -> ExceptionalT Exception.Message m a
 runIO action = MT.lift $ liftIO action
 
-{-
-FIXME:
-minBound for Velocity is zero.
-This is not very helpful, because zero velocity is treated as NoteOff.
--}
-withRangeCheck ::
+
+checkRange ::
+    (Bounded a, Monad m) =>
+    String -> (Int -> a) -> (a -> Int) ->
+    a -> a ->
+    Term ->
+    ExceptionalT Exception.Message m a
+checkRange typ fromInt toInt minb maxb (Number rng x) =
+    if' (x < fromIntegral (toInt minb))
+        (throwT $ Exception.Message Exception.Term rng $
+            typ ++ " argument " ++ show x ++
+                " is less than minimum value " ++ show (toInt minb)) $
+    if' (fromIntegral (toInt maxb) < x)
+        (throwT $ Exception.Message Exception.Term rng $
+                 typ ++ " argument " ++ show x ++
+                      " is greater than maximum value " ++ show (toInt maxb)) $
+    return $ fromInt $ fromInteger x
+checkRange typ _ _ _ _ t =
+    throwT $
+    Exception.Message Exception.Term
+        (termRange t) (typ ++ " argument is not a number")
+
+checkRangeAuto ::
     (Bounded a, Monad m) =>
     String -> (Int -> a) -> (a -> Int) ->
     Term ->
-    (a -> ExceptionalT Exception.Message m b) ->
-    ExceptionalT Exception.Message m b
-withRangeCheck typ fromInt0 toInt0 (Number rng x) =
-    let aux ::
-            (Monad m) =>
-            (Int -> a) -> (a -> Int) ->
-            a -> a ->
-            (a -> ExceptionalT Exception.Message m b) ->
-            ExceptionalT Exception.Message m b
-        aux fromInt toInt minb maxb f =
-            if' (x < fromIntegral (toInt minb))
-                (throwT $ Exception.Message Exception.Term rng $
-                    typ ++ " argument " ++ show x ++
-                        " is less than minimum value " ++ show (toInt minb)) $
-            if' (fromIntegral (toInt maxb) < x)
-                (throwT $ Exception.Message Exception.Term rng $
-                         typ ++ " argument " ++ show x ++
-                              " is greater than maximum value " ++ show (toInt maxb)) $
-            f (fromInt $ fromInteger x)
-    in  aux fromInt0 toInt0 minBound maxBound
-withRangeCheck typ _ _ t =
-    \ _f ->
-        throwT $
-        Exception.Message Exception.Term
-            (termRange t) (typ ++ " argument is not a number")
-
-
-newtype ControllerValue = ControllerValue {fromControllerValue :: Int}
-    deriving (Eq, Ord, Show)
-
-instance Bounded ControllerValue where
-    minBound = ControllerValue 0
-    maxBound = ControllerValue 127
+    ExceptionalT Exception.Message m a
+checkRangeAuto typ fromInt0 toInt0 =
+    checkRange typ fromInt0 toInt0 minBound maxBound
 
 
 data State =
@@ -170,9 +157,9 @@ play sq throwAsync x = case Term.viewNode x of
         return Nothing
 
     Just ("Event", [event]) -> case Term.viewNode event of
-        Just ("Channel", [chann, body]) ->
-            withRangeCheck "channel" CM.toChannel CM.fromChannel chann $ \chan ->
-                processChannelMsg sq chan body
+        Just ("Channel", [chann, body]) -> do
+            chan <- checkRangeAuto "channel" CM.toChannel CM.fromChannel chann
+            processChannelMsg sq chan body
         _ -> processChannelMsg sq (CM.toChannel 0) event
            -- termException x "Event must contain Channel, but not "
     _ -> termException x "can only process Wait or Event, but not "
@@ -184,27 +171,28 @@ processChannelMsg ::
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
 processChannelMsg sq chan body = do
     MT.lift $ AccM.set stateWaiting False
+    let checkVelocity =
+            checkRange "velocity" CM.toVelocity CM.fromVelocity
+                (CM.toVelocity 1) (CM.toVelocity 127)
     case Term.viewNode body of
-        Just ("On", [pn, vn]) ->
-            withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
-            withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
+        Just ("On", [pn, vn]) -> do
+            p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
+            v <- checkVelocity vn
+            runIO $ sendNote sq SeqEvent.NoteOn chan p v
+        Just ("Off", [pn, vn]) -> do
+            p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
+            v <- checkVelocity vn
+            runIO $ sendNote sq SeqEvent.NoteOff chan p v
+        Just ("PgmChange", [pn]) -> do
+            p <- checkRangeAuto "program" CM.toProgram CM.fromProgram pn
             runIO $
-            sendNote sq SeqEvent.NoteOn chan p v
-        Just ("Off", [pn, vn]) ->
-            withRangeCheck "pitch" CM.toPitch CM.fromPitch pn $ \p ->
-            withRangeCheck "velocity" CM.toVelocity CM.fromVelocity vn $ \v ->
-            runIO $
-            sendNote sq SeqEvent.NoteOff chan p v
-        Just ("PgmChange", [pn]) ->
-            withRangeCheck "program" CM.toProgram CM.fromProgram pn $ \p ->
-            runIO $
-            sendEvent sq $ SeqEvent.CtrlEv SeqEvent.PgmChange $
+                sendEvent sq $ SeqEvent.CtrlEv SeqEvent.PgmChange $
                 MidiAlsa.programChangeEvent chan p
-        Just ("Controller", [ccn, vn]) ->
-            withRangeCheck "controller" CM.toController CM.fromController ccn $ \cc ->
-            withRangeCheck "controller value" ControllerValue fromControllerValue vn $ \(ControllerValue v) ->
+        Just ("Controller", [ccn, vn]) -> do
+            cc <- checkRangeAuto "controller" CM.toController CM.fromController ccn
+            v <- checkRange "controller value" id id 0 127 vn
             runIO $
-            sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
+                sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
                 MidiAlsa.controllerEvent chan cc (fromIntegral v)
         _ -> termException body "invalid channel event: "
     return Nothing

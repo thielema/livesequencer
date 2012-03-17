@@ -5,7 +5,7 @@ import Midi
 import List
 import Instrument
 import Drum
-import Prelude ( (*), ($), negate )
+import Prelude ( (*), ($), negate, div )
 
 main, cascade, loop, choir :: [Event (Channel Message)] ;
 main = cascade ;
