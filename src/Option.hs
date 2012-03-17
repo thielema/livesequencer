@@ -19,6 +19,7 @@ import qualified System.Exit as Exit
 
 import Control.Monad ( when )
 
+import qualified Utility.NonEmptyList as NEList
 import Data.List.HT ( chop )
 import Data.List ( intercalate )
 
@@ -26,7 +27,7 @@ import Data.List ( intercalate )
 data Option = Option {
         moduleName :: Module.Name,
         importPaths :: [FilePath],
-        connectTo, connectFrom :: [String],
+        connect :: NEList.T Port,
         sequencerName :: String,
         httpOption :: HTTP.Option
     }
@@ -38,11 +39,17 @@ getDeflt = do
         Option {
             moduleName = error "no module specified",
             importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
-            connectTo = [],
-            connectFrom = [],
+            connect = NEList.singleton (Port "inout" (Just []) (Just [])),
             sequencerName = "Rewrite-Sequencer",
             httpOption = HTTP.deflt
         }
+
+
+data Port =
+    Port {
+        portName :: String,
+        connectFrom, connectTo :: Maybe [String]
+    }
 
 
 {-
@@ -55,7 +62,7 @@ description deflt =
         (NoArg $ \ _flags -> do
             programName <- getProgName
             putStrLn $
-                usageInfo ("Usage: " ++ programName ++ " [OPTIONS]") $
+                usageInfo ("Usage: " ++ programName ++ " [OPTIONS] MODULE") $
                 description deflt
             Exit.exitSuccess)
         "show options" :
@@ -65,13 +72,38 @@ description deflt =
         ("colon separated import paths,\ndefault " ++
          intercalate ":" (importPaths deflt)) :
     Opt.Option ['p'] ["connect-to"]
-        (flip ReqArg "ALSA-PORT" $ \str flags ->
-            return $ flags{connectTo = str : connectTo flags})
-        ("connect to an ALSA port at startup") :
+        (flip ReqArg "ADDRESS" $ \str flags ->
+            case connect flags of
+                NEList.Cons port ports ->
+                    case connectTo port of
+                        Just conns ->
+                            return $ flags{connect = NEList.Cons
+                                (port{connectTo = Just $ str : conns}) ports}
+                        _ ->
+                            exitFailureMsg $
+                                "cannot connect to " ++ str ++
+                                ", since port " ++ portName port ++ " does not allow output")
+        ("connect to an ALSA port at startup,\n" ++
+         "multiple connections per port are possible") :
     Opt.Option [] ["connect-from"]
-        (flip ReqArg "ALSA-PORT" $ \str flags ->
-            return $ flags{connectFrom = str : connectFrom flags})
+        (flip ReqArg "ADDRESS" $ \str flags ->
+            case connect flags of
+                NEList.Cons port ports ->
+                    case connectFrom port of
+                        Just conns ->
+                            return $ flags{connect = NEList.Cons
+                                (port{connectFrom = Just $ str : conns}) ports}
+                        _ ->
+                            exitFailureMsg $
+                                "cannot connect from " ++ str ++
+                                ", since port " ++ portName port ++ " does not allow input")
         ("connect from an ALSA port at startup") :
+    Opt.Option [] ["new-out-port"]
+        (flip ReqArg "PORTNAME" $ \str flags ->
+            return $ flags{connect =
+                NEList.cons (Port str Nothing (Just [])) $
+                connect flags})
+        ("create new ALSA output port and add 16 MIDI channels") :
     Opt.Option [] ["sequencer-name"]
         (flip ReqArg "NAME" $ \str flags ->
             return $ flags{sequencerName = str})
@@ -104,8 +136,7 @@ get = do
             case Parsec.parse IO.input "" modu of
                 Right name ->
                     return $ parsedOpts {
-                        connectTo = reverse $ connectTo parsedOpts,
-                        connectFrom = reverse $ connectFrom parsedOpts,
+                        connect = NEList.reverse $ connect parsedOpts,
                         moduleName = name
                         }
                 Left _ -> exitFailureMsg $ show modu ++ " is not a module name"

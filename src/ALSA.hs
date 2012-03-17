@@ -15,29 +15,34 @@ import qualified Sound.MIDI.ALSA as MIDI
 
 import qualified System.IO as IO
 
+import qualified Data.Sequence as Seq
+import qualified Utility.NonEmptyList as NEList
+
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Cont ( ContT(ContT), runContT, mapContT )
 import Control.Monad ( (<=<) )
 import Control.Functor.HT ( void )
-import Data.Foldable ( Foldable, forM_ )
+import Data.Foldable ( Foldable, forM_, foldMap )
+import Data.Monoid ( mappend )
 
 
 data Sequencer mode =
    Sequencer {
       handle :: SndSeq.T mode,
       publicPort, privatePort :: Port.T,
+      ports :: Seq.Seq Port.T,
       queue :: Queue.T
    }
 
 
 sendEvent ::
    (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Event.Data -> IO ()
-sendEvent sq ev = do
+   Sequencer mode -> Port.T -> Event.Data -> IO ()
+sendEvent sq port ev = do
    c <- Client.getId (handle sq)
    void $
       Event.outputDirect (handle sq) $
-      Event.simple (Addr.Cons c (publicPort sq)) ev
+      Event.simple (Addr.Cons c port) ev
 
 queueControl ::
    Sequencer mode -> Event.QueueEv -> IO ()
@@ -104,41 +109,39 @@ allNotesOff sq = do
          [minBound .. maxBound]
 
 parseAndConnect ::
-   (SndSeq.AllowInput mode, SndSeq.AllowOutput mode, Foldable f) =>
-   Sequencer mode ->
-   f String -> f String -> IO ()
-parseAndConnect sq from to = do
-   forM_ from
-      (SndSeq.connectFrom (handle sq) (publicPort sq)
-       <=<
-       Addr.parse (handle sq))
-   forM_ to
-      (SndSeq.connectTo (handle sq) (publicPort sq)
-       <=<
-       Addr.parse (handle sq))
+   (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
+   SndSeq.T mode ->
+   Option.Port -> ContT () IO Port.T
+parseAndConnect h (Option.Port name from to) = do
+   let caps =
+          mappend
+             (foldMap (const $ Port.caps [Port.capWrite, Port.capSubsWrite]) from)
+             (foldMap (const $ Port.caps [Port.capRead,  Port.capSubsRead]) to)
+   p <- ContT $
+      Port.withSimple h name caps
+         (Port.types [Port.typeMidiGeneric, Port.typeSoftware, 
+                      Port.typeApplication])
+   liftIO $ forM_ from $ mapM_ (SndSeq.connectFrom h p <=< Addr.parse h)
+   liftIO $ forM_ to   $ mapM_ (SndSeq.connectTo   h p <=< Addr.parse h)
+   return p
 
 
 withSequencer ::
    (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
    Option.Option -> (Sequencer mode -> IO ()) -> IO ()
-withSequencer opt =
+withSequencer opt@(Option.Option { Option.connect = NEList.Cons firstPort otherPorts } ) =
    runContT $
    mapContT (flip AlsaExc.catch
       (\e -> IO.hPutStrLn IO.stderr $ "alsa_exception: " ++ AlsaExc.show e)) $ do
    h <- ContT $ SndSeq.with SndSeq.defaultName SndSeq.Block
    liftIO $ Client.setName h $ Option.sequencerName opt
-   public <- ContT $
-      Port.withSimple h "inout"
-         (Port.caps [Port.capRead, Port.capSubsRead,
-                     Port.capWrite, Port.capSubsWrite])
-         (Port.types [Port.typeMidiGeneric, Port.typeSoftware, 
-                      Port.typeApplication])
+   public <- parseAndConnect h firstPort
+   ps <-
+      fmap ((public Seq.<|) . Seq.fromList) $
+      mapM (parseAndConnect h) otherPorts
    private <- ContT $
       Port.withSimple h "echo"
          (Port.caps [Port.capRead, Port.capWrite])
          (Port.types [Port.typeSpecific])
    q <- ContT $ Queue.with h
-   let sq = Sequencer h public private q
-   liftIO $ parseAndConnect sq
-       ( Option.connectFrom opt ) ( Option.connectTo opt )
-   return sq
+   return $ Sequencer h public private ps q
