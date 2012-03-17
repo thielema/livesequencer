@@ -2,6 +2,7 @@ module Event where
 
 import Term
 import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
+import qualified ALSA
 import qualified Time
 import qualified Exception
 import qualified Log
@@ -36,6 +37,7 @@ import qualified Data.Accessor.Monad.Trans.State as AccM
 import qualified Data.Accessor.Basic as Acc
 import Data.Accessor.Basic ((^.), )
 
+import qualified Data.Sequence as Seq
 import Data.Maybe ( isJust )
 import Data.Bool.HT ( if' )
 
@@ -158,18 +160,21 @@ play sq throwAsync x = case Term.viewNode x of
 
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) -> do
-            chan <- checkRangeAuto "channel" CM.toChannel CM.fromChannel chann
-            processChannelMsg sq chan body
-        _ -> processChannelMsg sq (CM.toChannel 0) event
+            chan <-
+                checkRange "channel" id id
+                    0 (Seq.length (ALSA.ports sq) * 16 - 1) chann
+            let (p, c) = divMod chan 16
+            processChannelMsg sq (Seq.index (ALSA.ports sq) p, CM.toChannel c) body
+        _ -> processChannelMsg sq (ALSA.publicPort sq, CM.toChannel 0) event
            -- termException x "Event must contain Channel, but not "
     _ -> termException x "can only process Wait or Event, but not "
 
 processChannelMsg ::
     (SndSeq.AllowOutput mode) =>
     Sequencer mode ->
-    CM.Channel -> Term ->
+    (Port.T, CM.Channel) -> Term ->
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
-processChannelMsg sq chan body = do
+processChannelMsg sq chanPort@(port, chan) body = do
     MT.lift $ AccM.set stateWaiting False
     let checkVelocity =
             checkRange "velocity" CM.toVelocity CM.fromVelocity
@@ -178,21 +183,21 @@ processChannelMsg sq chan body = do
         Just ("On", [pn, vn]) -> do
             p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
             v <- checkVelocity vn
-            runIO $ sendNote sq SeqEvent.NoteOn chan p v
+            runIO $ sendNote sq SeqEvent.NoteOn chanPort p v
         Just ("Off", [pn, vn]) -> do
             p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
             v <- checkVelocity vn
-            runIO $ sendNote sq SeqEvent.NoteOff chan p v
+            runIO $ sendNote sq SeqEvent.NoteOff chanPort p v
         Just ("PgmChange", [pn]) -> do
             p <- checkRangeAuto "program" CM.toProgram CM.fromProgram pn
             runIO $
-                sendEvent sq $ SeqEvent.CtrlEv SeqEvent.PgmChange $
+                sendEvent sq port $ SeqEvent.CtrlEv SeqEvent.PgmChange $
                 MidiAlsa.programChangeEvent chan p
         Just ("Controller", [ccn, vn]) -> do
             cc <- checkRangeAuto "controller" CM.toController CM.fromController ccn
             v <- checkRange "controller value" id id 0 127 vn
             runIO $
-                sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
+                sendEvent sq port $ SeqEvent.CtrlEv SeqEvent.Controller $
                 MidiAlsa.controllerEvent chan cc (fromIntegral v)
         _ -> termException body "invalid channel event: "
     return Nothing
@@ -324,10 +329,10 @@ sendNote ::
     (SndSeq.AllowOutput mode) =>
     Sequencer mode ->
     SeqEvent.NoteEv ->
-    CM.Channel ->
+    (Port.T, CM.Channel) ->
     CM.Pitch ->
     CM.Velocity ->
     IO ()
-sendNote sq onoff chan pitch velocity =
-    sendEvent sq $
+sendNote sq onoff (port,chan) pitch velocity =
+    sendEvent sq port $
     SeqEvent.NoteEv onoff $ MidiAlsa.noteEvent chan pitch velocity velocity 0
