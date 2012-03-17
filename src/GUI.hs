@@ -104,6 +104,8 @@ import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
 import qualified Data.Accessor.Monad.Trans.State as AccM
+import qualified Data.Accessor.Basic as Acc
+import qualified Data.Accessor.Tuple as AccTuple
 
 import qualified Data.Traversable as Trav
 import qualified Data.Foldable as Fold
@@ -924,16 +926,25 @@ gui input output = do
             ReductionSteps steps -> do
                 hls <- fmap highlighters $ readIORef panels
                 let highlight ::
-                        Int -> Int -> Int -> Identifier -> IO ()
-                    highlight r g b ident = do
-                        let m = M.singleton (Module.nameFromIdentifier ident) [ident]
+                        Int -> Int -> Int -> [Identifier] -> IO ()
+                    highlight r g b idents = do
+                        let m = M.fromList $
+                                map (\ident -> (Module.nameFromIdentifier ident, [ident])) idents
                         void $ varUpdate highlights $ M.unionWith (++) $ m
                         setColor nb hls ( rgb r g b ) m
-                forM_ steps $ \step ->
-                    case step of
-                        Rewrite.Step target -> highlight 0 200 200 target
-                        Rewrite.Rule rule   -> highlight 200 0 200 rule
-                        Rewrite.Data origin -> highlight 200 200 0 origin
+
+                let prep step =
+                        case step of
+                            Rewrite.Step target -> (AccTuple.first3, (target:))
+                            Rewrite.Rule rule   -> (AccTuple.second3, (rule:))
+                            Rewrite.Data origin -> (AccTuple.third3, (origin:))
+                    (targets, rules, origins) =
+                        foldr (uncurry Acc.modify) ([],[],[]) $
+                        map prep steps
+
+                highlight 0 200 200 targets
+                highlight 200 0 200 rules
+                highlight 200 200 0 origins
 
             Exception exc -> do
                 itemAppend errorLog $ Exception.lineFromMessage exc
@@ -1065,5 +1076,5 @@ setColor nb highlighters hicolor positions = do
             forM_ (M.lookup p positions) $ mapM_ $ \ ident -> do
                 let rng = Term.range ident
                 from <- textPosFromSourcePos highlighter $ Term.start rng
-                to   <- textPosFromSourcePos highlighter $ Term.end rng
+                to   <- textPosFromSourcePos highlighter $ Term.end   rng
                 WXCMZ.textCtrlSetStyle highlighter from to attr
