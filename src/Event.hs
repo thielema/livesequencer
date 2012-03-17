@@ -65,49 +65,35 @@ termException s msg =
 runIO :: (MonadIO m) => IO a -> ExceptionalT Exception.Message m a
 runIO action = MT.lift $ liftIO action
 
-{-
-FIXME:
-minBound for Velocity is zero.
-This is not very helpful, because zero velocity is treated as NoteOff.
--}
+
 checkRange ::
     (Bounded a, Monad m) =>
     String -> (Int -> a) -> (a -> Int) ->
+    a -> a ->
     Term ->
     ExceptionalT Exception.Message m a
-checkRange typ fromInt0 toInt0 (Number rng x) =
-    let aux ::
-            (Monad m) =>
-            (Int -> a) -> (a -> Int) ->
-            a -> a ->
-            ExceptionalT Exception.Message m a
-        aux fromInt toInt minb maxb =
-            if' (x < fromIntegral (toInt minb))
-                (throwT $ Exception.Message Exception.Term rng $
-                    typ ++ " argument " ++ show x ++
-                        " is less than minimum value " ++ show (toInt minb)) $
-            if' (fromIntegral (toInt maxb) < x)
-                (throwT $ Exception.Message Exception.Term rng $
-                         typ ++ " argument " ++ show x ++
-                              " is greater than maximum value " ++ show (toInt maxb)) $
-            return $ fromInt $ fromInteger x
-    in  aux fromInt0 toInt0 minBound maxBound
-checkRange typ _ _ t =
+checkRange typ fromInt toInt minb maxb (Number rng x) =
+    if' (x < fromIntegral (toInt minb))
+        (throwT $ Exception.Message Exception.Term rng $
+            typ ++ " argument " ++ show x ++
+                " is less than minimum value " ++ show (toInt minb)) $
+    if' (fromIntegral (toInt maxb) < x)
+        (throwT $ Exception.Message Exception.Term rng $
+                 typ ++ " argument " ++ show x ++
+                      " is greater than maximum value " ++ show (toInt maxb)) $
+    return $ fromInt $ fromInteger x
+checkRange typ _ _ _ _ t =
     throwT $
     Exception.Message Exception.Term
         (termRange t) (typ ++ " argument is not a number")
 
-
-{-
-It is certainly simpler to add another 'checkRange',
-since we need it for Velocity, extended Channels.
--}
-newtype ControllerValue = ControllerValue {fromControllerValue :: Int}
-    deriving (Eq, Ord, Show)
-
-instance Bounded ControllerValue where
-    minBound = ControllerValue 0
-    maxBound = ControllerValue 127
+checkRangeAuto ::
+    (Bounded a, Monad m) =>
+    String -> (Int -> a) -> (a -> Int) ->
+    Term ->
+    ExceptionalT Exception.Message m a
+checkRangeAuto typ fromInt0 toInt0 =
+    checkRange typ fromInt0 toInt0 minBound maxBound
 
 
 data State =
@@ -171,7 +157,7 @@ play sq throwAsync x = case Term.viewNode x of
 
     Just ("Event", [event]) -> case Term.viewNode event of
         Just ("Channel", [chann, body]) -> do
-            chan <- checkRange "channel" CM.toChannel CM.fromChannel chann
+            chan <- checkRangeAuto "channel" CM.toChannel CM.fromChannel chann
             processChannelMsg sq chan body
         _ -> processChannelMsg sq (CM.toChannel 0) event
            -- termException x "Event must contain Channel, but not "
@@ -184,23 +170,26 @@ processChannelMsg ::
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
 processChannelMsg sq chan body = do
     MT.lift $ AccM.set stateWaiting False
+    let checkVelocity =
+            checkRange "velocity" CM.toVelocity CM.fromVelocity
+                (CM.toVelocity 1) (CM.toVelocity 127)
     case Term.viewNode body of
         Just ("On", [pn, vn]) -> do
-            p <- checkRange "pitch" CM.toPitch CM.fromPitch pn
-            v <- checkRange "velocity" CM.toVelocity CM.fromVelocity vn
+            p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
+            v <- checkVelocity vn
             runIO $ sendNote sq SeqEvent.NoteOn chan p v
         Just ("Off", [pn, vn]) -> do
-            p <- checkRange "pitch" CM.toPitch CM.fromPitch pn
-            v <- checkRange "velocity" CM.toVelocity CM.fromVelocity vn
+            p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
+            v <- checkVelocity vn
             runIO $ sendNote sq SeqEvent.NoteOff chan p v
         Just ("PgmChange", [pn]) -> do
-            p <- checkRange "program" CM.toProgram CM.fromProgram pn
+            p <- checkRangeAuto "program" CM.toProgram CM.fromProgram pn
             runIO $
                 sendEvent sq $ SeqEvent.CtrlEv SeqEvent.PgmChange $
                 MidiAlsa.programChangeEvent chan p
         Just ("Controller", [ccn, vn]) -> do
-            cc <- checkRange "controller" CM.toController CM.fromController ccn
-            (ControllerValue v) <- checkRange "controller value" ControllerValue fromControllerValue vn
+            cc <- checkRangeAuto "controller" CM.toController CM.fromController ccn
+            v <- checkRange "controller value" id id 0 127 vn
             runIO $
                 sendEvent sq $ SeqEvent.CtrlEv SeqEvent.Controller $
                 MidiAlsa.controllerEvent chan cc (fromIntegral v)
