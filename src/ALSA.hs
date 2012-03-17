@@ -16,9 +16,11 @@ import qualified Sound.MIDI.ALSA as MIDI
 
 import qualified System.IO as IO
 
-import Data.Foldable ( Foldable, forM_ )
+import Control.Monad.IO.Class ( liftIO )
+import Control.Monad.Trans.Cont ( ContT(ContT), runContT, mapContT )
 import Control.Monad ( (<=<) )
 import Control.Functor.HT ( void )
+import Data.Foldable ( Foldable, forM_ )
 
 
 data Sequencer mode =
@@ -120,21 +122,24 @@ parseAndConnect sq from to = do
 withSequencer ::
    (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
    Option.Option -> (Sequencer mode -> IO ()) -> IO ()
-withSequencer opt act =
-   flip AlsaExc.catch
-      (\e -> IO.hPutStrLn IO.stderr $ "alsa_exception: " ++ AlsaExc.show e) $ do
-   SndSeq.with SndSeq.defaultName SndSeq.Block $ \h -> do
-   Client.setName h $ Option.sequencerName opt
-   Port.withSimple h "inout"
-      (Port.caps [Port.capRead, Port.capSubsRead,
-                  Port.capWrite, Port.capSubsWrite])
-      (Port.types [Port.typeMidiGeneric, Port.typeSoftware, 
-                   Port.typeApplication]) $ \ public -> do
-   Port.withSimple h "echo"
-      (Port.caps [Port.capRead, Port.capWrite])
-      (Port.types [Port.typeSpecific]) $ \ private -> do
-   Queue.with h $ \q -> do
+withSequencer opt =
+   runContT $
+   mapContT (flip AlsaExc.catch
+      (\e -> IO.hPutStrLn IO.stderr $ "alsa_exception: " ++ AlsaExc.show e)) $ do
+   h <- ContT $ SndSeq.with SndSeq.defaultName SndSeq.Block
+   liftIO $ Client.setName h $ Option.sequencerName opt
+   public <- ContT $
+      Port.withSimple h "inout"
+         (Port.caps [Port.capRead, Port.capSubsRead,
+                     Port.capWrite, Port.capSubsWrite])
+         (Port.types [Port.typeMidiGeneric, Port.typeSoftware, 
+                      Port.typeApplication])
+   private <- ContT $
+      Port.withSimple h "echo"
+         (Port.caps [Port.capRead, Port.capWrite])
+         (Port.types [Port.typeSpecific])
+   q <- ContT $ Queue.with h
    let sq = Sequencer h public private q
-   parseAndConnect sq
+   liftIO $ parseAndConnect sq
        ( Option.connectFrom opt ) ( Option.connectTo opt )
-   act sq
+   return sq
