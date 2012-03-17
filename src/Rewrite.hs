@@ -20,10 +20,10 @@ import Data.Tuple.HT ( mapSnd )
 import Data.List ( intercalate )
 
 
-data Message = Step { target :: Identifier
-                    , rule :: Maybe Identifier -- ^ Nothing for builtins
-                    }
-             | Data { origin :: Identifier }
+data Message =
+      Step { target :: Identifier }
+    | Rule { rule :: Identifier }
+    | Data { origin :: Identifier }
     deriving Show
 
 type Evaluator =
@@ -84,7 +84,7 @@ eval :: Module.FunctionDeclarations -> Identifier -> [Term] -> Evaluator Term
 eval _ i xs
   | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
       ys <- mapM top xs
-      lift $ tell $ [ Step { target = i, rule = Nothing } ]
+      lift $ tell $ [ Step { target = i } ]
       case ys of
           [ Number _ a, Number _ b] ->
               case name i of
@@ -123,8 +123,7 @@ eval_decls g =
             case m of
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
-                    lift $ tell [ Step { target = g
-                                  , rule = Just f } ]
+                    lift $ tell [ Step { target = g } , Rule { rule = f } ]
                     rhs' <- apply substitions rhs
                     appendArguments rhs' additionalArgs)
         (\ys ->
