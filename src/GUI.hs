@@ -52,6 +52,8 @@ import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
 import Graphics.UI.WX.Controls
+           ( Notebook, TextCtrl, wrap, focusOn, columns, listEvent,
+             Align(AlignLeft, AlignRight), Wrap(WrapNone) )
 import Graphics.UI.WX.Events
 import Graphics.UI.WX.Layout
            ( widget, container, layout, margin, row, column )
@@ -93,6 +95,7 @@ import Control.Monad.Trans.Class ( lift )
 import Control.Monad ( when, liftM2, forever, )
 import Control.Functor.HT ( void )
 import Data.Foldable ( forM_ )
+import Data.Traversable ( forM )
 import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec.Token as Token
@@ -107,7 +110,6 @@ import qualified Data.Accessor.Monad.Trans.State as AccM
 import qualified Data.Accessor.Basic as Acc
 import qualified Data.Accessor.Tuple as AccTuple
 
-import qualified Data.Traversable as Trav
 import qualified Data.Foldable as Fold
 import qualified Data.Sequence as Seq
 import qualified Data.Map as M
@@ -116,7 +118,6 @@ import qualified Data.Monoid as Mn
 
 import qualified Data.Char as Char
 import qualified Data.List as List
-import Data.Tuple.HT ( fst3 )
 
 import Prelude hiding ( log )
 
@@ -491,10 +492,6 @@ gui input output = do
     controls <- newIORef []
     panels <- newIORef M.empty
 
-    let highlighters = fmap ( \ (_pnl,_,h) -> h )
-        editors = fmap ( \ (_pnl,e,_) -> e )
-
-
     frameError <- WX.frame [ text := "errors" ]
 
     panelError <- WX.panel frameError [ ]
@@ -661,7 +658,7 @@ gui input output = do
 
 
     reducer <-
-        textCtrl p
+        WX.textCtrl p
             [ font := fontFixed, editable := False, wrap := WrapNone ]
 
     status <- WX.statusField
@@ -689,7 +686,7 @@ gui input output = do
     set reloadItem [
           on command := do
               index <- get nb notebookSelection
-              (moduleName, (_panel, editor, _highlighter)) <-
+              (moduleName, pnl) <-
                   fmap ( M.elemAt index ) $ readIORef panels
               prg <- readIORef program
               let path =
@@ -698,16 +695,16 @@ gui input output = do
 
               handleException moduleName $ do
                   content <- readFile path
-                  set editor [ text := content ]
+                  set (editor pnl) [ text := content ]
                   set status [
                       text := Module.tellName moduleName ++ " reloaded from " ++ path ]
           ]
 
     let getCurrentModule = do
             index <- get nb notebookSelection
-            (moduleName, (_panel, editor, _highlighter)) <-
+            (moduleName, pnl) <-
                 fmap ( M.elemAt index ) $ readIORef panels
-            content <- get editor text
+            content <- get (editor pnl) text
             prg <- readIORef program
             return
                 (Module.source_location $ snd $
@@ -742,9 +739,9 @@ gui input output = do
           ]
 
 
-    let refreshProgram (moduleName, (_panel, editor, _highlighter)) = do
-            s <- get editor text
-            pos <- get editor cursor
+    let refreshProgram (moduleName, pnl) = do
+            s <- get (editor pnl) text
+            pos <- get (editor pnl) cursor
             writeChan input $ Modification Nothing moduleName s pos
 
             updateErrorLog $ Seq.filter $
@@ -760,19 +757,18 @@ gui input output = do
 
     set playTermItem
         [ on command := do
-            (_moduleName, (_panel, editor, _highlighter)) <-
-                getFromNotebook nb =<< readIORef panels
-            marked <- WXCMZ.textCtrlGetStringSelection editor
+            ed <- fmap (editor . snd) $ getFromNotebook nb =<< readIORef panels
+            marked <- WXCMZ.textCtrlGetStringSelection ed
             expr <-
                 if null marked
                   then do
                       (i,line) <-
-                          textColumnRowFromPos editor
-                              =<< get editor cursor
-                      content <- WXCMZ.textCtrlGetLineText editor line
+                          textColumnRowFromPos ed
+                              =<< get ed cursor
+                      content <- WXCMZ.textCtrlGetLineText ed line
 {- simpler but inefficient
-                      content <- get editor text
-                      i <- get editor cursor
+                      content <- get ed text
+                      i <- get ed cursor
 -}
                       case splitAt i content of
                           (prefix,suffix) ->
@@ -889,9 +885,9 @@ gui input output = do
                       liftIO $ WXCMZ.textCtrlSetSelection h i j
               case typ of
                   Exception.Parse ->
-                      activateText $ editors pnls
+                      activateText $ fmap editor pnls
                   Exception.Term ->
-                      activateText $ highlighters pnls
+                      activateText $ fmap highlighter pnls
                   Exception.InOut ->
                       return ()
         ]
@@ -923,7 +919,7 @@ gui input output = do
                     flip when ( set reducer [ text := sr, cursor := 0 ] )
 
             ReductionSteps steps -> do
-                hls <- fmap highlighters $ readIORef panels
+                hls <- fmap (fmap highlighter) $ readIORef panels
                 visibleModule <- fmap fst $ getFromNotebook nb hls
                 let highlight ::
                         Int -> Int -> Int -> [Identifier] -> IO ()
@@ -956,14 +952,13 @@ gui input output = do
             Refresh moduleName s pos -> do
                 pnls <- readIORef panels
                 Fold.mapM_
-                    (\h -> set h [ text := s, cursor := pos ])
-                    (M.lookup moduleName $ highlighters pnls)
+                    (\pnl -> set (highlighter pnl) [ text := s, cursor := pos ])
+                    (M.lookup moduleName pnls)
                 set status [ text :=
                     Module.tellName moduleName ++ " reloaded into interpreter" ]
             InsertText str -> do
-                (_moduleName, (_panel, editor, _highlighter)) <-
-                    getFromNotebook nb =<< readIORef panels
-                WXCMZ.textCtrlWriteText editor str
+                pnl <- fmap snd $ getFromNotebook nb =<< readIORef panels
+                WXCMZ.textCtrlWriteText (editor pnl) str
                 set status [ text :=
                     "inserted note from external controller" ]
 
@@ -975,7 +970,7 @@ gui input output = do
                 pnls <- displayModules input
                             frameControls ctrls nb prg
                 writeIORef panels pnls
-                Fold.forM_ (M.mapWithKey (,) $ fmap fst3 pnls) $
+                forM_ (M.mapWithKey (,) $ fmap panel pnls) $
                     \(moduleName,sub) ->
                         WXCMZ.notebookAddPage nb sub (Module.deconsName moduleName) False (-1)
 
@@ -987,7 +982,7 @@ gui input output = do
                      M.keys $ Program.modules prg) ]
 
             ResetDisplay -> do
-                hls <- fmap highlighters $ readIORef panels
+                hls <- fmap (fmap highlighter) $ readIORef panels
                 setColor hls WXCore.white
                     =<< varSwap highlights M.empty
 
@@ -1007,13 +1002,20 @@ gui input output = do
                             " waiting for next step" ]
                         activateSingleStep
 
-            HTTP request ->
+            HTTP request -> do
+                pnls <- readIORef panels
                 HTTPGui.update
                     (\contentMVar name newContent pos ->
                         writeChan input $
                         Modification (Just contentMVar) name newContent pos)
-                    status panels request
+                    status (fmap editor pnls) request
 
+
+data Panel =
+    Panel {
+        panel :: WX.Panel (),
+        editor, highlighter :: WX.TextCtrl ()
+    }
 
 displayModules ::
     Chan Action ->
@@ -1021,21 +1023,21 @@ displayModules ::
     [(Identifier, Controls.Control)] ->
     WXCore.Window b ->
     Program ->
-    IO (M.Map Module.Name (Panel (), TextCtrl (), TextCtrl ()))
+    IO (M.Map Module.Name Panel)
 displayModules input frameControls ctrls nb prog = do
-    Controls.create frameControls ctrls
-        $ \ e -> writeChan input ( Control e )
+    Controls.create frameControls ctrls $
+        writeChan input . Control
 
-    Trav.forM (modules prog) $ \ content -> do
-        psub <- panel nb []
-        editor <- textCtrl psub [ font := fontFixed, wrap := WrapNone ]
-        highlighter <- textCtrlRich psub
+    forM (modules prog) $ \ content -> do
+        psub <- WX.panel nb []
+        ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
+        hl <- WX.textCtrlRich psub
             [ font := fontFixed, wrap := WrapNone, editable := False ]
-        set editor [ text := Module.source_text content ]
-        set highlighter [ text := Module.source_text content ]
+        set ed [ text := Module.source_text content ]
+        set hl [ text := Module.source_text content ]
         set psub [ layout := (row 5 $
-            map WX.fill $ [widget editor, widget highlighter]) ]
-        return (psub, editor, highlighter)
+            map WX.fill $ [widget ed, widget hl]) ]
+        return $ Panel psub ed hl
 
 
 getFromNotebook ::
@@ -1075,13 +1077,13 @@ setColor ::
     IO ()
 setColor highlighters hicolor positions = do
     forM_ (M.intersectionWith (,) highlighters positions) $
-        \(highlighter, idents) -> do
-            attr <- WXCMZ.textCtrlGetDefaultStyle highlighter
+        \(hl, idents) -> do
+            attr <- WXCMZ.textCtrlGetDefaultStyle hl
             bracket
                 (WXCMZ.textAttrGetBackgroundColour attr)
                 (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
                     WXCMZ.textAttrSetBackgroundColour attr hicolor
                     forM_ idents $ \ ident -> do
                         (from, to) <-
-                            textRangeFromRange highlighter $ Term.range ident
-                        WXCMZ.textCtrlSetStyle highlighter from to attr
+                            textRangeFromRange hl $ Term.range ident
+                        WXCMZ.textCtrlSetStyle hl from to attr

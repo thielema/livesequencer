@@ -11,10 +11,7 @@ import qualified HTTPServer.Option as Option
 import qualified Module
 
 import qualified Graphics.UI.WX as WX
-import Graphics.UI.WX.Controls ( TextCtrl )
 import Control.Concurrent.MVar
-
-import Data.IORef ( IORef )
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 
@@ -40,7 +37,7 @@ methods _output = Methods
 update ::
     (MVar Feedback -> Module.Name -> String -> Int -> IO ()) ->
     WX.StatusField ->
-    IORef (M.Map Module.Name (a, TextCtrl b, c)) ->
+    M.Map Module.Name (WX.TextCtrl ()) ->
     GuiUpdate ->
     IO ()
 update _input _status _panels _req = return ()
