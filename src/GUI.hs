@@ -159,7 +159,7 @@ data Action =
    | Load FilePath
 
 data Execution =
-    Mode Event.WaitMode | Restart | Stop | PlayTerm String
+    Mode Event.WaitMode | Restart | Stop | PlayTerm String | ApplyTerm String
 
 
 -- | messages that are sent from machine to GUI
@@ -170,6 +170,7 @@ data GuiUpdate =
    | Register Program [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
+   | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
    | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
@@ -199,6 +200,21 @@ prepareProgram p0 = do
     p1 <- Exc.ExceptionalT $ return $
         Program.add_module (Controls.controller_module ctrls) p0
     return (p1, ctrls)
+
+parseTerm ::
+    (Monad m, IO.Input a) =>
+    String -> Exc.ExceptionalT Exception.Message m a
+parseTerm str =
+    case Parsec.parse
+             (Parsec.between
+                 (Token.whiteSpace Term.lexer)
+                 (Parsec.eof)
+                 IO.input)
+             "marked range" str of
+        Left msg ->
+            Exc.throwT $ Program.messageFromParserError msg
+        Right t -> return t
+
 
 formatPitch :: VM.Pitch -> String
 formatPitch p =
@@ -305,19 +321,25 @@ machine input output importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
-                    PlayTerm str ->
-                        case Parsec.parse
-                                 (Parsec.between
-                                     (Token.whiteSpace Term.lexer)
-                                     (Parsec.eof)
-                                     IO.input)
-                                 "marked range" str of
-                            Left msg ->
-                                writeTChanIO output . Exception $
-                                Program.messageFromParserError msg
-                            Right t -> do
-                                ALSA.quietContinueQueue sq
-                                withMode Event.RealTime $ writeTMVar term t
+                    PlayTerm str -> exceptionToGUIIO output $ do
+                        t <- parseTerm str
+                        lift $ ALSA.quietContinueQueue sq
+                        lift $ withMode Event.RealTime $ writeTMVar term t
+                    ApplyTerm str -> exceptionToGUIIO output $ do
+                        fterm <- parseTerm str
+                        case fterm of
+                            Term.Node f xs ->
+                                lift $ STM.atomically $ do
+                                    t0 <- readTMVar term
+                                    let t1 = Term.Node f (xs++[t0])
+                                    writeTMVar term t1
+                                    writeTChan output $ CurrentTerm $ show t1
+                                    writeTChan output $ StatusLine $
+                                        "applied function term " ++ show str
+                            _ ->
+                                Exc.throwT .
+                                Exception.Message Exception.Parse (Term.termRange fterm) $
+                                "tried to apply the non-function term " ++ show str
             Modification feedback moduleName sourceCode pos -> do
                 Log.put $
                     Module.tellName moduleName ++
@@ -596,6 +618,12 @@ gui input output = do
               "stop sound and restart program execution " ++
               "with the marked editor area as current term, " ++
               "or use the surrounding identifier if nothing is marked" ]
+    applyTermItem <- WX.menuItem execMenu
+        [ text := "Apply function term\tCtrl-Y",
+          help :=
+              "apply marked expression as function to the current term, " ++
+              "the execution mode remains the same, " ++
+              "example terms: (merge track) or (flip append track)" ]
     _stopItem <- WX.menuItem execMenu
         [ text := "Stop\tCtrl-Space",
           on command := writeChan input (Execution Stop),
@@ -756,29 +784,18 @@ gui input output = do
             ]
 
     set playTermItem
-        [ on command := do
-            ed <- fmap (editor . snd) $ getFromNotebook nb =<< readIORef panels
-            marked <- WXCMZ.textCtrlGetStringSelection ed
-            expr <-
-                if null marked
-                  then do
-                      (i,line) <-
-                          textColumnRowFromPos ed
-                              =<< get ed cursor
-                      content <- WXCMZ.textCtrlGetLineText ed line
-{- simpler but inefficient
-                      content <- get ed text
-                      i <- get ed cursor
--}
-                      case splitAt i content of
-                          (prefix,suffix) ->
-                              let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
-                              in  return $
-                                      (reverse $ takeWhile identLetter $ reverse prefix)
-                                      ++
-                                      takeWhile identLetter suffix
-                  else return marked
-            writeChan input . Execution . PlayTerm $ expr ]
+        [ on command :=
+            writeChan input . Execution . PlayTerm
+                =<< getMarkedExpr . editor . snd
+                =<< getFromNotebook nb
+                =<< readIORef panels ]
+
+    set applyTermItem
+        [ on command :=
+            writeChan input . Execution . ApplyTerm
+                =<< getMarkedExpr . editor . snd
+                =<< getFromNotebook nb
+                =<< readIORef panels ]
 
     waitDuration <- newIORef $ Time.milliseconds 500
 
@@ -956,11 +973,15 @@ gui input output = do
                     (M.lookup moduleName pnls)
                 set status [ text :=
                     Module.tellName moduleName ++ " reloaded into interpreter" ]
+
             InsertText str -> do
                 pnl <- fmap snd $ getFromNotebook nb =<< readIORef panels
                 WXCMZ.textCtrlWriteText (editor pnl) str
                 set status [ text :=
                     "inserted note from external controller" ]
+
+            StatusLine str -> do
+                set status [ text := str ]
 
             Register prg ctrls -> do
                 writeIORef program prg
@@ -1087,3 +1108,25 @@ setColor highlighters hicolor positions = do
                         (from, to) <-
                             textRangeFromRange hl $ Term.range ident
                         WXCMZ.textCtrlSetStyle hl from to attr
+
+getMarkedExpr :: TextCtrl () -> IO String
+getMarkedExpr ed = do
+    marked <- WXCMZ.textCtrlGetStringSelection ed
+    if null marked
+      then do
+          (i,line) <-
+              textColumnRowFromPos ed
+                  =<< get ed cursor
+          content <- WXCMZ.textCtrlGetLineText ed line
+{- simpler but inefficient
+          content <- get ed text
+          i <- get ed cursor
+-}
+          case splitAt i content of
+              (prefix,suffix) ->
+                  let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
+                  in  return $
+                          (reverse $ takeWhile identLetter $ reverse prefix)
+                          ++
+                          takeWhile identLetter suffix
+      else return marked
