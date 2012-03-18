@@ -1144,7 +1144,7 @@ getMarkedExpr modu ed = do
     marked <- WXCMZ.textCtrlGetStringSelection ed
     if null marked
       then do
-          pos@(i,line) <-
+          (i,line) <-
               textColumnRowFromPos ed =<< get ed cursor
           content <- WXCMZ.textCtrlGetLineText ed line
 {- simpler but inefficient
@@ -1155,10 +1155,11 @@ getMarkedExpr modu ed = do
               (prefix,suffix) ->
                   let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
                   in  return $
-                      MarkedText (sourcePosFromTextColumnRow modu pos) $
-                          (reverse $ takeWhile identLetter $ reverse prefix)
-                          ++
-                          takeWhile identLetter suffix
+                      MarkedText
+                          (sourcePosFromTextColumnRow modu (i - length prefix, line))
+                          ((reverse $ takeWhile identLetter $ reverse prefix)
+                           ++
+                           takeWhile identLetter suffix)
       else do
           (from, _to) <- textRangeFromSelection ed
           pos <- textColumnRowFromPos ed from
