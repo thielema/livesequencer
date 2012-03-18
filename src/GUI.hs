@@ -79,8 +79,10 @@ import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 import Graphics.UI.WXCore.Events
 import qualified Event
 
+import Foreign.Ptr ( Ptr )
 import Foreign.Storable ( peek )
 import Foreign.Marshal.Alloc ( alloca )
+import qualified Foreign.C.Types as C
 
 import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
@@ -118,6 +120,7 @@ import qualified Data.Monoid as Mn
 
 import qualified Data.Char as Char
 import qualified Data.List as List
+import Data.Tuple.HT ( mapSnd )
 
 import Prelude hiding ( log )
 
@@ -159,7 +162,8 @@ data Action =
    | Load FilePath
 
 data Execution =
-    Mode Event.WaitMode | Restart | Stop | PlayTerm String | ApplyTerm String
+    Mode Event.WaitMode | Restart | Stop |
+    PlayTerm MarkedText | ApplyTerm MarkedText
 
 
 -- | messages that are sent from machine to GUI
@@ -203,14 +207,16 @@ prepareProgram p0 = do
 
 parseTerm ::
     (Monad m, IO.Input a) =>
-    String -> Exc.ExceptionalT Exception.Message m a
-parseTerm str =
+    MarkedText -> Exc.ExceptionalT Exception.Message m a
+parseTerm (MarkedText pos str) =
     case Parsec.parse
-             (Parsec.between
+             (Parsec.setPosition pos
+              >>
+              Parsec.between
                  (Token.whiteSpace Term.lexer)
-                 (Parsec.eof)
+                 Parsec.eof
                  IO.input)
-             "marked range" str of
+             "" str of
         Left msg ->
             Exc.throwT $ Program.messageFromParserError msg
         Right t -> return t
@@ -321,12 +327,12 @@ machine input output importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
-                    PlayTerm str -> exceptionToGUIIO output $ do
-                        t <- parseTerm str
+                    PlayTerm txt -> exceptionToGUIIO output $ do
+                        t <- parseTerm txt
                         lift $ ALSA.quietContinueQueue sq
                         lift $ withMode Event.RealTime $ writeTMVar term t
-                    ApplyTerm str -> exceptionToGUIIO output $ do
-                        fterm <- parseTerm str
+                    ApplyTerm txt -> exceptionToGUIIO output $ do
+                        fterm <- parseTerm txt
                         case fterm of
                             Term.Node f xs ->
                                 lift $ STM.atomically $ do
@@ -335,11 +341,13 @@ machine input output importPaths progInit sq = do
                                     writeTMVar term t1
                                     writeTChan output $ CurrentTerm $ show t1
                                     writeTChan output $ StatusLine $
-                                        "applied function term " ++ show str
+                                        "applied function term " ++
+                                        show (markedString txt)
                             _ ->
                                 Exc.throwT .
                                 Exception.Message Exception.Parse (Term.termRange fterm) $
-                                "tried to apply the non-function term " ++ show str
+                                "tried to apply the non-function term " ++
+                                show (markedString txt)
             Modification feedback moduleName sourceCode pos -> do
                 Log.put $
                     Module.tellName moduleName ++
@@ -786,14 +794,14 @@ gui input output = do
     set playTermItem
         [ on command :=
             writeChan input . Execution . PlayTerm
-                =<< getMarkedExpr . editor . snd
+                =<< uncurry getMarkedExpr . mapSnd editor
                 =<< getFromNotebook nb
                 =<< readIORef panels ]
 
     set applyTermItem
         [ on command :=
             writeChan input . Execution . ApplyTerm
-                =<< getMarkedExpr . editor . snd
+                =<< uncurry getMarkedExpr . mapSnd editor
                 =<< getFromNotebook nb
                 =<< readIORef panels ]
 
@@ -1073,12 +1081,27 @@ textPosFromSourcePos textArea pos =
        $ Point (Pos.sourceColumn pos - 1)
                (Pos.sourceLine   pos - 1)
 
+sourcePosFromTextColumnRow ::
+    Module.Name -> (Int, Int) -> Pos.SourcePos
+sourcePosFromTextColumnRow (Module.Name name) (col, line) =
+    Pos.newPos name (line+1) (col+1)
+
 textRangeFromRange ::
     TextCtrl a -> Term.Range -> IO (Int, Int)
 textRangeFromRange textArea rng = do
     from <- textPosFromSourcePos textArea $ Term.start rng
     to   <- textPosFromSourcePos textArea $ Term.end   rng
     return (from, to)
+
+textRangeFromSelection ::
+    TextCtrl a -> IO (Int, Int)
+textRangeFromSelection textArea =
+    alloca $ \fromPtr ->
+    alloca $ \toPtr -> do
+        void $ WXCMZ.textCtrlGetSelection textArea fromPtr toPtr
+        liftM2 (,)
+            (fmap fromIntegral $ peek (fromPtr :: Ptr C.CInt))
+            (fmap fromIntegral $ peek (toPtr :: Ptr C.CInt))
 
 textColumnRowFromPos ::
     TextCtrl a -> Int -> IO (Int, Int)
@@ -1109,14 +1132,20 @@ setColor highlighters hicolor positions = do
                             textRangeFromRange hl $ Term.range ident
                         WXCMZ.textCtrlSetStyle hl from to attr
 
-getMarkedExpr :: TextCtrl () -> IO String
-getMarkedExpr ed = do
+
+data MarkedText =
+    MarkedText {
+        _markedPosition :: Pos.SourcePos,
+        markedString :: String
+    }
+
+getMarkedExpr :: Module.Name -> TextCtrl () -> IO MarkedText
+getMarkedExpr modu ed = do
     marked <- WXCMZ.textCtrlGetStringSelection ed
     if null marked
       then do
-          (i,line) <-
-              textColumnRowFromPos ed
-                  =<< get ed cursor
+          pos@(i,line) <-
+              textColumnRowFromPos ed =<< get ed cursor
           content <- WXCMZ.textCtrlGetLineText ed line
 {- simpler but inefficient
           content <- get ed text
@@ -1126,7 +1155,11 @@ getMarkedExpr ed = do
               (prefix,suffix) ->
                   let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
                   in  return $
+                      MarkedText (sourcePosFromTextColumnRow modu pos) $
                           (reverse $ takeWhile identLetter $ reverse prefix)
                           ++
                           takeWhile identLetter suffix
-      else return marked
+      else do
+          (from, _to) <- textRangeFromSelection ed
+          pos <- textColumnRowFromPos ed from
+          return $ MarkedText (sourcePosFromTextColumnRow modu pos) marked
