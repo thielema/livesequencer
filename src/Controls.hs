@@ -46,7 +46,7 @@ change_controller_module ::
 change_controller_module p event = case event of
     EventBool name val ->
         flip Program.add_module p $
-        Module.add_rule ( controller_rule name val ) $
+        Module.addRule ( controller_rule name val ) $
         get_controller_module p
 
 controller_rule ::
@@ -69,7 +69,9 @@ controller_module controls =
                  , Module.source_text = show m
                  , Module.source_location = "/dev/null"
                  , Module.functions =
-                      Module.make_functions decls
+                      Module.makeFunctions decls
+                 , Module.constructors =
+                      Module.makeConstructors decls
                  , Module.declarations = decls
                  }
     in  m

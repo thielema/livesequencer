@@ -22,6 +22,7 @@ import qualified System.FilePath as FP
 
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Control.Monad ( foldM )
 import Data.List.HT ( chop )
 
@@ -29,20 +30,23 @@ import Data.List.HT ( chop )
 data Program = Program
      { modules :: M.Map Module.Name Module
      , functions :: Module.FunctionDeclarations
+     , constructors :: Module.ConstructorDeclarations
      }
 --    deriving (Show)
 
 empty :: Program
 empty =
-    Program { modules = M.empty, functions = M.empty }
+    Program { modules = M.empty, functions = M.empty, constructors = S.empty }
 
 add_module ::
     Module -> Program ->
     Exc.Exceptional Exception.Message Program
 add_module m p =
     fmap (\newFuncs ->
-        p { modules = M.insert ( Module.name m ) m $ modules p,
-            functions = newFuncs }) $
+        let newModules = M.insert ( Module.name m ) m $ modules p
+        in  p { modules = newModules,
+                functions = newFuncs,
+                constructors = S.unions $ map Module.constructors $ M.elems newModules }) $
     union_functions ( Module.functions m ) $
     M.difference
         (functions p)

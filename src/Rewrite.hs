@@ -1,7 +1,8 @@
 module Rewrite where
 
 import Term ( Term(..), Identifier(..), Range(..), termRange )
-import Program
+import Program ( Program )
+import qualified Program
 import qualified Term
 import qualified Rule
 import qualified Module
@@ -9,10 +10,12 @@ import qualified Module
 import Control.Monad.Trans.Reader ( Reader, runReader, asks )
 import Control.Monad.Trans.Writer ( WriterT, runWriter, tell, mapWriterT )
 import Control.Monad.Trans.Class ( lift )
+import Control.Monad ( liftM2 )
 import Control.Monad.Exception.Synchronous
            ( Exceptional(Exception,Success), ExceptionalT,
              mapExceptionalT, throwT )
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Data.Traversable as Trav
 
 import Data.Maybe.HT ( toMaybe )
@@ -76,11 +79,17 @@ top t = case t of
         if Term.isConstructor f
           then return t
           else do
-              rs <- lift $ lift $ asks functions
+              rs <-
+                  lift $ lift $
+                  liftM2 (,)
+                      ( asks Program.functions )
+                      ( asks Program.constructors )
               eval rs f xs  >>=  top
 
 -- | do one reduction step at the root
-eval :: Module.FunctionDeclarations -> Identifier -> [Term] -> Evaluator Term
+eval ::
+    (Module.FunctionDeclarations, Module.ConstructorDeclarations) ->
+    Identifier -> [Term] -> Evaluator Term
 eval _ i xs
   | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
       ys <- mapM top xs
@@ -106,30 +115,42 @@ eval _ i xs
                       exception (range i) $ "unknown operation " ++ show opName
           _ -> exception (range i) $ "wrong number of arguments"
 
-eval funcs g ys =
+eval (funcs, conss) g ys =
     case M.lookup g funcs of
         Nothing ->
             exception (range g) $
             unwords [ "unknown function", show $ Node g ys ]
         Just rules ->
-            eval_decls g rules ys
+            eval_decls conss g rules ys
 
 
-eval_decls :: Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
-eval_decls g =
+eval_decls ::
+    Module.ConstructorDeclarations ->
+    Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
+eval_decls conss g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
             (m, ys') <- match_expand_list M.empty xs ys
             case m of
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
-                    lift $ tell [ Step { target = g } , Rule { rule = f } ]
+                    lift $ tell $
+                        Step g : Rule f :
+                        ( map Data $ S.toList $ S.intersection conss $
+                          S.fromList $ foldr constructors [] xs )
                     rhs' <- apply substitions rhs
                     appendArguments rhs' additionalArgs)
         (\ys ->
             exception (range g) $
             unwords [ "no matching pattern for function", show g,
                       "and arguments", show ys ])
+
+constructors :: Term -> [Identifier] -> [Identifier]
+constructors (Node f xs) acc =
+    if Term.isConstructor f
+      then f : foldr constructors acc xs
+      else acc
+constructors _ acc = acc
 
 appendArguments :: Term -> [Term] -> Evaluator Term
 appendArguments f xs =

@@ -7,6 +7,7 @@ import qualified Type
 import qualified Term
 import qualified Rule
 
+import qualified Data.Set as S
 import qualified Data.Map as M
 import Data.Maybe ( mapMaybe )
 
@@ -241,6 +242,7 @@ data Module = Module
                , imports :: [ Import ]
                , declarations :: [ Declaration ]
                , functions :: FunctionDeclarations
+               , constructors :: ConstructorDeclarations
                , source_text :: String
                , source_location :: FilePath
                }
@@ -263,10 +265,11 @@ nameFromIdentifier =
 
 
 type FunctionDeclarations = M.Map Identifier [Rule]
+type ConstructorDeclarations = S.Set Identifier
 
 -- | add, or replace (if rule with exact same lhs is already present)
-add_rule :: Rule -> Module -> Module
-add_rule rule@(Rule.Rule ident params _rhs) m =
+addRule :: Rule -> Module -> Module
+addRule rule@(Rule.Rule ident params _rhs) m =
     m { declarations =
             update
                 (\d -> case d of
@@ -287,14 +290,21 @@ update matches x xs =
     let ( pre, post ) = span ( not . matches ) xs
     in  pre ++ x : drop 1 post
 
-make_functions ::
+makeFunctions ::
     [Declaration] -> M.Map Identifier [Rule]
-make_functions =
+makeFunctions =
     M.fromListWith (flip (++)) .
     mapMaybe (\decl ->
         case decl of
             Rule_Declaration rule -> Just (Rule.name rule, [rule])
             _ -> Nothing)
+
+makeConstructors ::
+    [Declaration] -> S.Set Identifier
+makeConstructors decls = S.fromList $ do
+    Data_Declaration (Data {dataRhs = summands}) <- decls
+    Term.Node ident _ <- summands
+    return ident
 
 
 {-
@@ -319,7 +329,8 @@ parse srcLoc srcText = do
     ds <- Parsec.many input
     return $ Module {
         name = m, imports = is, declarations = ds,
-        functions = make_functions ds,
+        functions = makeFunctions ds,
+        constructors = makeConstructors ds,
         source_text = srcText,
         source_location = srcLoc }
 

@@ -13,11 +13,8 @@ import qualified HTTPServer
 
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
-import Graphics.UI.WX.Classes
-import Graphics.UI.WX.Controls
+import Graphics.UI.WX.Classes ( text )
 import Control.Concurrent.MVar
-
-import Data.IORef ( IORef, readIORef )
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
@@ -58,27 +55,25 @@ methods output =
 update ::
     (MVar Feedback -> Module.Name -> String -> Int -> IO ()) ->
     WX.StatusField ->
-    IORef (M.Map Module.Name (a, TextCtrl b, c)) ->
+    M.Map Module.Name (WX.TextCtrl ()) ->
     GuiUpdate ->
     IO ()
-update input status panels req =
+update input status editors req =
     case req of
         GetModuleList modList ->
-            putMVar modList . M.keys =<< readIORef panels
+            putMVar modList . M.keys $ editors
 
         GetModuleContent name content ->
             (putMVar content =<<) $ Exc.runExceptionalT $ do
-                pnls <- lift $ readIORef panels
-                (_,editor,_) <- getModule pnls name
+                editor <- getModule editors name
                 lift $ set status [ text :=
                     Module.tellName name ++ " downloaded by web client" ]
                 lift $ get editor text
 
         UpdateModuleContent name content contentMVar -> do
             result <- Exc.runExceptionalT $ do
-                pnls <- lift $ readIORef panels
-                (_,editor,_) <-
-                    case M.lookup name pnls of
+                editor <-
+                    case M.lookup name editors of
                         Nothing ->
                             Exc.throwT
                                 (Module.tellName name ++ " no longer available.",
