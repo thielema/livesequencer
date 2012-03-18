@@ -4,6 +4,18 @@ ghci:
 ghci-prg:
 	ghci -Wall -i:src:dist/build/autogen:http/enable src/Module.hs
 
+
+testbuild:
+	runhaskell Setup configure --user -f-httpServer --ghc-option=-dynamic --disable-library-profiling
+	runhaskell Setup build
+
+	runhaskell Setup configure --user -fhttpServer --ghc-option=-dynamic --disable-library-profiling
+	runhaskell Setup build
+	runhaskell Setup haddock
+
+
+# targets for screencasts
+
 SIZE = 1280x720
 PATTERN = /tmp/klingklong/%04d.png
 
