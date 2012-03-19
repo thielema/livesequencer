@@ -518,7 +518,6 @@ gui :: Chan Action -- ^  the gui writes here
       -- (a textual representation of "current expression")
     -> IO ()
 gui input output = do
-    program <- newIORef Program.empty
     controls <- newIORef []
     panels <- newIORef M.empty
 
@@ -721,13 +720,9 @@ gui input output = do
 
     set reloadItem [
           on command := do
-              index <- get nb notebookSelection
               (moduleName, pnl) <-
-                  fmap ( M.elemAt index ) $ readIORef panels
-              prg <- readIORef program
-              let path =
-                      Module.sourceLocation $ snd $
-                      M.elemAt index (modules prg)
+                  getFromNotebook nb =<< readIORef panels
+              let path = sourceLocation pnl
 
               handleException moduleName $ do
                   content <- readFile path
@@ -737,15 +732,10 @@ gui input output = do
           ]
 
     let getCurrentModule = do
-            index <- get nb notebookSelection
             (moduleName, pnl) <-
-                fmap ( M.elemAt index ) $ readIORef panels
+                getFromNotebook nb =<< readIORef panels
             content <- get (editor pnl) text
-            prg <- readIORef program
-            return
-                (Module.sourceLocation $ snd $
-                 M.elemAt index (modules prg),
-                 moduleName, content)
+            return (sourceLocation pnl, moduleName, content)
         saveModule (path, moduleName, content) =
             handleException moduleName $ do
                 -- Log.put path
@@ -767,11 +757,10 @@ gui input output = do
                   ("Save " ++ Module.tellName moduleName) haskellFilenames path file
               forM_ mfilename $ \fileName -> do
                   saveModule (fileName, moduleName, content)
-                  modifyIORef program $ \prg ->
-                      prg { Program.modules =
-                          M.adjust
-                              (\modu -> modu { Module.sourceLocation = fileName })
-                              moduleName (Program.modules prg) }
+                  modifyIORef panels $
+                      M.adjust
+                          (\pnl -> pnl { sourceLocation = fileName })
+                          moduleName
           ]
 
 
@@ -992,7 +981,6 @@ gui input output = do
                 set status [ text := str ]
 
             Register prg ctrls -> do
-                writeIORef program prg
                 writeIORef controls ctrls
 
                 void $ WXCMZ.notebookDeleteAllPages nb
@@ -1043,7 +1031,8 @@ gui input output = do
 data Panel =
     Panel {
         panel :: WX.Panel (),
-        editor, highlighter :: WX.TextCtrl ()
+        editor, highlighter :: WX.TextCtrl (),
+        sourceLocation :: FilePath
     }
 
 displayModules ::
@@ -1066,7 +1055,7 @@ displayModules input frameControls ctrls nb prog = do
         set hl [ text := Module.sourceText content ]
         set psub [ layout := (row 5 $
             map WX.fill $ [widget ed, widget hl]) ]
-        return $ Panel psub ed hl
+        return $ Panel psub ed hl (Module.sourceLocation content)
 
 
 getFromNotebook ::
