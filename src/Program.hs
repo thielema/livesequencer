@@ -38,20 +38,41 @@ empty :: Program
 empty =
     Program { modules = M.empty, functions = M.empty, constructors = S.empty }
 
+{- |
+add a module
+
+The module must not be present in the program,
+otherwise this function returns an invalid 'Program'.
+-}
 addModule ::
     Module -> Program ->
     Exc.Exceptional Exception.Message Program
-addModule m p =
-    fmap (\newFuncs ->
-        let newModules = M.insert ( Module.name m ) m $ modules p
-        in  p { modules = newModules,
-                functions = newFuncs,
-                constructors = S.unions $ map Module.constructors $ M.elems newModules }) $
-    unionFunctions ( Module.functions m ) $
-    M.difference
-        (functions p)
-        (M.findWithDefault M.empty ( Module.name m )
-            ( fmap Module.functions $ modules p ))
+addModule m p = do
+    newFuncs <- unionFunctions ( Module.functions m ) ( functions p )
+    return $ p {
+            modules = M.insert ( Module.name m ) m ( modules p ),
+            functions = newFuncs,
+            constructors = S.union ( Module.constructors m ) ( constructors p )
+        }
+
+removeModule ::
+    Module.Name -> Program -> Program
+removeModule nm p =
+    case M.lookup nm $ modules p of
+        Nothing -> p
+        Just m -> p {
+            modules = M.delete nm $ modules p,
+            functions = M.difference ( functions p ) ( Module.functions m ),
+            constructors =
+                S.difference ( constructors p ) ( Module.constructors m )
+          }
+
+replaceModule ::
+    Module -> Program ->
+    Exc.Exceptional Exception.Message Program
+replaceModule m p =
+    addModule m $ removeModule (Module.name m) p
+
 
 unionFunctions ::
     Module.FunctionDeclarations ->
@@ -68,6 +89,7 @@ unionFunctions m0 m1 =
                   " in " ++ (show $ Pos.sourceName $ start $ range n0) ++
                   " and " ++ (show $ Pos.sourceName $ start $ range n1))))
         (f m0) (f m1)
+
 
 -- | load from disk, with import chasing
 chase ::

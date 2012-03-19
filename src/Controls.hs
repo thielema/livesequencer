@@ -45,7 +45,7 @@ changeControllerModule ::
     Exc.Exceptional Exception.Message Program.Program
 changeControllerModule p event = case event of
     EventBool name val ->
-        flip Program.addModule p $
+        flip Program.replaceModule p $
         Module.addRule ( controllerRule name val ) $
         getControllerModule p
 

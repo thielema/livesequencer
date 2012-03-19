@@ -204,7 +204,7 @@ prepareProgram ::
 prepareProgram p0 = do
     let ctrls = Controls.collect p0
     p1 <- Exc.ExceptionalT $ return $
-        Program.addModule (Controls.controllerModule ctrls) p0
+        Program.replaceModule (Controls.controllerModule ctrls) p0
     return (p1, ctrls)
 
 parseTerm ::
@@ -266,8 +266,7 @@ modifyModule program output moduleName sourceCode pos = do
             (Module.parseUntilEOF (Module.sourceLocation previous) sourceCode)
             ( Module.deconsName moduleName ) sourceCode
     lift . writeTVar program =<<
-        (Exc.ExceptionalT $ return $
-         Program.addModule m p)
+        (Exc.ExceptionalT $ return $ Program.replaceModule m p)
     lift $ writeTChan output $
         Refresh moduleName sourceCode pos
 --    lift $ Log.put "parsed and modified OK"
