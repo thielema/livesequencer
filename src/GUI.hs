@@ -141,7 +141,7 @@ main = do
 
     input <- newChan
     output <- newTChanIO
-    writeTChanIO output $ Register p ctrls
+    writeTChanIO output $ Register (Program.modules p) ctrls
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
@@ -171,7 +171,7 @@ data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Message ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
-   | Register Program [(Identifier, Controls.Control)]
+   | Register ( M.Map Module.Name Module.Module ) [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
@@ -385,7 +385,8 @@ machine input output importPaths progInit sq = do
                         withMode Event.RealTime $ do
                             writeTVar program p
                             writeTMVar term mainName
-                            writeTChan output $ Register p ctrls
+                            writeTChan output $
+                                Register (Program.modules p) ctrls
                         ALSA.continueQueue sq
                         Log.put "chased and parsed OK"
 
@@ -980,13 +981,12 @@ gui input output = do
             StatusLine str -> do
                 set status [ text := str ]
 
-            Register prg ctrls -> do
-                writeIORef controls ctrls
-
+            Register mods ctrls -> do
                 void $ WXCMZ.notebookDeleteAllPages nb
                 pnls <- displayModules input
-                            frameControls ctrls nb prg
+                            frameControls ctrls nb mods
                 writeIORef panels pnls
+                writeIORef controls ctrls
                 forM_ (M.mapWithKey (,) $ fmap panel pnls) $
                     \(moduleName,sub) ->
                         WXCMZ.notebookAddPage nb sub (Module.deconsName moduleName) False (-1)
@@ -996,7 +996,7 @@ gui input output = do
                 set status [ text :=
                     "modules loaded: " ++
                     (List.intercalate ", " $ map Module.deconsName $
-                     M.keys $ Program.modules prg) ]
+                     M.keys mods) ]
 
             ResetDisplay -> do
                 hls <- fmap (fmap highlighter) $ readIORef panels
@@ -1040,13 +1040,13 @@ displayModules ::
     WX.Frame c ->
     [(Identifier, Controls.Control)] ->
     WXCore.Window b ->
-    Program ->
+    M.Map Module.Name Module.Module ->
     IO (M.Map Module.Name Panel)
-displayModules input frameControls ctrls nb prog = do
+displayModules input frameControls ctrls nb mods = do
     Controls.create frameControls ctrls $
         writeChan input . Control
 
-    forM (modules prog) $ \ content -> do
+    forM mods $ \ content -> do
         psub <- WX.panel nb []
         ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
         hl <- WX.textCtrlRich psub
