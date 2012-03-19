@@ -41,7 +41,7 @@ import qualified Controls
 import qualified Rewrite
 import qualified Option
 import qualified Log
-import Program ( Program, modules )
+import Program ( Program )
 import Term ( Term, Identifier, mainName )
 import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
 import Utility.WX ( cursor, editable, notebookSelection )
@@ -164,6 +164,7 @@ data Execution =
 
 data Modification =
      Load FilePath
+   | CloseModule Module.Name
    | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
 
@@ -175,6 +176,7 @@ data GuiUpdate =
    | Exception { _message :: Exception.Message }
    | Register ( M.Map Module.Name Module.Module ) [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
+   | RemovePage Module.Name
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
@@ -244,6 +246,10 @@ formatPitch p =
                 _ -> error "pitch class must be a number from 0 to 11"
     in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
 
+formatModuleList :: [Module.Name] -> String
+formatModuleList =
+    List.intercalate ", " . map Module.deconsName
+
 
 {-
 TODO: handle the case that the module changed its name
@@ -258,7 +264,7 @@ modifyModule ::
     Exc.ExceptionalT Exception.Message STM ()
 modifyModule program output moduleName sourceCode pos = do
     p <- lift $ readTVar program
-    let Just previous = M.lookup moduleName $ modules p
+    let Just previous = M.lookup moduleName $ Program.modules p
     m <-
         Exc.mapExceptionT Program.messageFromParserError $
         Exc.fromEitherT $ return $
@@ -392,6 +398,31 @@ machine input output importPaths progInit sq = do
                                         Register (Program.modules p) ctrls
                                 ALSA.continueQueue sq
                                 Log.put "chased and parsed OK"
+
+                    CloseModule modName ->
+                        STM.atomically $ exceptionToGUI output $
+                            Exc.mapExceptionT
+                                (Exception.Message Exception.InOut
+                                    (Program.dummyRange $ Module.deconsName modName) .
+                                 (("cannot close module: ") ++)) $ do
+                            prg <- liftSTM $ readTVar program
+                            let modules = Program.modules prg
+                                importingModules =
+                                    M.keys $
+                                    M.filter (elem modName . map Module.source .
+                                              Module.imports) $
+                                    M.delete modName modules
+                            flip Exc.assertT (null importingModules) $
+                                "it is still imported by " ++
+                                formatModuleList importingModules
+                            flip Exc.assertT (M.member modName modules) $
+                                "it does not exist"
+                            flip Exc.assertT (M.size modules > 1) $
+                                "there must remain at least one module"
+                            liftSTM $ writeTVar program $ Program.removeModule modName prg
+                            liftSTM $ writeTChan output $ RemovePage modName
+                            -- WX.deletePage pageNo
+                            return ()
 
     void $ forkIO $
         Event.listen sq
@@ -593,6 +624,12 @@ gui input output = do
 
     WX.menuLine fileMenu
 
+    closeModuleItem <- WX.menuItem fileMenu
+        [ text := "Close module\tCtrl-W",
+          help := "close the active module" ]
+
+    WX.menuLine fileMenu
+
     quitItem <- WX.menuQuit fileMenu []
 
 
@@ -767,6 +804,12 @@ gui input output = do
                           moduleName
           ]
 
+
+    set closeModuleItem [
+          on command :=
+              writeChan input . Modification . CloseModule . fst
+                  =<< getFromNotebook nb =<< readIORef panels
+          ]
 
     let refreshProgram (moduleName, pnl) = do
             s <- get (editor pnl) text
@@ -997,14 +1040,19 @@ gui input output = do
                 updateErrorLog (const Seq.empty)
 
                 set status [ text :=
-                    "modules loaded: " ++
-                    (List.intercalate ", " $ map Module.deconsName $
-                     M.keys mods) ]
+                    "modules loaded: " ++ formatModuleList ( M.keys mods ) ]
 
             ResetDisplay -> do
                 hls <- fmap (fmap highlighter) $ readIORef panels
                 setColor hls WXCore.white
                     =<< varSwap highlights M.empty
+
+            RemovePage modName -> do
+                pnls <- readIORef panels
+                forM_ ( M.lookupIndex modName pnls ) $
+                    WXCMZ.notebookDeletePage nb
+                writeIORef panels $ M.delete modName pnls
+                set status [ text := "closed " ++ Module.tellName modName ]
 
             Running mode -> do
                 case mode of
