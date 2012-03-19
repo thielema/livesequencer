@@ -25,18 +25,23 @@ lineFromMessage (Message typ (Range pos _) descr) =
 statusFromMessage :: Message -> String
 statusFromMessage (Message typ (Range pos _) descr) =
     stringFromType typ ++ " - " ++
-    Pos.sourceName pos ++ ':' :
-    show (Pos.sourceLine pos) ++ ':' :
-    show (Pos.sourceColumn pos) ++ "  " ++
+    formatPos typ pos ++ " - " ++
     flattenMultiline descr
 
 multilineFromMessage :: Message -> String
 multilineFromMessage (Message typ (Range pos _) descr) =
     stringFromType typ ++ " - " ++
-    Pos.sourceName pos ++ ':' :
-    show (Pos.sourceLine pos) ++ ':' :
-    show (Pos.sourceColumn pos) ++ "\n" ++
+    formatPos typ pos ++ "\n" ++
     descr
+
+formatPos :: Type -> Pos.SourcePos -> String
+formatPos typ pos =
+    Pos.sourceName pos ++
+    (case typ of
+        InOut -> ""
+        _ ->
+            ':' : show (Pos.sourceLine pos) ++
+            ':' : show (Pos.sourceColumn pos))
 
 stringFromType :: Type -> String
 stringFromType typ =
