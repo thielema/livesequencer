@@ -60,7 +60,7 @@ execute p sq waitChan =
                 mapExceptionalT
                     (MW.runWriterT >=> \(ms,log) ->
                         forM_ log (liftIO . print) >> return ms) $
-                Rewrite.runEval p (Rewrite.force_head t)
+                Rewrite.runEval p (Rewrite.forceHead t)
             lift $ liftIO $ print s
             case Term.viewNode s of
                 Just ("[]", []) -> return ()

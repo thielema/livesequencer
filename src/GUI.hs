@@ -202,7 +202,7 @@ prepareProgram ::
 prepareProgram p0 = do
     let ctrls = Controls.collect p0
     p1 <- Exc.ExceptionalT $ return $
-        Program.add_module (Controls.controller_module ctrls) p0
+        Program.addModule (Controls.controllerModule ctrls) p0
     return (p1, ctrls)
 
 parseTerm ::
@@ -261,11 +261,11 @@ modifyModule program output moduleName sourceCode pos = do
         Exc.mapExceptionT Program.messageFromParserError $
         Exc.fromEitherT $ return $
         Parsec.parse
-            (Module.parseUntilEOF (Module.source_location previous) sourceCode)
+            (Module.parseUntilEOF (Module.sourceLocation previous) sourceCode)
             ( Module.deconsName moduleName ) sourceCode
     lift . writeTVar program =<<
         (Exc.ExceptionalT $ return $
-         Program.add_module m p)
+         Program.addModule m p)
     lift $ writeTChan output $
         Refresh moduleName sourceCode pos
 --    lift $ Log.put "parsed and modified OK"
@@ -305,9 +305,9 @@ machine input output importPaths progInit sq = do
                     p <- lift $ readTVar program
                     p' <-
                         Exc.ExceptionalT $ return $
-                        Controls.change_controller_module p event
+                        Controls.changeControllerModule p event
                     lift $ writeTVar program p'
-                    -- return $ Controls.get_controller_module p'
+                    -- return $ Controls.getControllerModule p'
                 -- Log.put $ show m
             NextStep -> writeChan waitChan Event.NextStep
             Execution exec ->
@@ -467,7 +467,7 @@ executeStep program term writeExcMsg sq =
                 Exc.mapExceptionalT
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                      MW.runWriterT) $
-                Rewrite.runEval p (Rewrite.force_head t)
+                Rewrite.runEval p (Rewrite.forceHead t)
             lift $ writeUpdate $ ReductionSteps log
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do
@@ -726,7 +726,7 @@ gui input output = do
                   fmap ( M.elemAt index ) $ readIORef panels
               prg <- readIORef program
               let path =
-                      Module.source_location $ snd $
+                      Module.sourceLocation $ snd $
                       M.elemAt index (modules prg)
 
               handleException moduleName $ do
@@ -743,7 +743,7 @@ gui input output = do
             content <- get (editor pnl) text
             prg <- readIORef program
             return
-                (Module.source_location $ snd $
+                (Module.sourceLocation $ snd $
                  M.elemAt index (modules prg),
                  moduleName, content)
         saveModule (path, moduleName, content) =
@@ -770,7 +770,7 @@ gui input output = do
                   modifyIORef program $ \prg ->
                       prg { Program.modules =
                           M.adjust
-                              (\modu -> modu { Module.source_location = fileName })
+                              (\modu -> modu { Module.sourceLocation = fileName })
                               moduleName (Program.modules prg) }
           ]
 
@@ -1062,8 +1062,8 @@ displayModules input frameControls ctrls nb prog = do
         ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
         hl <- WX.textCtrlRich psub
             [ font := fontFixed, wrap := WrapNone, editable := False ]
-        set ed [ text := Module.source_text content ]
-        set hl [ text := Module.source_text content ]
+        set ed [ text := Module.sourceText content ]
+        set hl [ text := Module.sourceText content ]
         set psub [ layout := (row 5 $
             map WX.fill $ [widget ed, widget hl]) ]
         return $ Panel psub ed hl

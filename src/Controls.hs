@@ -34,40 +34,40 @@ data Control = CheckBox Bool
 moduleName :: Module.Name
 moduleName = Module.Name "Controls"
 
-get_controller_module :: Program.Program -> Module.Module
-get_controller_module p =
+getControllerModule :: Program.Program -> Module.Module
+getControllerModule p =
     let Just m = M.lookup moduleName $ Program.modules p
     in  m
 
-change_controller_module ::
+changeControllerModule ::
     Program.Program ->
     Controls.Event ->
     Exc.Exceptional Exception.Message Program.Program
-change_controller_module p event = case event of
+changeControllerModule p event = case event of
     EventBool name val ->
-        flip Program.add_module p $
-        Module.addRule ( controller_rule name val ) $
-        get_controller_module p
+        flip Program.addModule p $
+        Module.addRule ( controllerRule name val ) $
+        getControllerModule p
 
-controller_rule ::
+controllerRule ::
     Show a =>
     Term.Identifier -> a -> Rule.Rule
-controller_rule name val =
+controllerRule name val =
     Rule.Rule
         ( read "checkBox" )
         [ Term.Node name [], read "deflt" ]
         ( Term.Node ( read $ show val ) [] )
 
-controller_module :: [(Term.Identifier, Control)] -> Module.Module
-controller_module controls =
+controllerModule :: [(Term.Identifier, Control)] -> Module.Module
+controllerModule controls =
     let decls = do
             ( name, CheckBox deflt ) <- controls
             return $ Module.Rule_Declaration
-                   $ controller_rule name deflt
+                   $ controllerRule name deflt
         m = Module.Module { Module.name = moduleName
                  , Module.imports = []
-                 , Module.source_text = show m
-                 , Module.source_location = "/dev/null"
+                 , Module.sourceText = show m
+                 , Module.sourceLocation = "/dev/null"
                  , Module.functions =
                       Module.makeFunctions decls
                  , Module.constructors =

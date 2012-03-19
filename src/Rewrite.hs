@@ -47,8 +47,8 @@ exception rng msg =
 -- | force head of stream:
 -- evaluate until we have Cons or Nil at root,
 -- then evaluate first argument of Cons fully.
-force_head :: Term -> Evaluator Term
-force_head t = do
+forceHead :: Term -> Evaluator Term
+forceHead t = do
     t' <- top t
     case t' of
       Node i [ x, xs ] | name i == ":" -> do
@@ -121,16 +121,16 @@ eval (funcs, conss) g ys =
             exception (range g) $
             unwords [ "unknown function", show $ Node g ys ]
         Just rules ->
-            eval_decls conss g rules ys
+            evalDecls conss g rules ys
 
 
-eval_decls ::
+evalDecls ::
     Module.ConstructorDeclarations ->
     Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
-eval_decls conss g =
+evalDecls conss g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
-            (m, ys') <- match_expand_list M.empty xs ys
+            (m, ys') <- matchExpandList M.empty xs ys
             case m of
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
@@ -162,10 +162,10 @@ appendArguments f xs =
 -- | check whether term matches pattern.
 -- do some reductions if they are necessary to decide about the match.
 -- return the reduced term in the second result component.
-match_expand ::
+matchExpand ::
     Term -> Term ->
     Evaluator ( Maybe (M.Map Identifier Term) , Term )
-match_expand pat t = case pat of
+matchExpand pat t = case pat of
     Node f [] | Term.isVariable f ->
         return ( Just $ M.singleton f t , t )
     Node f xs | Term.isConstructor f -> do
@@ -175,7 +175,7 @@ match_expand pat t = case pat of
                 if f /= g
                     then return ( Nothing, t' )
                     else do
-                         ( m, ys' ) <- match_expand_list M.empty xs ys
+                         ( m, ys' ) <- matchExpandList M.empty xs ys
                          return ( fmap fst m, Node f ys' )
             _ ->
                 exception (termRange t') $
@@ -201,14 +201,14 @@ match_expand pat t = case pat of
                 "string pattern matched against non-string term: " ++ show t'
 
 
-match_expand_list ::
+matchExpandList ::
     M.Map Identifier Term ->
     [Term] ->
     [Term] ->
     Evaluator (Maybe (M.Map Identifier Term, [Term]), [Term])
-match_expand_list s [] ys = return ( Just (s,ys), ys )
-match_expand_list s (x:xs) (y:ys) = do
-    (m, y') <- match_expand x y
+matchExpandList s [] ys = return ( Just (s,ys), ys )
+matchExpandList s (x:xs) (y:ys) = do
+    (m, y') <- matchExpand x y
     case m of
         Nothing -> return ( Nothing, y' : ys )
         Just s' -> do
@@ -221,8 +221,8 @@ match_expand_list s (x:xs) (y:ys) = do
                         "variables bound more than once in pattern: " ++
                         intercalate ", " (map name vars)
             fmap (mapSnd (y':)) $
-                match_expand_list s'' xs ys
-match_expand_list _ (x:_) _ =
+                matchExpandList s'' xs ys
+matchExpandList _ (x:_) _ =
     exception (termRange x) "too few arguments"
 
 apply :: M.Map Identifier Term -> Term -> Evaluator Term

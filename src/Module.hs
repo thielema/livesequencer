@@ -235,7 +235,7 @@ instance Output Declaration where
 -- their sourceName (as used by Parsec) is the "show"
 -- of the module name (which is an identifier).
 -- So, sourceName is NOT the actual file name.
--- instead, the actual file name is kept in source_location (defined here)
+-- instead, the actual file name is kept in sourceLocation (defined here)
 
 data Module = Module
                { name :: Name
@@ -243,8 +243,8 @@ data Module = Module
                , declarations :: [ Declaration ]
                , functions :: FunctionDeclarations
                , constructors :: ConstructorDeclarations
-               , source_text :: String
-               , source_location :: FilePath
+               , sourceText :: String
+               , sourceLocation :: FilePath
                }
 
 newtype Name = Name {deconsName :: String}
@@ -331,8 +331,8 @@ parse srcLoc srcText = do
         name = m, imports = is, declarations = ds,
         functions = makeFunctions ds,
         constructors = makeConstructors ds,
-        source_text = srcText,
-        source_location = srcLoc }
+        sourceText = srcText,
+        sourceLocation = srcLoc }
 
 parseUntilEOF ::
     FilePath -> String ->
@@ -351,4 +351,4 @@ instance Output Module where
     ]
 
 instance Show Module where show = render . output
--- instance Read Module where readsPrec = parsec_reader
+-- instance Read Module where readsPrec = parsecReader

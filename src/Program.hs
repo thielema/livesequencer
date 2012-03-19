@@ -38,26 +38,26 @@ empty :: Program
 empty =
     Program { modules = M.empty, functions = M.empty, constructors = S.empty }
 
-add_module ::
+addModule ::
     Module -> Program ->
     Exc.Exceptional Exception.Message Program
-add_module m p =
+addModule m p =
     fmap (\newFuncs ->
         let newModules = M.insert ( Module.name m ) m $ modules p
         in  p { modules = newModules,
                 functions = newFuncs,
                 constructors = S.unions $ map Module.constructors $ M.elems newModules }) $
-    union_functions ( Module.functions m ) $
+    unionFunctions ( Module.functions m ) $
     M.difference
         (functions p)
         (M.findWithDefault M.empty ( Module.name m )
             ( fmap Module.functions $ modules p ))
 
-union_functions ::
+unionFunctions ::
     Module.FunctionDeclarations ->
     Module.FunctionDeclarations ->
     Exc.Exceptional Exception.Message Module.FunctionDeclarations
-union_functions m0 m1 =
+unionFunctions m0 m1 =
     let f = M.mapWithKey (\nm rs -> (nm, Exc.Success rs))
     in  Trav.sequenceA . fmap snd $
         M.unionWith (\(n0,_) (n1,_) ->
@@ -105,7 +105,7 @@ load dirs p n ff = do
         Left err -> Exc.throwT (messageFromParserError err)
         Right m -> do
             lift $ Log.put $ show m
-            pNew <- Exc.ExceptionalT $ return $ add_module m p
+            pNew <- Exc.ExceptionalT $ return $ addModule m p
             foldM ( chaser dirs ) pNew $
                 map Module.source $ Module.imports m
 

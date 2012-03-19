@@ -9,10 +9,10 @@ import Control.Monad ( liftM2 )
 class Input a where input :: Parsec.Parser a
 class Output a where output :: a -> Doc
 
-parsec_reader ::
+parsecReader ::
     (Input a) =>
     t -> String -> [(a, String)]
-parsec_reader _p s =
+parsecReader _p s =
     case Parsec.parse ( liftM2 (,) input Parsec.getInput ) "" s of
       Left _err -> []
       Right (x,t) -> [(x,t)]
