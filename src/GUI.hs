@@ -154,15 +154,18 @@ main = do
 
 -- | messages that are sent from GUI to machine
 data Action =
-     Modification (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
-         -- ^ MVar of the HTTP server, modulename, sourcetext, position
-   | Execution Execution
+     Execution Execution
+   | Modification Modification
    | Control Controls.Event
-   | Load FilePath
 
 data Execution =
     Mode Event.WaitMode | Restart | Stop | NextStep |
     PlayTerm MarkedText | ApplyTerm MarkedText
+
+data Modification =
+     Load FilePath
+   | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
+         -- ^ MVar of the HTTP server, modulename, sourcetext, position
 
 
 -- | messages that are sent from machine to GUI
@@ -347,47 +350,49 @@ machine input output importPaths progInit sq = do
                                 Exception.Message Exception.Parse (Term.termRange fterm) $
                                 "tried to apply the non-function term " ++
                                 show (markedString txt)
-            Modification feedback moduleName sourceCode pos -> do
-                Log.put $
-                    Module.tellName moduleName ++
-                    " has new input\n" ++ sourceCode
-                case feedback of
-                    Nothing ->
-                        STM.atomically $
-                        exceptionToGUI output $
-                        modifyModule program output moduleName sourceCode pos
-                    Just mvar -> do
-                        x <-
-                            STM.atomically $
-                            fmap (Exc.switch
-                                (\e ->
-                                    (Just $ Exception.multilineFromMessage e,
-                                     sourceCode))
-                                (\() -> (Nothing, sourceCode))) $
-                            Exc.runExceptionalT $
-                            Exc.catchT
-                                (modifyModule program output moduleName sourceCode pos)
-                                (\e -> do
-                                    lift $ writeTChan output $ Exception e
-                                    Exc.throwT e)
-                        putMVar mvar $ Exc.Success x
-            Load filePath -> do
-                Log.put $
-                    "load " ++ filePath ++ " and all its dependencies"
-                exceptionToGUIIO output $ do
-                    (p,ctrls) <-
-                        prepareProgram =<<
-                        Program.load importPaths Program.empty
-                            (FilePath.takeBaseName filePath) filePath
-                    lift $ do
-                        ALSA.stopQueue sq
-                        withMode Event.RealTime $ do
-                            writeTVar program p
-                            writeTMVar term mainName
-                            writeTChan output $
-                                Register (Program.modules p) ctrls
-                        ALSA.continueQueue sq
-                        Log.put "chased and parsed OK"
+            Modification modi ->
+                case modi of
+                    RefreshModule feedback moduleName sourceCode pos -> do
+                        Log.put $
+                            Module.tellName moduleName ++
+                            " has new input\n" ++ sourceCode
+                        case feedback of
+                            Nothing ->
+                                STM.atomically $
+                                exceptionToGUI output $
+                                modifyModule program output moduleName sourceCode pos
+                            Just mvar -> do
+                                x <-
+                                    STM.atomically $
+                                    fmap (Exc.switch
+                                        (\e ->
+                                            (Just $ Exception.multilineFromMessage e,
+                                             sourceCode))
+                                        (\() -> (Nothing, sourceCode))) $
+                                    Exc.runExceptionalT $
+                                    Exc.catchT
+                                        (modifyModule program output moduleName sourceCode pos)
+                                        (\e -> do
+                                            lift $ writeTChan output $ Exception e
+                                            Exc.throwT e)
+                                putMVar mvar $ Exc.Success x
+                    Load filePath -> do
+                        Log.put $
+                            "load " ++ filePath ++ " and all its dependencies"
+                        exceptionToGUIIO output $ do
+                            (p,ctrls) <-
+                                prepareProgram =<<
+                                Program.load importPaths Program.empty
+                                    (FilePath.takeBaseName filePath) filePath
+                            lift $ do
+                                ALSA.stopQueue sq
+                                withMode Event.RealTime $ do
+                                    writeTVar program p
+                                    writeTMVar term mainName
+                                    writeTChan output $
+                                        Register (Program.modules p) ctrls
+                                ALSA.continueQueue sq
+                                Log.put "chased and parsed OK"
 
     void $ forkIO $
         Event.listen sq
@@ -715,7 +720,7 @@ gui input output = do
               mfilename <- WX.fileOpenDialog
                   f False {- change current directory -} True
                   "Load Haskell program" haskellFilenames "" ""
-              forM_ mfilename $ writeChan input . Load
+              forM_ mfilename $ writeChan input . Modification . Load
           ]
 
     set reloadItem [
@@ -767,7 +772,7 @@ gui input output = do
     let refreshProgram (moduleName, pnl) = do
             s <- get (editor pnl) text
             pos <- get (editor pnl) cursor
-            writeChan input $ Modification Nothing moduleName s pos
+            writeChan input $ Modification $ RefreshModule Nothing moduleName s pos
 
             updateErrorLog $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
@@ -1022,8 +1027,8 @@ gui input output = do
                 pnls <- readIORef panels
                 HTTPGui.update
                     (\contentMVar name newContent pos ->
-                        writeChan input $
-                        Modification (Just contentMVar) name newContent pos)
+                        writeChan input $ Modification $
+                        RefreshModule (Just contentMVar) name newContent pos)
                     status (fmap editor pnls) request
 
 
