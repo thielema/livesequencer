@@ -34,20 +34,19 @@ data Control = CheckBox Bool
 moduleName :: Module.Name
 moduleName = Module.Name "Controls"
 
-getControllerModule :: Program.Program -> Module.Module
-getControllerModule p =
-    let Just m = M.lookup moduleName $ Program.modules p
-    in  m
-
 changeControllerModule ::
     Program.Program ->
     Controls.Event ->
     Exc.Exceptional Exception.Message Program.Program
 changeControllerModule p event = case event of
     EventBool name val ->
-        flip Program.replaceModule p $
-        Module.addRule ( controllerRule name val ) $
-        getControllerModule p
+        flip Program.replaceModule p .
+        Module.addRule ( controllerRule name val ) =<<
+        Exc.fromMaybe
+            ( Exception.Message Exception.InOut
+                ( Program.dummyRange $ Module.deconsName moduleName )
+                "cannot find module for controller updates" )
+            ( M.lookup moduleName $ Program.modules p )
 
 controllerRule ::
     Show a =>
