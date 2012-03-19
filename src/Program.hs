@@ -1,6 +1,6 @@
 module Program where
 
-import Term ( Range (Range, start), Identifier (..) )
+import Term ( Range (Range), Identifier (..) )
 import Module ( Module )
 import qualified Module
 import qualified Log
@@ -91,8 +91,8 @@ unionDecls m0 m1 =
              Exc.Exception $ Exception.Message Exception.Parse
                  (range n0)
                  ("duplicate definition of " ++ show n0 ++
-                  " in " ++ (show $ Pos.sourceName $ start $ range n0) ++
-                  " and " ++ (show $ Pos.sourceName $ start $ range n1))))
+                  " in " ++ (Module.deconsName $ Module.nameFromIdentifier n0) ++
+                  " and " ++ (Module.deconsName $ Module.nameFromIdentifier n1))))
         (f m0) (f m1)
 
 
