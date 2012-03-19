@@ -162,7 +162,7 @@ instance Read Identifier where readsPrec = parsecReader
 
 data Term = Node Identifier [ Term ]
           | Number Range Integer
-          | String_Literal Range String
+          | StringLiteral Range String
     deriving ( Eq, Ord )
 
 instance Show Term where show = render . output
@@ -212,9 +212,9 @@ parseAtom :: Parser Term
 parseAtom =
         (T.lexeme lexer $ fmap (uncurry Number) $
          ranged (fmap read $ Parsec.many1 Parsec.digit))
-    <|> fmap (uncurry String_Literal)
+    <|> fmap (uncurry StringLiteral)
              (T.lexeme lexer (ranged parseStringLiteral))
---    <|> fmap (uncurry String_Literal) (ranged (T.stringLiteral lexer))
+--    <|> fmap (uncurry StringLiteral) (ranged (T.stringLiteral lexer))
     <|> T.parens lexer input
     <|> bracketedList
     <|> fmap (flip Node []) input
@@ -268,7 +268,7 @@ insideBracketedList rng =
 instance Output Term where
   output t = case t of
      Number _ n -> text $ show n
-     String_Literal _ s -> text $ show s
+     StringLiteral _ s -> text $ show s
      Node f args -> output f <+> fsep ( map protected args )
 
 protected :: Term -> Doc
@@ -282,7 +282,7 @@ type Position = [ Int ]
 termRange :: Term -> Range
 termRange (Node i _) = range i
 termRange (Number rng _) = rng
-termRange (String_Literal rng _) = rng
+termRange (StringLiteral rng _) = rng
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of

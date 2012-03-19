@@ -134,7 +134,7 @@ play sq throwAsync x = case Term.viewNode x of
         MT.lift $ AccM.set stateWaiting True
         return $ Just $ Time.milliseconds n
 
-    Just ( "Say", [String_Literal rng arg] ) ->
+    Just ( "Say", [StringLiteral rng arg] ) ->
             MT.lift $ (AccM.set stateWaiting False >>) $ liftIO $ do
         let cmd = unwords
                       [ "echo", show arg, "|", "festival", "--tts" ]

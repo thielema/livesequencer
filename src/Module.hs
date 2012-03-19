@@ -197,18 +197,18 @@ instance Output Infix where
                 (hsep ( punctuate comma $ map output idents ) <+> text ";")
 
 
-data Declaration = Type_Signature TypeSig
-                 | Rule_Declaration Rule
-                 | Type_Declaration Type
-                 | Data_Declaration Data
-                 | Infix_Declaration Infix
+data Declaration = TypeSignature TypeSig
+                 | RuleDeclaration Rule
+                 | TypeDeclaration Type
+                 | DataDeclaration Data
+                 | InfixDeclaration Infix
     deriving (Show)
 
 instance Input Declaration where
-    input = fmap Data_Declaration input
-        <|> fmap Infix_Declaration input
-        <|> fmap Type_Declaration input
-        <|> fmap Type_Signature (do
+    input = fmap DataDeclaration input
+        <|> fmap InfixDeclaration input
+        <|> fmap TypeDeclaration input
+        <|> fmap TypeSignature (do
                 names <- Parsec.try $ do
                     names <- parseIdentList
                     reservedOp lexer "::"
@@ -220,15 +220,15 @@ instance Input Declaration where
                 typeExpr <- Type.parseExpression
                 void $ Token.semi lexer
                 return $ TypeSig names context typeExpr)
-        <|> fmap Rule_Declaration input
+        <|> fmap RuleDeclaration input
 
 instance Output Declaration where
     output decl = case decl of
-        Type_Signature d -> output d
-        Data_Declaration d -> output d
-        Type_Declaration d -> output d
-        Rule_Declaration d -> output d
-        Infix_Declaration d -> output d
+        TypeSignature d -> output d
+        DataDeclaration d -> output d
+        TypeDeclaration d -> output d
+        RuleDeclaration d -> output d
+        InfixDeclaration d -> output d
 
 -- | on module parsing:
 -- identifiers contain information on their source location.
@@ -273,11 +273,11 @@ addRule rule@(Rule.Rule ident params _rhs) m =
     m { declarations =
             update
                 (\d -> case d of
-                    Rule_Declaration r' ->
+                    RuleDeclaration r' ->
                         ident == Rule.name r' &&
                         params == Rule.parameters r'
                     _ -> False)
-                (Rule_Declaration rule) $
+                (RuleDeclaration rule) $
             declarations m,
         functions =
             M.insertWith
@@ -296,13 +296,13 @@ makeFunctions =
     M.fromListWith (flip (++)) .
     mapMaybe (\decl ->
         case decl of
-            Rule_Declaration rule -> Just (Rule.name rule, [rule])
+            RuleDeclaration rule -> Just (Rule.name rule, [rule])
             _ -> Nothing)
 
 makeConstructors ::
     [Declaration] -> S.Set Identifier
 makeConstructors decls = S.fromList $ do
-    Data_Declaration (Data {dataRhs = summands}) <- decls
+    DataDeclaration (Data {dataRhs = summands}) <- decls
     Term.Node ident _ <- summands
     return ident
 

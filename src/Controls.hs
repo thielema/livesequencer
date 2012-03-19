@@ -62,7 +62,7 @@ controllerModule :: [(Term.Identifier, Control)] -> Module.Module
 controllerModule controls =
     let decls = do
             ( name, CheckBox deflt ) <- controls
-            return $ Module.Rule_Declaration
+            return $ Module.RuleDeclaration
                    $ controllerRule name deflt
         m = Module.Module { Module.name = moduleName
                  , Module.imports = []
@@ -101,7 +101,7 @@ create frame controls sink = do
 collect :: Program.Program -> [ ( Term.Identifier, Control ) ]
 collect p = do
     ( _mod, contents ) <- M.toList $ Program.modules p
-    Module.Rule_Declaration rule <- Module.declarations contents
+    Module.RuleDeclaration rule <- Module.declarations contents
     ( _pos, term ) <- Term.subterms $ Rule.rhs rule
     case Term.viewNode term of
         Just ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
