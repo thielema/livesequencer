@@ -23,7 +23,7 @@ import qualified System.FilePath as FP
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Control.Monad ( foldM )
+import Control.Monad ( foldM, liftM2 )
 import Data.List.HT ( chop )
 
 
@@ -47,13 +47,14 @@ otherwise this function returns an invalid 'Program'.
 addModule ::
     Module -> Program ->
     Exc.Exceptional Exception.Message Program
-addModule m p = do
-    newFuncs <- unionFunctions ( Module.functions m ) ( functions p )
-    return $ p {
-            modules = M.insert ( Module.name m ) m ( modules p ),
-            functions = newFuncs,
-            constructors = S.union ( Module.constructors m ) ( constructors p )
-        }
+addModule m p =
+    liftM2
+        ( Program ( M.insert ( Module.name m ) m ( modules p ) ) )
+        ( unionDecls ( Module.functions m ) ( functions p ) )
+        ( fmap M.keysSet $
+          unionDecls
+              ( mapFromSet $ Module.constructors m )
+              ( mapFromSet $ constructors p ) )
 
 removeModule ::
     Module.Name -> Program -> Program
@@ -74,11 +75,15 @@ replaceModule m p =
     addModule m $ removeModule (Module.name m) p
 
 
-unionFunctions ::
-    Module.FunctionDeclarations ->
-    Module.FunctionDeclarations ->
-    Exc.Exceptional Exception.Message Module.FunctionDeclarations
-unionFunctions m0 m1 =
+mapFromSet :: Ord a => S.Set a -> M.Map a ()
+mapFromSet =
+    M.fromAscList . map (flip (,) ()) . S.toAscList
+
+unionDecls ::
+    M.Map Term.Identifier a ->
+    M.Map Term.Identifier a ->
+    Exc.Exceptional Exception.Message ( M.Map Term.Identifier a )
+unionDecls m0 m1 =
     let f = M.mapWithKey (\nm rs -> (nm, Exc.Success rs))
     in  Trav.sequenceA . fmap snd $
         M.unionWith (\(n0,_) (n1,_) ->
