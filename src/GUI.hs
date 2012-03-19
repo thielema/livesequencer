@@ -157,12 +157,11 @@ data Action =
      Modification (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
    | Execution Execution
-   | NextStep
    | Control Controls.Event
    | Load FilePath
 
 data Execution =
-    Mode Event.WaitMode | Restart | Stop |
+    Mode Event.WaitMode | Restart | Stop | NextStep |
     PlayTerm MarkedText | ApplyTerm MarkedText
 
 
@@ -309,7 +308,6 @@ machine input output importPaths progInit sq = do
                     lift $ writeTVar program p'
                     -- return $ Controls.getControllerModule p'
                 -- Log.put $ show m
-            NextStep -> writeChan waitChan Event.NextStep
             Execution exec ->
                 case exec of
                     Mode mode -> do
@@ -327,6 +325,7 @@ machine input output importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
+                    NextStep -> writeChan waitChan Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ ALSA.quietContinueQueue sq
@@ -652,7 +651,7 @@ gui input output = do
     nextStepItem <- WX.menuItem execMenu
         [ text := "Next step\tCtrl-N",
           enabled := False,
-          on command := writeChan input NextStep,
+          on command := writeChan input (Execution NextStep),
           help := "perform next step in single step mode" ]
 
 
