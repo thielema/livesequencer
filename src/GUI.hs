@@ -268,7 +268,7 @@ modifyModule ::
     Int ->
     Exc.ExceptionalT Exception.Message STM ()
 modifyModule program output moduleName sourceCode pos = do
-    p <- lift $ readTVar program
+    p <- liftSTM $ readTVar program
     let Just previous = M.lookup moduleName $ Program.modules p
     m <-
         Exc.mapExceptionT Program.messageFromParserError $
@@ -290,24 +290,25 @@ modifyModule program output moduleName sourceCode pos = do
     then make 'allowRename' a parameter of the function.
     -}
     let allowRename = True
-    newP <-
-        if' (moduleName == Module.name m)
-            (excT $ Program.replaceModule m p) $
-        if' allowRename (do
-             Exc.assertT
-                 (exception $ Module.tellName (Module.name m) ++ " already exists")
-                 (not $ M.member (Module.name m) $ Program.modules p)
-             newP <-
-                 excT $ Program.addModule m $
-                     Program.removeModule moduleName p
-             lift $ writeTChan output $
-                 RenamePage moduleName (Module.name m)
-             return newP) $
-        (Exc.throwT $ exception
-            "module name does not match page name and renaming is disallowed")
-    lift $ writeTVar program newP
-    lift $ writeTChan output $
-        Refresh (Module.name m) sourceCode pos
+    (newP, updates) <- MW.runWriterT $ do
+        newP <-
+            if' (moduleName == Module.name m)
+                (lift $ excT $ Program.replaceModule m p) $
+            if' allowRename (do
+                 lift $ Exc.assertT
+                     (exception $ Module.tellName (Module.name m) ++ " already exists")
+                     (not $ M.member (Module.name m) $ Program.modules p)
+                 MW.tell
+                     [ RenamePage moduleName (Module.name m) ]
+                 lift $ excT $ Program.addModule m $
+                     Program.removeModule moduleName p) $
+            (lift $ Exc.throwT $ exception
+                "module name does not match page name and renaming is disallowed")
+        -- Refresh must happen after a Rename
+        MW.tell [ Refresh (Module.name m) sourceCode pos ]
+        return newP
+    liftSTM $ mapM_ ( writeTChan output ) updates
+    liftSTM $ writeTVar program newP
 --    lift $ Log.put "parsed and modified OK"
 
 
