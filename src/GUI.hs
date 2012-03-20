@@ -164,6 +164,7 @@ data Execution =
 
 data Modification =
      Load FilePath
+   | NewModule
    | CloseModule Module.Name
    | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
@@ -176,7 +177,8 @@ data GuiUpdate =
    | Exception { _message :: Exception.Message }
    | Register ( M.Map Module.Name Module.Module ) [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
-   | RemovePage Module.Name
+   | InsertPage Module.Module
+   | DeletePage Module.Name
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
@@ -224,6 +226,11 @@ parseTerm (MarkedText pos str) =
         Left msg ->
             Exc.throwT $ Program.messageFromParserError msg
         Right t -> return t
+
+inoutExceptionMsg :: Module.Name -> String -> Exception.Message
+inoutExceptionMsg moduleName msg =
+    Exception.Message Exception.InOut
+        (Program.dummyRange (Module.deconsName moduleName)) msg
 
 
 formatPitch :: VM.Pitch -> String
@@ -399,12 +406,28 @@ machine input output importPaths progInit sq = do
                                 ALSA.continueQueue sq
                                 Log.put "chased and parsed OK"
 
+                    NewModule ->
+                        STM.atomically $ do
+                            prg <- readTVar program
+                            let modName =
+                                   head $
+                                   filter (not . flip M.member (Program.modules prg)) $
+                                   map (Module.Name . ("New"++)) $
+                                   "" : map show (iterate (1+) (1::Integer))
+
+                                modu = Module.fromDeclarations modName []
+                            case Program.addModule modu prg of
+                                Exc.Exception e ->
+                                    error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
+                                Exc.Success newPrg ->
+                                    liftSTM $ writeTVar program newPrg
+                            liftSTM $ writeTChan output $ InsertPage modu
+
                     CloseModule modName ->
                         STM.atomically $ exceptionToGUI output $
                             Exc.mapExceptionT
-                                (Exception.Message Exception.InOut
-                                    (Program.dummyRange $ Module.deconsName modName) .
-                                 (("cannot close module: ") ++)) $ do
+                                (inoutExceptionMsg modName .
+                                 ("cannot close module: " ++)) $ do
                             prg <- liftSTM $ readTVar program
                             let modules = Program.modules prg
                                 importingModules =
@@ -420,9 +443,7 @@ machine input output importPaths progInit sq = do
                             flip Exc.assertT (M.size modules > 1) $
                                 "there must remain at least one module"
                             liftSTM $ writeTVar program $ Program.removeModule modName prg
-                            liftSTM $ writeTChan output $ RemovePage modName
-                            -- WX.deletePage pageNo
-                            return ()
+                            liftSTM $ writeTChan output $ DeletePage modName
 
     void $ forkIO $
         Event.listen sq
@@ -624,8 +645,12 @@ gui input output = do
 
     WX.menuLine fileMenu
 
+    newModuleItem <- WX.menuItem fileMenu
+        [ text := "&New module\tCtrl-Shift-N",
+          help := "add a new empty module" ]
+
     closeModuleItem <- WX.menuItem fileMenu
-        [ text := "Close module\tCtrl-W",
+        [ text := "&Close module\tCtrl-W",
           help := "close the active module" ]
 
     WX.menuLine fileMenu
@@ -667,7 +692,7 @@ gui input output = do
               "with the marked editor area as current term, " ++
               "or use the surrounding identifier if nothing is marked" ]
     applyTermItem <- WX.menuItem execMenu
-        [ text := "Apply function term\tCtrl-Y",
+        [ text := "Apply term\tCtrl-Y",
           help :=
               "apply marked expression as function to the current term, " ++
               "the execution mode remains the same, " ++
@@ -745,10 +770,9 @@ gui input output = do
             result <- try act
             case result of
                 Left err ->
-                    writeTChanIO output $
-                    Exception $ Exception.Message Exception.InOut
-                        (Program.dummyRange (Module.deconsName moduleName))
-                        (Err.ioeGetErrorString err)
+                    writeTChanIO output $ Exception $
+                    inoutExceptionMsg moduleName $
+                    Err.ioeGetErrorString err
                 Right () -> return ()
 
     set loadItem [
@@ -804,6 +828,11 @@ gui input output = do
                           moduleName
           ]
 
+
+    set newModuleItem [
+          on command :=
+              writeChan input $ Modification NewModule
+          ]
 
     set closeModuleItem [
           on command :=
@@ -1047,7 +1076,29 @@ gui input output = do
                 setColor hls WXCore.white
                     =<< varSwap highlights M.empty
 
-            RemovePage modName -> do
+            InsertPage modu -> do
+                pnls <- readIORef panels
+                pnl <- displayModule nb modu
+                let modName = Module.name modu
+                    newPnls = M.insert modName pnl pnls
+                writeIORef panels newPnls
+                success <-
+                    WXCMZ.notebookInsertPage nb
+                        (M.findIndex modName newPnls) (panel pnl)
+                        (Module.deconsName modName) True (-1)
+                {- FIXME:
+                if the page cannot be added, we get an inconsistency -
+                how to solve that?
+                -}
+                if success
+                  then
+                    set status [ text := "new " ++ Module.tellName modName ]
+                  else
+                    writeTChanIO output $ Exception $
+                    inoutExceptionMsg modName $
+                    "Panic: cannot add page for the module"
+
+            DeletePage modName -> do
                 pnls <- readIORef panels
                 forM_ ( M.lookupIndex modName pnls ) $
                     WXCMZ.notebookDeletePage nb
@@ -1097,16 +1148,23 @@ displayModules input frameControls ctrls nb mods = do
     Controls.create frameControls ctrls $
         writeChan input . Control
 
-    forM mods $ \ content -> do
-        psub <- WX.panel nb []
-        ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
-        hl <- WX.textCtrlRich psub
-            [ font := fontFixed, wrap := WrapNone, editable := False ]
-        set ed [ text := Module.sourceText content ]
-        set hl [ text := Module.sourceText content ]
-        set psub [ layout := (row 5 $
-            map WX.fill $ [widget ed, widget hl]) ]
-        return $ Panel psub ed hl (Module.sourceLocation content)
+    forM mods $ displayModule nb
+
+
+displayModule ::
+    WXCore.Window b ->
+    Module.Module ->
+    IO Panel
+displayModule nb modu = do
+    psub <- WX.panel nb []
+    ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
+    hl <- WX.textCtrlRich psub
+        [ font := fontFixed, wrap := WrapNone, editable := False ]
+    set ed [ text := Module.sourceText modu ]
+    set hl [ text := Module.sourceText modu ]
+    set psub [ layout := (row 5 $
+        map WX.fill $ [widget ed, widget hl]) ]
+    return $ Panel psub ed hl $ Module.sourceLocation modu
 
 
 getFromNotebook ::
