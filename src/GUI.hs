@@ -121,6 +121,7 @@ import qualified Data.Monoid as Mn
 import qualified Data.Char as Char
 import qualified Data.List as List
 import Data.Tuple.HT ( mapSnd )
+import Data.Bool.HT ( if' )
 
 import Prelude hiding ( log )
 
@@ -179,6 +180,7 @@ data GuiUpdate =
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertPage Module.Module
    | DeletePage Module.Name
+   | RenamePage Module.Name Module.Name
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
@@ -207,7 +209,7 @@ prepareProgram ::
         (Program, [(Identifier, Controls.Control)])
 prepareProgram p0 = do
     let ctrls = Controls.collect p0
-    p1 <- Exc.ExceptionalT $ return $
+    p1 <- excT $
         Program.replaceModule (Controls.controllerModule ctrls) p0
     return (p1, ctrls)
 
@@ -258,15 +260,11 @@ formatModuleList =
     List.intercalate ", " . map Module.deconsName
 
 
-{-
-TODO: handle the case that the module changed its name
-(might happen if user changes the text in the editor)
--}
 modifyModule ::
     TVar Program ->
     TChan GuiUpdate ->
     Module.Name ->
-    [Char] ->
+    String ->
     Int ->
     Exc.ExceptionalT Exception.Message STM ()
 modifyModule program output moduleName sourceCode pos = do
@@ -278,11 +276,40 @@ modifyModule program output moduleName sourceCode pos = do
         Parsec.parse
             (Module.parseUntilEOF (Module.sourceLocation previous) sourceCode)
             ( Module.deconsName moduleName ) sourceCode
-    lift . writeTVar program =<<
-        (Exc.ExceptionalT $ return $ Program.replaceModule m p)
+    let exception =
+            Exception.Message Exception.Parse
+                (Program.dummyRange $ Module.deconsName moduleName)
+    {-
+    My first thought was that renaming of modules
+    should be generally forbidden via HTTP.
+    My second thought was that renaming of modules
+    can be easily allowed or forbidden using the separation marker.
+    Actually currently renaming via HTTP is not possible,
+    because the separation marker is not allowed before the 'module' line.
+    If you like to strictly forbid renaming in some circumstances,
+    then make 'allowRename' a parameter of the function.
+    -}
+    let allowRename = True
+    newP <-
+        if' (moduleName == Module.name m)
+            (excT $ Program.replaceModule m p) $
+        if' allowRename (do
+             Exc.assertT
+                 (exception $ Module.tellName (Module.name m) ++ " already exists")
+                 (not $ M.member (Module.name m) $ Program.modules p)
+             newP <-
+                 excT $ Program.addModule m $
+                     Program.removeModule moduleName p
+             lift $ writeTChan output $
+                 RenamePage moduleName (Module.name m)
+             return newP) $
+        (Exc.throwT $ exception
+            "module name does not match page name and renaming is disallowed")
+    lift $ writeTVar program newP
     lift $ writeTChan output $
-        Refresh moduleName sourceCode pos
+        Refresh (Module.name m) sourceCode pos
 --    lift $ Log.put "parsed and modified OK"
+
 
 
 {-
@@ -317,12 +344,11 @@ machine input output importPaths progInit sq = do
                 Log.put $ show event
                 STM.atomically $ exceptionToGUI output $ do
                     p <- lift $ readTVar program
-                    p' <-
-                        Exc.ExceptionalT $ return $
-                        Controls.changeControllerModule p event
+                    p' <- excT $ Controls.changeControllerModule p event
                     lift $ writeTVar program p'
                     -- return $ Controls.getControllerModule p'
                 -- Log.put $ show m
+
             Execution exec ->
                 case exec of
                     Mode mode -> do
@@ -543,6 +569,12 @@ excSwitchT ::
     (e -> m b) -> (a -> m b) ->
     Exc.ExceptionalT e m a -> m b
 excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
+
+excT ::
+    (Monad m) =>
+    Exc.Exceptional e a -> Exc.ExceptionalT e m a
+excT = Exc.ExceptionalT . return
+
 
 writeUpdate ::
     (Monad m) =>
@@ -1104,6 +1136,26 @@ gui input output = do
                     WXCMZ.notebookDeletePage nb
                 writeIORef panels $ M.delete modName pnls
                 set status [ text := "closed " ++ Module.tellName modName ]
+
+            RenamePage fromName toName -> do
+                pnls <- readIORef panels
+                forM_
+                    ( liftM2 (,)
+                        ( M.lookupIndex fromName pnls )
+                        ( M.lookup fromName pnls ) ) $ \(i,pnl) -> do
+                    success <- WXCMZ.notebookRemovePage nb i
+                    when (not success) $
+                        writeTChanIO output $ Exception $
+                        inoutExceptionMsg fromName $
+                        "Panic: cannot remove page for renaming module"
+                    let newPnls =
+                            M.insert toName pnl $ M.delete fromName pnls
+                    writeIORef panels newPnls
+                    forM_ ( M.lookupIndex toName newPnls ) $ \j ->
+                        WXCMZ.notebookInsertPage nb j (panel pnl)
+                            (Module.deconsName toName) True (-1)
+                set status [ text := "renamed " ++ Module.tellName fromName ++
+                                     " to " ++ Module.tellName toName ]
 
             Running mode -> do
                 case mode of
