@@ -267,6 +267,19 @@ nameFromIdentifier =
 type FunctionDeclarations = M.Map Identifier [Rule]
 type ConstructorDeclarations = S.Set Identifier
 
+fromDeclarations :: Name -> [Declaration] -> Module
+fromDeclarations moduleName decls =
+    let m = Module {
+                name = moduleName,
+                imports = [],
+                sourceText = show m,
+                sourceLocation = "/dev/null",
+                functions = makeFunctions decls,
+                constructors = makeConstructors decls,
+                declarations = decls
+            }
+    in  m
+
 -- | add, or replace (if rule with exact same lhs is already present)
 addRule :: Rule -> Module -> Module
 addRule rule@(Rule.Rule ident params _rhs) m =

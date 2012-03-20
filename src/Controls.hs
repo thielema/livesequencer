@@ -59,21 +59,10 @@ controllerRule name val =
 
 controllerModule :: [(Term.Identifier, Control)] -> Module.Module
 controllerModule controls =
-    let decls = do
-            ( name, CheckBox deflt ) <- controls
-            return $ Module.RuleDeclaration
-                   $ controllerRule name deflt
-        m = Module.Module { Module.name = moduleName
-                 , Module.imports = []
-                 , Module.sourceText = show m
-                 , Module.sourceLocation = "/dev/null"
-                 , Module.functions =
-                      Module.makeFunctions decls
-                 , Module.constructors =
-                      Module.makeConstructors decls
-                 , Module.declarations = decls
-                 }
-    in  m
+    Module.fromDeclarations moduleName $ do
+        ( name, CheckBox deflt ) <- controls
+        return $ Module.RuleDeclaration
+               $ controllerRule name deflt
 
 create ::
     WX.Frame b ->
