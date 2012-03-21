@@ -1,15 +1,128 @@
-* Module system:
-  allow adding modules
-  allow closing modules
-  allow renaming modules:
-    when reloading a module,
-    check whether the name has changed and whether the name clashes with other modules,
-    if rename is possible, then alter tab name
-    also alter the imports of the other modules
-  hierarchical module names
-  if an import is added, load the module
+* Module management:
+  allow to start sequencer without any module, or only with Prelude, or only with Main
+  allow to start sequencer with non-existing module and then present an empty module
+      (http://dfa.imn.htwk-leipzig.de/bugzilla/show_bug.cgi?id=298)
   flush unimported modules
-  qualify identifiers
+      compute the transitive import closure for the current module
+      and remove the remaining modules
+
+* rename module - rename imports?
+  When renaming a module it would simplify editing a lot,
+  if also imports would be changed.
+  Changing the module in the interpreter is relatively easy,
+  since it is already parsed.
+  We know the source position of identifiers,
+  thus it is possible to replace the identifiers in the interpreted module's source
+  and thus we could update the display of the interpreted module.
+  However modifications in the interpreted module
+  will be lost on the next module refresh.
+  Thus we must alter the edited module too.
+  But the edited module may not be syntactically correct.
+  We may only parse the preamble.
+  Or we may only parse the longest prefix that is a correct preamble.
+  And I think we must do the modification immediately in the GUI
+  in order to make it atomically.
+
+* read-only TVar program for interpreter
+  We could define a wrapper around TVar that allows only reading.
+  This should be used for the interpreter.
+
+* Controllers should not be in an extra module
+  It is difficult too maintain:
+  We have to disable refreshing, renaming and closing of the Control module.
+  We have to update the module when the user adds or removes checkBox calls in a module.
+  It forbids to load the modules into GHCi.
+
+  I think we should just use plain variable definitions
+  and tag them with a pragma or with special naming scheme.
+  The assigned value should be the default value.
+  Is it a good idea to change the assigned value in the highlighter window
+      when the value is changed?
+
+  Like so:
+  interactiveBool = False ;
+
+  A pragma would allow to specify parameters.
+
+  {-# INTERACTIVE Checkbox #-}
+  bool = False ;
+
+  {-# INTERACTIVE Slider #-}
+  modulation = 0 ;
+
+  {-# INTERACTIVE MIDI Controller 0 7 #-}
+  volume = 64 ;
+
+  Alternatively we keep checkBox and similar functions,
+  and tag their calls uniquely.
+  Every call should be associated with a GUI element.
+  However then it is not clear how to update GUI elements
+  on a module refresh.
+  We might combine both approaches as follows:
+
+  {-# INTERACTIVE #-}
+  bool = checkBox False ;
+
+  {-# INTERACTIVE #-}
+  modulation = slider 0 127 0 ;
+
+  {-# INTERACTIVE #-}
+  volume = midiController 0 7 64 ;
+
+  Then setup a dummy module Control:
+  checkBox :: Bool -> Bool
+  checkBox = id
+
+  This definition takes effect if you do not declare the pragma.
+
+  However handling pragmas is not easy, too.
+  How to cope with multiple defining equations?
+  How about this one:
+
+  bool = interactive "bool" ( checkBox False ) ;
+  modulation = interactive "modulation" ( slider 0 127 0 ) ;
+  volume = interactive "volume" ( midiController 0 7 64 ) ;
+
+  Or we leave it almost as it is and
+  replace the constructors that identify controllers by plain strings.
+
+  In any case the Module record needs a 'controllers' field
+  and the controllers must be updated at every module refresh.
+
+* Module system:
+  support qualification and all styles of imports
+  when refreshing a module, I think we need a global check of all imports
+  check for existence of imported and used qualifiers
+  export lists
+  hierarchical module names
+
+* avoid denial of service attacks
+  refuse too many events in a short time period,
+      caused by missing, short or invalid Waits
+      e.g.:
+          main = [ Wait Invalid ] ++ main
+          main = [ Event bla ] ++ main
+  restrict the size of the current term
+      and thus prevent memory leaks
+  restrict the number of reduction per element
+      in order to prevent infinite loops
+
+* The current term is actually not current,
+  it shows the last state.
+  This is a problem, when we apply a function to the current term,
+  since then suddenly a different term pops up.
+  It may become even more a problem,
+  when we allow more fine-grained reduction steps.
+  We could thus divide the current term into the 'head' and the 'tail'.
+  Maybe we can even display 'head' and 'tail' separately.
+  In a left sub-window we could list all emitted events
+  and a right sub-window we could show the real current term.
+
+* move to new explicit-exception version and use its Exc.switchT
+
+* Exception
+  move from other modules to Exception module:
+  excT, switchT, dummyRange, inoutExceptionMsg ...
 
 * Library part
   Move modules into module hierarchy.
@@ -18,6 +131,7 @@
   We could make "," a regular infix operator with low precendence.
   This would give us operator section syntax.
   However it conflicts with commas in list syntax.
+  We should just let the Helium parser solve this problem.
 
 * Are newlines in module content from HTTP handled correctly?
   WWW uses CR+LF
@@ -45,18 +159,6 @@
     that looks like the top border of another handle
   does it have a meaning?
 
-* merge term in realtime
-  We might play a new term
-    by replacing currentTerm by (currentTerm =:= markedTerm)
-  This way you can add tracks while the music is playing.
-  However this way the new term will be played
-  only after the current Wait is completed.
-  In order to stay independent from particular function names like "merge",
-  we could just provide a menu item that considers the marked term
-    a function term and apply that function to the current term.
-  Then we can merge new things using (merge newTerm)
-    or append something using (flip append newTerm).
-
 * precise ALSA timing
   For precise timing it is certainly better
   to send ALSA events with future time stamps.
@@ -65,20 +167,33 @@
   The proposed change increases latency of changes in the source files.
   Current term and highlighting should be updated
   when the delayed MIDI event is played.
-  We can achieve this by sending an Echo message to ourselve.
+  We can achieve this by sending an Echo message to ourselves.
+  We already send Echo messages to ourselves.
+  We should use two kinds of Echo messages:
+  One of them triggers evaluation, the other one triggers visualization
+  and has the same time stamp as the according ALSA time stamp.
+  We need to start and stop queues with the same latency.
+  .
+  We can even hide the latency by starting the computation non-stop
+  until the timestamps of the computed events are
+  sufficiently ahead of the actual current time.
+  When we stop the queue this will also happen instantly.
+
+* PortMidi support
+  We could fall back to threadDelay timing
+  and WX-timer event for polling incoming MIDI keys.
+  We could even achieve precise timing with PortMidi
+  using PortMidi's latency, rough waiting using threadDelay
+  and synchronization using PortTime's 'time' function.
 
 * Dirk Richter proposes to store old module contents when updating a module.
   This way you can later reproduce what you did in a live performance.
-
-* allocate multiple ALSA ports and extend the Channel constructor by a port field
-  Multiple ports allow to connect to different ALSA nodes
-  and feed them with individual data.
-  This is more easily done than distinction using MIDI channels.
 
 * use haskell-src(-exts) for parsing,
   to be sure we have a subset of haskell
   haskell-src: no support for precedence and associativity
   haskell-src-ext: no support for source locations
+  better: Helium parser supports all we need
 
 * Can we use reactive-banana-wx in order to write safer GUI?
   Maybe we can simplify:
