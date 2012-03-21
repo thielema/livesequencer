@@ -174,6 +174,7 @@ data Modification =
      Load FilePath
    | NewModule
    | CloseModule Module.Name
+   | FlushModules Module.Name
    | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
 
@@ -486,6 +487,13 @@ machine input output importPaths progInit sq = do
                             liftSTM $ writeTVar program $ Program.removeModule modName prg
                             liftSTM $ writeTChan output $ DeletePage modName
 
+                    FlushModules modName ->
+                        STM.atomically $ do
+                            prg <- readTVar program
+                            let (removed, minPrg) = Program.minimize modName prg
+                            writeTVar program $ minPrg
+                            Fold.mapM_ (writeTChan output . DeletePage) removed
+
     void $ forkIO $
         Event.listen sq
             ( writeTChanIO output . InsertText . formatPitch )
@@ -700,6 +708,10 @@ gui input output = do
         [ text := "&Close module\tCtrl-W",
           help := "close the active module" ]
 
+    flushModulesItem <- WX.menuItem fileMenu
+        [ text := "&Flush modules",
+          help := "close all modules that are not transitively imported by the active module" ]
+
     WX.menuLine fileMenu
 
     quitItem <- WX.menuQuit fileMenu []
@@ -710,7 +722,9 @@ gui input output = do
     refreshItem <- WX.menuItem execMenu
         [ text := "&Refresh\tCtrl-R",
           help :=
-              "parse the edited program and if successful " ++
+              "parse the edited module and if successful " ++
+              "rename the page to the modified module name, " ++
+              "load new imported modules and " ++
               "replace the executed program" ]
     WX.menuLine execMenu
     realTimeItem <- WX.menuItem execMenu
@@ -884,6 +898,12 @@ gui input output = do
     set closeModuleItem [
           on command :=
               writeChan input . Modification . CloseModule . fst
+                  =<< getFromNotebook nb =<< readIORef panels
+          ]
+
+    set flushModulesItem [
+          on command :=
+              writeChan input . Modification . FlushModules . fst
                   =<< getFromNotebook nb =<< readIORef panels
           ]
 

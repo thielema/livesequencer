@@ -20,6 +20,7 @@ import System.FilePath ( (</>) )
 import qualified System.IO.Error as Err
 import qualified System.FilePath as FP
 
+import qualified Data.Foldable as Fold
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -94,6 +95,18 @@ unionDecls m0 m1 =
                   " in " ++ (Module.deconsName $ Module.nameFromIdentifier n0) ++
                   " and " ++ (Module.deconsName $ Module.nameFromIdentifier n1))))
         (f m0) (f m1)
+
+
+minimize :: Module.Name -> Program -> (S.Set Module.Name, Program)
+minimize seed p =
+    let trace modName ms =
+            if S.member modName ms
+              then foldl (flip trace) (S.delete modName ms) $
+                   maybe [] (map Module.source . Module.imports) $
+                   M.lookup modName (modules p)
+              else ms
+        removed = trace seed $ M.keysSet $ modules p
+    in  (removed, Fold.foldl (flip removeModule) p removed)
 
 
 -- | load from disk, with import chasing
