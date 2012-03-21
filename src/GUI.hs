@@ -102,7 +102,7 @@ import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( when, liftM2, forever, )
+import Control.Monad ( when, liftM2, forever, foldM )
 import Control.Functor.HT ( void )
 import Data.Foldable ( forM_ )
 import Data.Traversable ( forM )
@@ -145,10 +145,26 @@ main = do
             if null $ Option.moduleNames opt
               then return $ Program.singleton $
                    Module.fromDeclarations (Module.Name "Main") []
-              else Program.chaseMany
-                       (Option.importPaths opt)
-                       (Option.moduleNames opt)
+              else {-
+                   If a file is not found, we setup an empty module.
+                   If a file exists but contains parse errors
+                   then we abort loading.
+                   -}
+                   foldM
+                       (\p name -> do
+                           epath <-
+                               lift $ Exc.tryT $
+                               Program.chaseFile (Option.importPaths opt)
+                                   (Module.makeFileName name)
+                           case epath of
+                               Exc.Success path ->
+                                   Program.load (Option.importPaths opt)
+                                       p (Module.deconsName name) path
+                               Exc.Exception _ ->
+                                   excT $
+                                   Program.addModule (Module.fromDeclarations name []) p)
                        Program.empty
+                       (Option.moduleNames opt)
 
     input <- newChan
     output <- newTChanIO

@@ -23,6 +23,9 @@ import Text.PrettyPrint.HughesPJ
              render, text, comma, vcat, parens )
 import qualified Data.Char as Char
 
+import qualified System.FilePath as FP
+import Data.List.HT ( chop )
+
 import Control.Functor.HT ( void )
 
 
@@ -262,6 +265,10 @@ tellName (Name n) = "module " ++ n
 nameFromIdentifier :: Identifier -> Name
 nameFromIdentifier =
     Name . Pos.sourceName . Term.start . Term.range
+
+makeFileName :: Name -> FilePath
+makeFileName (Name n) =
+    FP.addExtension (FP.joinPath $ chop ('.'==) n) "hs"
 
 
 type FunctionDeclarations = M.Map Identifier [Rule]

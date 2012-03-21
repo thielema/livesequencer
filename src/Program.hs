@@ -18,14 +18,12 @@ import qualified Text.ParserCombinators.Parsec.Error as PErr
 import System.Directory ( doesFileExist )
 import System.FilePath ( (</>) )
 import qualified System.IO.Error as Err
-import qualified System.FilePath as FP
 
 import qualified Data.Foldable as Fold
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Control.Monad ( foldM, liftM2 )
-import Data.List.HT ( chop )
 
 
 data Program = Program
@@ -134,10 +132,8 @@ chaser dirs p n = do
             Log.put $ "module is already loaded"
             return p
         Nothing ->
-            let nn = Module.deconsName n
-            in  load dirs p nn =<<
-                chaseFile dirs
-                    ( FP.addExtension (FP.joinPath $ chop ('.'==) nn) "hs" )
+            load dirs p ( Module.deconsName n ) =<<
+            chaseFile dirs ( Module.makeFileName n )
 
 chaseMany ::
     [ FilePath ] -> [ Module.Name ] -> Program ->
