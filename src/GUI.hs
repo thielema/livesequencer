@@ -7,18 +7,25 @@ GUI:
 The GUI shall be responsive also if a program is loaded or a term is reduced.
 Thus the GUI has its own thread.
 If a GUI element requires a more complicated action,
-it sends an Action message via then 'input' Chan to the 'machine'.
+it sends an Action message via the 'input' Chan to the 'machine'.
+It does not have direct access to the 'program'.
 
 machine:
 This thread manages loading and parsing of modules
 as well as the operation mode of the interpreter.
 It gets most of its messages from the GUI
 and sends its result as GuiUpdate via the 'output' Chan to the GUI.
+It is the only thread that is allowed to modify the 'program'.
+Thus it sequences all accesses to 'program'
+and warrants atomic modification (a single read-write sequence)
+even outside the STM monad.
 
 execute:
 This runs the interpreter.
 It reduces expressions and sends according MIDI messages
 or waits according to Wait events.
+It can read the current state of the 'program'
+but is not allowed to modify it.
 
 ALSA:
 With ALSA we can wait only for all kinds of events at once.
