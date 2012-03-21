@@ -118,6 +118,13 @@ chaser dirs p n = do
                 chaseFile dirs
                     ( FP.addExtension (FP.joinPath $ chop ('.'==) nn) "hs" )
 
+chaseImports ::
+    [ FilePath ] -> Module.Module -> Program ->
+    Exc.ExceptionalT Exception.Message IO Program
+chaseImports dirs m p =
+    foldM ( chaser dirs ) p $
+        map Module.source $ Module.imports m
+
 load ::
     [ FilePath ] -> Program -> String -> FilePath ->
     Exc.ExceptionalT Exception.Message IO Program
@@ -132,9 +139,8 @@ load dirs p n ff = do
         Left err -> Exc.throwT (messageFromParserError err)
         Right m -> do
             lift $ Log.put $ show m
-            pNew <- Exc.ExceptionalT $ return $ addModule m p
-            foldM ( chaser dirs ) pNew $
-                map Module.source $ Module.imports m
+            chaseImports dirs m =<<
+                ( Exc.ExceptionalT $ return $ addModule m p )
 
 -- | look for file, trying to append its name to the directories in the path,
 -- in turn. Will fail if file is not found.

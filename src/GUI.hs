@@ -185,7 +185,7 @@ data GuiUpdate =
    | Exception { _message :: Exception.Message }
    | Register ( M.Map Module.Name Module.Module ) [(Identifier, Controls.Control)]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
-   | InsertPage Module.Module
+   | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
    | RenamePage Module.Name Module.Name
    | InsertText { _insertedText :: String }
@@ -274,13 +274,14 @@ and blocking access to 'program'
 would block the read access by the interpreter.
 -}
 modifyModule ::
+    [ FilePath ] ->
     TVar Program ->
     TChan GuiUpdate ->
     Module.Name ->
     String ->
     Int ->
     IO (Maybe Exception.Message)
-modifyModule program output moduleName sourceCode pos = do
+modifyModule importPaths program output moduleName sourceCode pos = do
     p <- readTVarIO program
     excSwitchT
         (\e -> do
@@ -314,7 +315,7 @@ modifyModule program output moduleName sourceCode pos = do
         -}
         let allowRename = True
         MW.runWriterT $ do
-            newP <-
+            p1 <-
                 if' (moduleName == Module.name m)
                     (lift $ excT $ Program.replaceModule m p) $
                 if' allowRename (do
@@ -327,9 +328,12 @@ modifyModule program output moduleName sourceCode pos = do
                          Program.removeModule moduleName p) $
                 (lift $ Exc.throwT $ exception
                     "module name does not match page name and renaming is disallowed")
+            p2 <- lift $ Program.chaseImports importPaths m p1
+            MW.tell $ map (InsertPage False) $ M.elems $
+                M.difference ( Program.modules p2 ) ( Program.modules p1 )
             -- Refresh must happen after a Rename
             MW.tell [ Refresh (Module.name m) sourceCode pos ]
-            return newP
+            return p2
 
 
 {-
@@ -418,9 +422,9 @@ machine input output importPaths progInit sq = do
                         case feedback of
                             Nothing ->
                                 void $
-                                modifyModule program output moduleName sourceCode pos
+                                modifyModule importPaths program output moduleName sourceCode pos
                             Just mvar -> do
-                                x <- modifyModule program output moduleName sourceCode pos
+                                x <- modifyModule importPaths program output moduleName sourceCode pos
                                 putMVar mvar $ Exc.Success
                                     (fmap Exception.multilineFromMessage x,
                                      sourceCode)
@@ -458,7 +462,7 @@ machine input output importPaths progInit sq = do
                                     error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
                                 Exc.Success newPrg ->
                                     liftSTM $ writeTVar program newPrg
-                            liftSTM $ writeTChan output $ InsertPage modu
+                            liftSTM $ writeTChan output $ InsertPage True modu
 
                     CloseModule modName ->
                         STM.atomically $ exceptionToGUI output $
@@ -1119,7 +1123,7 @@ gui input output = do
                 setColor hls WXCore.white
                     =<< varSwap highlights M.empty
 
-            InsertPage modu -> do
+            InsertPage act modu -> do
                 pnls <- readIORef panels
                 pnl <- displayModule nb modu
                 let modName = Module.name modu
@@ -1128,7 +1132,7 @@ gui input output = do
                 success <-
                     WXCMZ.notebookInsertPage nb
                         (M.findIndex modName newPnls) (panel pnl)
-                        (Module.deconsName modName) True (-1)
+                        (Module.deconsName modName) act (-1)
                 {- FIXME:
                 if the page cannot be added, we get an inconsistency -
                 how to solve that?
