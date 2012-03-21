@@ -50,6 +50,7 @@ import qualified Option
 import qualified Log
 import Program ( Program )
 import Term ( Term, Identifier, mainName )
+import Option.Utility ( exitFailureMsg )
 import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
 import Utility.WX ( cursor, editable, notebookSelection )
 
@@ -112,7 +113,6 @@ import qualified Text.ParserCombinators.Parsec.Token as Token
 import Control.Exception ( bracket, finally, try )
 import qualified System.IO as IO
 import qualified System.IO.Error as Err
-import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
 import qualified Data.Accessor.Monad.Trans.State as AccM
@@ -140,12 +140,15 @@ main = do
     opt <- Option.get
 
     (p,ctrls) <-
-        Exc.resolveT
-            (\e ->
-                IO.hPutStrLn IO.stderr (Exception.multilineFromMessage e) >>
-                Exit.exitFailure) $
+        Exc.resolveT (exitFailureMsg . Exception.multilineFromMessage) $
             prepareProgram =<<
-            Program.chase (Option.importPaths opt) (Option.moduleName opt)
+            if null $ Option.moduleNames opt
+              then return $ Program.singleton $
+                   Module.fromDeclarations (Module.Name "Main") []
+              else Program.chaseMany
+                       (Option.importPaths opt)
+                       (Option.moduleNames opt)
+                       Program.empty
 
     input <- newChan
     output <- newTChanIO

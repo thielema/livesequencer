@@ -1,7 +1,8 @@
 -- module Console where
 
 import Term
-import Program ( Program (..), chase )
+import Program ( Program )
+import qualified Program
 import qualified Event
 import qualified Rewrite
 import qualified Exception
@@ -20,11 +21,11 @@ import Control.Monad.Exception.Synchronous
           ( mapExceptionalT, resolveT, throwT )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( forM_, (>=>) )
+import Control.Monad ( when, forM_, (>=>) )
 import Control.Functor.HT ( void )
 
 import qualified System.IO as IO
-import qualified System.Exit as Exit
+import Option.Utility ( exitFailureMsg )
 
 import Prelude hiding ( log )
 
@@ -33,11 +34,12 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     opt <- Option.get
+    when (null $ Option.moduleNames opt) $
+        exitFailureMsg "no module specified"
     p <-
-        resolveT (\e ->
-            IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
-            Exit.exitFailure) $
-        Program.chase (Option.importPaths opt) $ Option.moduleName opt
+        resolveT (exitFailureMsg . Exception.multilineFromMessage) $
+        Program.chaseMany
+            (Option.importPaths opt) (Option.moduleNames opt) Program.empty
     ALSA.withSequencer opt $ \sq -> do
         waitChan <- newChan
         void $ forkIO $ Event.listen sq print waitChan

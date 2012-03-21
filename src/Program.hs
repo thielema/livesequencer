@@ -39,6 +39,14 @@ empty :: Program
 empty =
     Program { modules = M.empty, functions = M.empty, constructors = S.empty }
 
+singleton :: Module -> Program
+singleton m =
+    Program {
+        modules = M.singleton (Module.name m) m,
+        functions = Module.functions m,
+        constructors = Module.constructors m
+    }
+
 {- |
 add a module
 
@@ -131,12 +139,17 @@ chaser dirs p n = do
                 chaseFile dirs
                     ( FP.addExtension (FP.joinPath $ chop ('.'==) nn) "hs" )
 
+chaseMany ::
+    [ FilePath ] -> [ Module.Name ] -> Program ->
+    Exc.ExceptionalT Exception.Message IO Program
+chaseMany dirs names p =
+    foldM ( chaser dirs ) p names
+
 chaseImports ::
     [ FilePath ] -> Module.Module -> Program ->
     Exc.ExceptionalT Exception.Message IO Program
-chaseImports dirs m p =
-    foldM ( chaser dirs ) p $
-        map Module.source $ Module.imports m
+chaseImports dirs =
+    chaseMany dirs . map Module.source . Module.imports
 
 load ::
     [ FilePath ] -> Program -> String -> FilePath ->
