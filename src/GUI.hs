@@ -267,57 +267,69 @@ formatModuleList =
     List.intercalate ", " . map Module.deconsName
 
 
+{-
+We do not put the program update into a big a STM
+because loading new imported modules may take a while
+and blocking access to 'program'
+would block the read access by the interpreter.
+-}
 modifyModule ::
     TVar Program ->
     TChan GuiUpdate ->
     Module.Name ->
     String ->
     Int ->
-    Exc.ExceptionalT Exception.Message STM ()
+    IO (Maybe Exception.Message)
 modifyModule program output moduleName sourceCode pos = do
-    p <- liftSTM $ readTVar program
-    let Just previous = M.lookup moduleName $ Program.modules p
-    m <-
-        Exc.mapExceptionT Program.messageFromParserError $
-        Exc.fromEitherT $ return $
-        Parsec.parse
-            (Module.parseUntilEOF (Module.sourceLocation previous) sourceCode)
-            ( Module.deconsName moduleName ) sourceCode
-    let exception =
-            Exception.Message Exception.Parse
-                (Program.dummyRange $ Module.deconsName moduleName)
-    {-
-    My first thought was that renaming of modules
-    should be generally forbidden via HTTP.
-    My second thought was that renaming of modules
-    can be easily allowed or forbidden using the separation marker.
-    Actually currently renaming via HTTP is not possible,
-    because the separation marker is not allowed before the 'module' line.
-    If you like to strictly forbid renaming in some circumstances,
-    then make 'allowRename' a parameter of the function.
-    -}
-    let allowRename = True
-    (newP, updates) <- MW.runWriterT $ do
-        newP <-
-            if' (moduleName == Module.name m)
-                (lift $ excT $ Program.replaceModule m p) $
-            if' allowRename (do
-                 lift $ Exc.assertT
-                     (exception $ Module.tellName (Module.name m) ++ " already exists")
-                     (not $ M.member (Module.name m) $ Program.modules p)
-                 MW.tell
-                     [ RenamePage moduleName (Module.name m) ]
-                 lift $ excT $ Program.addModule m $
-                     Program.removeModule moduleName p) $
-            (lift $ Exc.throwT $ exception
-                "module name does not match page name and renaming is disallowed")
-        -- Refresh must happen after a Rename
-        MW.tell [ Refresh (Module.name m) sourceCode pos ]
-        return newP
-    liftSTM $ mapM_ ( writeTChan output ) updates
-    liftSTM $ writeTVar program newP
---    lift $ Log.put "parsed and modified OK"
-
+    p <- readTVarIO program
+    excSwitchT
+        (\e -> do
+            writeTChanIO output $ Exception e
+            return $ Just e)
+        (\(newP, updates) -> do
+            STM.atomically $ do
+                mapM_ ( writeTChan output ) updates
+                writeTVar program newP
+--            Log.put "parsed and modified OK"
+            return Nothing) $ do
+        let Just previous = M.lookup moduleName $ Program.modules p
+        m <-
+            Exc.mapExceptionT Program.messageFromParserError $
+            Exc.fromEitherT $ return $
+            Parsec.parse
+                (Module.parseUntilEOF (Module.sourceLocation previous) sourceCode)
+                ( Module.deconsName moduleName ) sourceCode
+        let exception =
+                Exception.Message Exception.Parse
+                    (Program.dummyRange $ Module.deconsName moduleName)
+        {-
+        My first thought was that renaming of modules
+        should be generally forbidden via HTTP.
+        My second thought was that renaming of modules
+        can be easily allowed or forbidden using the separation marker.
+        Actually currently renaming via HTTP is not possible,
+        because the separation marker is not allowed before the 'module' line.
+        If you like to strictly forbid renaming in some circumstances,
+        then make 'allowRename' a parameter of the function.
+        -}
+        let allowRename = True
+        MW.runWriterT $ do
+            newP <-
+                if' (moduleName == Module.name m)
+                    (lift $ excT $ Program.replaceModule m p) $
+                if' allowRename (do
+                     lift $ Exc.assertT
+                         (exception $ Module.tellName (Module.name m) ++ " already exists")
+                         (not $ M.member (Module.name m) $ Program.modules p)
+                     MW.tell
+                         [ RenamePage moduleName (Module.name m) ]
+                     lift $ excT $ Program.addModule m $
+                         Program.removeModule moduleName p) $
+                (lift $ Exc.throwT $ exception
+                    "module name does not match page name and renaming is disallowed")
+            -- Refresh must happen after a Rename
+            MW.tell [ Refresh (Module.name m) sourceCode pos ]
+            return newP
 
 
 {-
@@ -396,6 +408,7 @@ machine input output importPaths progInit sq = do
                                 Exception.Message Exception.Parse (Term.termRange fterm) $
                                 "tried to apply the non-function term " ++
                                 show (markedString txt)
+
             Modification modi ->
                 case modi of
                     RefreshModule feedback moduleName sourceCode pos -> do
@@ -404,24 +417,14 @@ machine input output importPaths progInit sq = do
                             " has new input\n" ++ sourceCode
                         case feedback of
                             Nothing ->
-                                STM.atomically $
-                                exceptionToGUI output $
+                                void $
                                 modifyModule program output moduleName sourceCode pos
                             Just mvar -> do
-                                x <-
-                                    STM.atomically $
-                                    fmap (Exc.switch
-                                        (\e ->
-                                            (Just $ Exception.multilineFromMessage e,
-                                             sourceCode))
-                                        (\() -> (Nothing, sourceCode))) $
-                                    Exc.runExceptionalT $
-                                    Exc.catchT
-                                        (modifyModule program output moduleName sourceCode pos)
-                                        (\e -> do
-                                            lift $ writeTChan output $ Exception e
-                                            Exc.throwT e)
-                                putMVar mvar $ Exc.Success x
+                                x <- modifyModule program output moduleName sourceCode pos
+                                putMVar mvar $ Exc.Success
+                                    (fmap Exception.multilineFromMessage x,
+                                     sourceCode)
+
                     Load filePath -> do
                         Log.put $
                             "load " ++ filePath ++ " and all its dependencies"
