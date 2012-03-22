@@ -1,19 +1,21 @@
 module BandControlled where
 
+import Controls
 import Drum
 import Chords
 import Pitch
 import Midi
 import List
 import Bool
-import Prelude ( (*) )
+import Prelude ( (*), Bool(False, True) )
 
+main, chords, drums :: [Event (Channel Message)] ;
 main = merge ( cycle chords ) ( cycle drums ) ;
 
+en, qn, hn :: Time ;
 en = 100 ;
 qn = 2 * en ;
 hn = 2 * qn ;
-wn = 2 * hn ;
 
 chords =
     channel 0 ( concat
@@ -23,6 +25,7 @@ chords =
                 , quad ( major7 qn (g 4) )
                 ] ) ;
 
+quad :: [a] -> [a] ;
 quad x = concat [x,x,x,x] ;
 
 drums =
@@ -35,5 +38,6 @@ drums =
                  ]
         ] ) ;
 
-optDrum b drm dur =
-    ifThenElse b ( drum drm dur ) ( rest dur ) ;
+optDrum :: Bool -> Drum -> Time -> [Event Message] ;
+optDrum sel drm dur =
+    ifThenElse sel ( drum drm dur ) ( rest dur ) ;
