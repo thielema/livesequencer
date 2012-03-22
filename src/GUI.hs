@@ -203,7 +203,7 @@ data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Message ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
-   | Register ( M.Map Module.Name Module.Module ) [ Controls.Assignment ]
+   | Register ( M.Map Module.Name Module.Module ) Controls.Assignments
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
@@ -232,10 +232,9 @@ exceptionToGUIIO output =
 prepareProgram ::
     (Monad m) =>
     Program ->
-    Exc.ExceptionalT Exception.Message m
-        (Program, [ Controls.Assignment ])
+    Exc.ExceptionalT Exception.Message m (Program, Controls.Assignments)
 prepareProgram p0 = do
-    let ctrls = Controls.collect p0
+    ctrls <- excT $ Controls.collect p0
     p1 <- excT $
         Program.replaceModule (Controls.controllerModule ctrls) p0
     return (p1, ctrls)
@@ -648,7 +647,7 @@ gui :: Chan Action -- ^  the gui writes here
       -- (a textual representation of "current expression")
     -> IO ()
 gui input output = do
-    controls <- newIORef []
+    controls <- newIORef M.empty
     panels <- newIORef M.empty
 
     frameError <- WX.frame [ text := "errors" ]
@@ -1246,7 +1245,7 @@ data Panel =
 displayModules ::
     Chan Action ->
     WX.Frame () ->
-    [ Controls.Assignment ] ->
+    Controls.Assignments ->
     WX.Window a ->
     M.Map Module.Name Module.Module ->
     IO (M.Map Module.Name Panel)

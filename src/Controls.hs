@@ -21,22 +21,24 @@ import Graphics.UI.WX.Events
 import Graphics.UI.WX.Layout ( layout, container, row, widget )
 
 import qualified Data.Map as M
-import Control.Monad ( forM )
+import Data.Traversable ( forM )
 import Control.Functor.HT ( void )
 
 
 data Event = EventBool Name Bool
     deriving Show
 
+data Control = CheckBox Bool
+
+type Assignments = M.Map Name Control
+
+
 newtype Name = Name String
-    deriving Show
+    deriving (Eq, Ord, Show)
 
 deconsName :: Name -> String
 deconsName (Name name) = name
 
-data Control = CheckBox Bool
-
-type Assignment = (Name, Control)
 
 
 moduleName :: Module.Name
@@ -68,22 +70,22 @@ controllerRule name val =
           read "deflt" ]
         ( Term.Node ( read $ show val ) [] )
 
-controllerModule :: [ Assignment ] -> Module.Module
+controllerModule :: Assignments -> Module.Module
 controllerModule controls =
     Module.fromDeclarations moduleName $ do
-        ( name, CheckBox deflt ) <- controls
+        ( name, CheckBox deflt ) <- M.toList controls
         return $ Module.RuleDeclaration
                $ controllerRule name deflt
 
 create ::
     WX.Frame () ->
-    [Assignment] ->
+    Assignments ->
     (Controls.Event -> IO ()) ->
     IO ()
 create frame controls sink = do
     void $ WXCMZ.windowDestroyChildren frame
     panel <- WX.panel frame []
-    ws <- forM controls $ \ ( name, con ) ->
+    ws <- forM (M.toList controls) $ \ ( name, con ) ->
       case con of
         CheckBox val -> do
             cb <- WX.checkBox panel
@@ -97,14 +99,41 @@ create frame controls sink = do
     set frame [ layout := container panel $ row 5 ws ]
 
 
-collect :: Program.Program -> [ Assignment ]
-collect p = do
-    ( _mod, contents ) <- M.toList $ Program.modules p
-    Module.RuleDeclaration rule <- Module.declarations contents
+exc :: Term.Range -> String -> Exception.Message
+exc rng msg =
+    Exception.Message Exception.Parse rng msg
+
+collect ::
+    Program.Program ->
+    Exc.Exceptional Exception.Message Assignments
+collect p =
+    flip (foldr
+        (\ea go m -> do
+            (name, (rng, ctrl)) <- ea
+            Exc.assert
+                (exc rng $
+                 "duplicate controller definition with name "
+                  ++ deconsName name) $ not $ M.member name m
+            go (M.insert name ctrl m))
+        return) M.empty $ do
+
+    content <- M.elems $ Program.modules p
+    Module.RuleDeclaration rule <- Module.declarations content
     ( _pos, term ) <- Term.subterms $ Rule.rhs rule
     case Term.viewNode term of
-        Just ( "checkBox" , [ Term.StringLiteral _rng tag, Term.Node val [] ] ) ->
-              return ( Name tag
-                     , CheckBox $ read ( Term.name val )
-                     )
+        Just ( "checkBox" , args ) ->
+            return $
+            case args of
+                [ Term.StringLiteral _rng tag, Term.Node val [] ] ->
+                    case reads $ Term.name val of
+                        [(b, "")] ->
+                            Exc.Success $ (Name tag, (Term.termRange term, CheckBox b))
+                        _ ->
+                            Exc.Exception $
+                            exc (Term.range val) $
+                            "cannot parse Bool value " ++
+                            show (Term.name val) ++ " for getBox"
+                _ ->
+                    Exc.Exception $
+                    exc (Term.termRange term) "invalid checkBox arguments"
         _ -> []
