@@ -203,7 +203,7 @@ data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Message ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
-   | Register ( M.Map Module.Name Module.Module ) [(Identifier, Controls.Control)]
+   | Register ( M.Map Module.Name Module.Module ) [ Controls.Assignment ]
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
@@ -233,7 +233,7 @@ prepareProgram ::
     (Monad m) =>
     Program ->
     Exc.ExceptionalT Exception.Message m
-        (Program, [(Identifier, Controls.Control)])
+        (Program, [ Controls.Assignment ])
 prepareProgram p0 = do
     let ctrls = Controls.collect p0
     p1 <- excT $
@@ -1245,9 +1245,9 @@ data Panel =
 
 displayModules ::
     Chan Action ->
-    WX.Frame c ->
-    [(Identifier, Controls.Control)] ->
-    WXCore.Window b ->
+    WX.Frame () ->
+    [ Controls.Assignment ] ->
+    WX.Window a ->
     M.Map Module.Name Module.Module ->
     IO (M.Map Module.Name Panel)
 displayModules input frameControls ctrls nb mods = do

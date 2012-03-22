@@ -28,10 +28,10 @@ quad x = concat [x,x,x,x] ;
 drums =
     drumChannel ( concat
         [ emphasize 16 ( drum bassDrum1 hn )
-        , concat [ optDrum ( checkBox B5 True  ) acousticSnare en
-                 , optDrum ( checkBox B6 False ) acousticSnare en
-                 , optDrum ( checkBox B7 False ) acousticSnare en
-                 , optDrum ( checkBox B8 True  ) acousticSnare en
+        , concat [ optDrum ( checkBox "B5" True  ) acousticSnare en
+                 , optDrum ( checkBox "B6" False ) acousticSnare en
+                 , optDrum ( checkBox "B7" False ) acousticSnare en
+                 , optDrum ( checkBox "B8" True  ) acousticSnare en
                  ]
         ] ) ;
 

@@ -25,10 +25,18 @@ import Control.Monad ( forM )
 import Control.Functor.HT ( void )
 
 
-data Event = EventBool Term.Identifier Bool
+data Event = EventBool Name Bool
     deriving Show
 
+newtype Name = Name String
+    deriving Show
+
+deconsName :: Name -> String
+deconsName (Name name) = name
+
 data Control = CheckBox Bool
+
+type Assignment = (Name, Control)
 
 
 moduleName :: Module.Name
@@ -50,14 +58,17 @@ changeControllerModule p event = case event of
 
 controllerRule ::
     Show a =>
-    Term.Identifier -> a -> Rule.Rule
+    Name -> a -> Rule.Rule
 controllerRule name val =
     Rule.Rule
         ( read "checkBox" )
-        [ Term.Node name [], read "deflt" ]
+        [ Term.StringLiteral
+              ( Program.dummyRange $ Module.deconsName moduleName )
+              ( deconsName name ),
+          read "deflt" ]
         ( Term.Node ( read $ show val ) [] )
 
-controllerModule :: [(Term.Identifier, Control)] -> Module.Module
+controllerModule :: [ Assignment ] -> Module.Module
 controllerModule controls =
     Module.fromDeclarations moduleName $ do
         ( name, CheckBox deflt ) <- controls
@@ -65,8 +76,8 @@ controllerModule controls =
                $ controllerRule name deflt
 
 create ::
-    WX.Frame b ->
-    [(Term.Identifier, Control)] ->
+    WX.Frame () ->
+    [Assignment] ->
     (Controls.Event -> IO ()) ->
     IO ()
 create frame controls sink = do
@@ -76,7 +87,7 @@ create frame controls sink = do
       case con of
         CheckBox val -> do
             cb <- WX.checkBox panel
-               [ text := Term.name name , checked := val ]
+               [ text := deconsName name , checked := val ]
             set cb
                [ on command := do
                      c <- get cb checked
@@ -86,14 +97,14 @@ create frame controls sink = do
     set frame [ layout := container panel $ row 5 ws ]
 
 
-collect :: Program.Program -> [ ( Term.Identifier, Control ) ]
+collect :: Program.Program -> [ Assignment ]
 collect p = do
     ( _mod, contents ) <- M.toList $ Program.modules p
     Module.RuleDeclaration rule <- Module.declarations contents
     ( _pos, term ) <- Term.subterms $ Rule.rhs rule
     case Term.viewNode term of
-        Just ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
-              return ( tag
+        Just ( "checkBox" , [ Term.StringLiteral _rng tag, Term.Node val [] ] ) ->
+              return ( Name tag
                      , CheckBox $ read ( Term.name val )
                      )
         _ -> []
