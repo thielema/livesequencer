@@ -102,7 +102,7 @@ import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( when, liftM2, forever, foldM )
+import Control.Monad ( when, liftM2, forever )
 import Control.Functor.HT ( void )
 import Data.Foldable ( forM_ )
 import Data.Traversable ( forM )
@@ -139,35 +139,42 @@ main = do
     IO.hSetBuffering IO.stderr IO.LineBuffering
     opt <- Option.get
 
-    p <-
+    (mainMod, p) <-
         Exc.resolveT (exitFailureMsg . Exception.multilineFromMessage) $
-            if null $ Option.moduleNames opt
-              then return $ Program.singleton $
-                   Module.empty (Module.Name "Main")
-              else {-
-                   If a file is not found, we setup an empty module.
-                   If a file exists but contains parse errors
-                   then we abort loading.
-                   -}
-                   foldM
-                       (\p name -> do
-                           epath <-
-                               lift $ Exc.tryT $
-                               Program.chaseFile (Option.importPaths opt)
-                                   (Module.makeFileName name)
-                           case epath of
-                               Exc.Success path ->
-                                   Program.load (Option.importPaths opt)
-                                       p (Module.deconsName name) path
-                               Exc.Exception _ ->
-                                   excT $
-                                   Program.addModule (Module.empty name) p)
-                       Program.empty
-                       (Option.moduleNames opt)
+            case Option.moduleNames opt of
+                [] ->
+                    return $
+                        let name = Module.Name "Main"
+                        in  (name, Program.singleton $ Module.empty name)
+                names@(mainModName:_) ->
+                    {-
+                    If a file is not found, we setup an empty module.
+                    If a file exists but contains parse errors
+                    then we abort loading.
+                    -}
+                    fmap ((,) mainModName) $
+                    flip MS.execStateT Program.empty $
+                    mapM_
+                        (\name -> do
+                            epath <-
+                                lift $ lift $ Exc.tryT $
+                                Program.chaseFile (Option.importPaths opt)
+                                    (Module.makeFileName name)
+                            case epath of
+                                Exc.Success path -> do
+                                    p <- MS.get
+                                    MS.put =<<
+                                        lift
+                                            (Program.load (Option.importPaths opt)
+                                                p (Module.deconsName name) path)
+                                Exc.Exception _ ->
+                                    MS.StateT $ excT . fmap ((,) ()) .
+                                        Program.addModule (Module.empty name))
+                        names
 
     input <- newChan
     output <- newTChanIO
-    STM.atomically $ registerProgram output p
+    STM.atomically $ registerProgram output mainMod p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
@@ -202,7 +209,7 @@ data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Message ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
-   | Register ( M.Map Module.Name Module.Module )
+   | Register { _mainModName :: Module.Name, _modules :: M.Map Module.Name Module.Module }
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
@@ -345,9 +352,9 @@ modifyModule importPaths program output moduleName sourceCode pos = do
                       RebuildControls $ Program.controls p2 ]
             return p2
 
-registerProgram :: TChan GuiUpdate -> Program -> STM ()
-registerProgram output p = do
-    writeTChan output $ Register $ Program.modules p
+registerProgram :: TChan GuiUpdate -> Module.Name -> Program -> STM ()
+registerProgram output mainModName p = do
+    writeTChan output $ Register mainModName $ Program.modules p
     writeTChan output $ RebuildControls $ Program.controls p
 
 updateProgram :: TVar Program -> TChan GuiUpdate -> Program -> STM ()
@@ -453,15 +460,15 @@ machine input output importPaths progInit sq = do
                         Log.put $
                             "load " ++ filePath ++ " and all its dependencies"
                         exceptionToGUIIO output $ do
+                            let stem = FilePath.takeBaseName filePath
                             p <-
-                                Program.load importPaths Program.empty
-                                    (FilePath.takeBaseName filePath) filePath
+                                Program.load importPaths Program.empty stem filePath
                             lift $ do
                                 ALSA.stopQueue sq
                                 withMode Event.RealTime $ do
                                     writeTVar program p
                                     writeTMVar term mainName
-                                    registerProgram output p
+                                    registerProgram output (Module.Name stem) p
                                 ALSA.continueQueue sq
                                 Log.put "chased and parsed OK"
 
@@ -1168,12 +1175,13 @@ gui input output = do
             StatusLine str -> do
                 set status [ text := str ]
 
-            Register mods -> do
+            Register mainModName mods -> do
                 void $ WXCMZ.notebookDeleteAllPages nb
                 (writeIORef panels =<<) $ forM mods $ \modu -> do
                     pnl <- displayModule nb modu
                     void $ WXCMZ.notebookAddPage nb (panel pnl)
-                        (Module.deconsName $ Module.name modu) False (-1)
+                        (Module.deconsName $ Module.name modu)
+                        (Module.name modu == mainModName) (-1)
                     return pnl
 
                 updateErrorLog (const Seq.empty)
