@@ -102,7 +102,7 @@ import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( when, liftM2, forever )
+import Control.Monad ( when, liftM, liftM2, forever )
 import Control.Functor.HT ( void )
 import Data.Foldable ( forM_ )
 import Data.Traversable ( forM )
@@ -162,13 +162,11 @@ main = do
                                     (Module.makeFileName name)
                             case epath of
                                 Exc.Success path -> do
-                                    p <- MS.get
-                                    MS.put =<<
-                                        lift
-                                            (Program.load (Option.importPaths opt)
-                                                p (Module.deconsName name) path)
+                                    voidStateT $
+                                        Program.load (Option.importPaths opt)
+                                            (Module.deconsName name) path
                                 Exc.Exception _ ->
-                                    MS.StateT $ excT . fmap ((,) ()) .
+                                    voidStateT $ excT .
                                         Program.addModule (Module.empty name))
                         names
 
@@ -462,7 +460,8 @@ machine input output importPaths progInit sq = do
                         exceptionToGUIIO output $ do
                             let stem = FilePath.takeBaseName filePath
                             p <-
-                                Program.load importPaths Program.empty stem filePath
+                                Program.load importPaths stem filePath
+                                    Program.empty
                             lift $ do
                                 ALSA.stopQueue sq
                                 withMode Event.RealTime $ do
@@ -622,6 +621,9 @@ excT ::
     (Monad m) =>
     Exc.Exceptional e a -> Exc.ExceptionalT e m a
 excT = Exc.ExceptionalT . return
+
+voidStateT :: (Monad m) => (s -> m s) -> MS.StateT s m ()
+voidStateT f = MS.StateT $ liftM ((,) ()) . f
 
 
 writeUpdate ::

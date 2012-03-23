@@ -142,9 +142,9 @@ chaser dirs p n = do
         Just _ -> lift $ do
             Log.put $ "module is already loaded"
             return p
-        Nothing ->
-            load dirs p ( Module.deconsName n ) =<<
-            chaseFile dirs ( Module.makeFileName n )
+        Nothing -> do
+            path <- chaseFile dirs ( Module.makeFileName n )
+            load dirs ( Module.deconsName n ) path p
 
 chaseMany ::
     [ FilePath ] -> [ Module.Name ] -> Program ->
@@ -159,9 +159,9 @@ chaseImports dirs =
     chaseMany dirs . map Module.source . Module.imports
 
 load ::
-    [ FilePath ] -> Program -> String -> FilePath ->
+    [ FilePath ] -> String -> FilePath -> Program ->
     Exc.ExceptionalT Exception.Message IO Program
-load dirs p n ff = do
+load dirs n ff p = do
     parseResult <-
         Exc.mapExceptionT
             (\e -> Exception.Message
