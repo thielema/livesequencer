@@ -821,11 +821,12 @@ gui input output = do
                   "hiding may improve performance drastically" ]
 
 
-    nb <- WX.notebook p [ ]
+    splitter <- WX.splitterWindow p []
 
+    nb <- WX.notebook splitter [ ]
 
     reducer <-
-        WX.textCtrl p
+        WX.textCtrl splitter
             [ font := fontFixed, editable := False, wrap := WrapNone ]
 
     status <- WX.statusField
@@ -1008,18 +1009,40 @@ gui input output = do
         activateSingleStep
         writeChan input $ Execution $ Mode Event.SingleStep
 
-    set reducerVisibleItem
-        [ on command := do
-             b <- get reducerVisibleItem checked
-             set reducer [ visible := b ]
-             WX.windowReFit reducer ]
+    let initSplitterPosition = 0 {- equal division of heights -}
+    newIORef initSplitterPosition >>= \splitterPosition ->
+        set reducerVisibleItem
+            [ on command := do
+                 b <- get reducerVisibleItem checked
+                 isSplit <- WXCMZ.splitterWindowIsSplit splitter
+                 when (b /= isSplit) $ void $
+                     if b
+                       then WXCMZ.splitterWindowSplitHorizontally
+                                    splitter nb reducer =<<
+                                readIORef splitterPosition
+                       else do
+                            writeIORef splitterPosition =<<
+                                WXCMZ.splitterWindowGetSashPosition splitter
+                            WXCMZ.splitterWindowUnsplit splitter reducer
+            ]
+
+    {-
+    Without this dummy page the notebook sometimes gets a very small height,
+    although we explicitly set the splitter position to 0 (= balanced tiling).
+    However the imbalance is not reproducable.
+    Maybe this is a race condition.
+    -}
+    do
+       pnl <- displayModule nb (Module.empty $ Module.Name "Dummy")
+       void $ WXCMZ.notebookAddPage nb (panel pnl) "Dummy" True (-1)
 
     set f [
-            layout := container p $ margin 5
-            $ column 5
-            [ WX.fill $ WX.tabs nb []
-            , WX.fill $ widget reducer
-            ]
+            layout :=
+                container p $ margin 5 $
+                WX.fill $
+                    WX.hsplit splitter
+                        5 {- sash width -} initSplitterPosition
+                        (widget nb) (widget reducer)
             , WX.statusBar := [status]
             , WX.menuBar   := [fileMenu, execMenu, windowMenu]
             , visible := True
