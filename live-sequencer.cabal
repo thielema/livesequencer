@@ -232,6 +232,7 @@ Executable live-sequencer-gui
     Option
     Option.Utility
     Controls
+    ControlsBase
     Program
     Rewrite
     Rule

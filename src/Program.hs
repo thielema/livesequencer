@@ -5,6 +5,7 @@ import Module ( Module )
 import qualified Module
 import qualified Log
 import qualified Exception
+import qualified ControlsBase as Controls
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
@@ -23,26 +24,34 @@ import qualified Data.Foldable as Fold
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Control.Monad ( foldM, liftM2 )
+import Control.Monad ( foldM, liftM3 )
 
 
-data Program = Program
-     { modules :: M.Map Module.Name Module
-     , functions :: Module.FunctionDeclarations
-     , constructors :: Module.ConstructorDeclarations
-     }
+data Program =
+    Program
+        { modules :: M.Map Module.Name Module
+        , functions :: Module.FunctionDeclarations
+        , constructors :: Module.ConstructorDeclarations
+        , controls :: Controls.Assignments
+        }
 --    deriving (Show)
 
 empty :: Program
 empty =
-    Program { modules = M.empty, functions = M.empty, constructors = S.empty }
+    Program {
+        modules = M.empty,
+        functions = M.empty,
+        constructors = S.empty,
+        controls = M.empty
+    }
 
 singleton :: Module -> Program
 singleton m =
     Program {
         modules = M.singleton (Module.name m) m,
         functions = Module.functions m,
-        constructors = Module.constructors m
+        constructors = Module.constructors m,
+        controls = Module.controls m
     }
 
 {- |
@@ -55,24 +64,26 @@ addModule ::
     Module -> Program ->
     Exc.Exceptional Exception.Message Program
 addModule m p =
-    liftM2
+    liftM3
         ( Program ( M.insert ( Module.name m ) m ( modules p ) ) )
         ( unionDecls ( Module.functions m ) ( functions p ) )
         ( fmap M.keysSet $
           unionDecls
               ( mapFromSet $ Module.constructors m )
               ( mapFromSet $ constructors p ) )
+        ( Controls.union ( Module.controls m ) ( controls p ) )
 
 removeModule ::
     Module.Name -> Program -> Program
 removeModule nm p =
     case M.lookup nm $ modules p of
         Nothing -> p
-        Just m -> p {
+        Just m -> Program {
             modules = M.delete nm $ modules p,
             functions = M.difference ( functions p ) ( Module.functions m ),
             constructors =
-                S.difference ( constructors p ) ( Module.constructors m )
+                S.difference ( constructors p ) ( Module.constructors m ),
+            controls = M.difference ( controls p ) ( Module.controls m )
           }
 
 replaceModule ::

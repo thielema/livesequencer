@@ -1,8 +1,10 @@
 module Exception where
 
+import qualified Term
 import Term ( Range(Range) )
 
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
+import qualified Text.ParserCombinators.Parsec as Parsec
 
 import qualified Data.List as List
 
@@ -53,3 +55,9 @@ stringFromType typ =
 flattenMultiline :: String -> String
 flattenMultiline =
     List.intercalate "; " . lines
+
+
+toParsec :: Message -> Parsec.Parser a
+toParsec (Message _ rng msg) = do
+    Parsec.setPosition $ Term.start rng
+    fail msg

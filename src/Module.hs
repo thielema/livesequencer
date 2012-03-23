@@ -3,9 +3,13 @@ module Module where
 import IO ( Input, Output, input, output )
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
+import qualified ControlsBase as Controls
 import qualified Type
 import qualified Term
 import qualified Rule
+
+import qualified Exception
+import qualified Control.Monad.Exception.Synchronous as Exc
 
 import qualified Data.Set as S
 import qualified Data.Map as M
@@ -241,15 +245,17 @@ instance Output Declaration where
 -- So, sourceName is NOT the actual file name.
 -- instead, the actual file name is kept in sourceLocation (defined here)
 
-data Module = Module
-               { name :: Name
-               , imports :: [ Import ]
-               , declarations :: [ Declaration ]
-               , functions :: FunctionDeclarations
-               , constructors :: ConstructorDeclarations
-               , sourceText :: String
-               , sourceLocation :: FilePath
-               }
+data Module =
+    Module
+        { name :: Name
+        , imports :: [ Import ]
+        , declarations :: [ Declaration ]
+        , functions :: FunctionDeclarations
+        , constructors :: ConstructorDeclarations
+        , controls :: Controls.Assignments
+        , sourceText :: String
+        , sourceLocation :: FilePath
+        }
 
 newtype Name = Name {deconsName :: String}
     deriving (Eq, Ord)
@@ -275,18 +281,6 @@ makeFileName (Name n) =
 type FunctionDeclarations = M.Map Identifier [Rule]
 type ConstructorDeclarations = S.Set Identifier
 
-fromDeclarations :: Name -> [Declaration] -> Module
-fromDeclarations moduleName decls =
-    let m = Module {
-                name = moduleName,
-                imports = [],
-                sourceText = show m,
-                sourceLocation = "/dev/null",
-                functions = makeFunctions decls,
-                constructors = makeConstructors decls,
-                declarations = decls
-            }
-    in  m
 
 empty :: Name -> Module
 empty moduleName =
@@ -297,6 +291,7 @@ empty moduleName =
         sourceLocation = "/dev/null",
         functions = M.empty,
         constructors = S.empty,
+        controls = M.empty,
         declarations = []
     }
 
@@ -304,7 +299,7 @@ empty moduleName =
 addRule :: Rule -> Module -> Module
 addRule rule@(Rule.Rule ident params _rhs) m =
     m { declarations =
-            update
+            revUpdate
                 (\d -> case d of
                     RuleDeclaration r' ->
                         ident == Rule.name r' &&
@@ -314,14 +309,25 @@ addRule rule@(Rule.Rule ident params _rhs) m =
             declarations m,
         functions =
             M.insertWith
-                (\_ -> update ((params ==) . Rule.parameters) rule)
+                (\_ -> revUpdate ((params ==) . Rule.parameters) rule)
                 ident [rule] $
             functions m }
 
+{- |
+replace a matching element if it exists
+and append the new element otherwise.
+-}
 update :: (a -> Bool) -> a -> [a] -> [a]
 update matches x xs =
     let ( pre, post ) = span ( not . matches ) xs
     in  pre ++ x : drop 1 post
+
+{- |
+replace a matching element if it exists
+and prepend the new element otherwise.
+-}
+revUpdate :: (a -> Bool) -> a -> [a] -> [a]
+revUpdate p x = reverse . update p x . reverse
 
 makeFunctions ::
     [Declaration] -> M.Map Identifier [Rule]
@@ -338,6 +344,16 @@ makeConstructors decls = S.fromList $ do
     DataDeclaration (Data {dataRhs = summands}) <- decls
     Term.Node ident _ <- summands
     return ident
+
+makeControls ::
+    [Declaration] ->
+    Exc.Exceptional Exception.Message Controls.Assignments
+makeControls decls =
+    flip (foldr
+        (\r go a -> Controls.collect r >>= Controls.union a >>= go)
+        return) M.empty $ do
+    Module.RuleDeclaration rule <- decls
+    return $ Rule.rhs rule
 
 
 {-
@@ -360,10 +376,15 @@ parse srcLoc srcText = do
         return m
     is <- Parsec.many input
     ds <- Parsec.many input
+    ctrls <-
+        case makeControls ds of
+            Exc.Success c -> return c
+            Exc.Exception e -> Exception.toParsec e
     return $ Module {
         name = m, imports = is, declarations = ds,
         functions = makeFunctions ds,
         constructors = makeConstructors ds,
+        controls = ctrls,
         sourceText = srcText,
         sourceLocation = srcLoc }
 

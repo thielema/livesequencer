@@ -139,9 +139,8 @@ main = do
     IO.hSetBuffering IO.stderr IO.LineBuffering
     opt <- Option.get
 
-    (p,ctrls) <-
+    p <-
         Exc.resolveT (exitFailureMsg . Exception.multilineFromMessage) $
-            prepareProgram =<<
             if null $ Option.moduleNames opt
               then return $ Program.singleton $
                    Module.empty (Module.Name "Main")
@@ -168,7 +167,7 @@ main = do
 
     input <- newChan
     output <- newTChanIO
-    writeTChanIO output $ Register (Program.modules p) ctrls
+    writeTChanIO output $ Register $ Program.modules p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
@@ -203,7 +202,7 @@ data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Message ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
-   | Register ( M.Map Module.Name Module.Module ) Controls.Assignments
+   | Register ( M.Map Module.Name Module.Module )
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
@@ -228,16 +227,6 @@ exceptionToGUIIO ::
     IO ()
 exceptionToGUIIO output =
     Exc.resolveT (writeTChanIO output . Exception)
-
-prepareProgram ::
-    (Monad m) =>
-    Program ->
-    Exc.ExceptionalT Exception.Message m (Program, Controls.Assignments)
-prepareProgram p0 = do
-    ctrls <- excT $ Controls.collect p0
-    p1 <- excT $
-        Program.replaceModule (Controls.controllerModule ctrls) p0
-    return (p1, ctrls)
 
 parseTerm ::
     (Monad m, IO.Input a) =>
@@ -452,8 +441,7 @@ machine input output importPaths progInit sq = do
                         Log.put $
                             "load " ++ filePath ++ " and all its dependencies"
                         exceptionToGUIIO output $ do
-                            (p,ctrls) <-
-                                prepareProgram =<<
+                            p <-
                                 Program.load importPaths Program.empty
                                     (FilePath.takeBaseName filePath) filePath
                             lift $ do
@@ -462,7 +450,7 @@ machine input output importPaths progInit sq = do
                                     writeTVar program p
                                     writeTMVar term mainName
                                     writeTChan output $
-                                        Register (Program.modules p) ctrls
+                                        Register (Program.modules p)
                                 ALSA.continueQueue sq
                                 Log.put "chased and parsed OK"
 
@@ -647,7 +635,6 @@ gui :: Chan Action -- ^  the gui writes here
       -- (a textual representation of "current expression")
     -> IO ()
 gui input output = do
-    controls <- newIORef M.empty
     panels <- newIORef M.empty
 
     frameError <- WX.frame [ text := "errors" ]
@@ -1141,12 +1128,10 @@ gui input output = do
             StatusLine str -> do
                 set status [ text := str ]
 
-            Register mods ctrls -> do
+            Register mods -> do
                 void $ WXCMZ.notebookDeleteAllPages nb
-                pnls <- displayModules input
-                            frameControls ctrls nb mods
+                pnls <- displayModules input frameControls nb mods
                 writeIORef panels pnls
-                writeIORef controls ctrls
                 forM_ (M.mapWithKey (,) $ fmap panel pnls) $
                     \(moduleName,sub) ->
                         WXCMZ.notebookAddPage nb sub (Module.deconsName moduleName) False (-1)
@@ -1245,12 +1230,12 @@ data Panel =
 displayModules ::
     Chan Action ->
     WX.Frame () ->
-    Controls.Assignments ->
     WX.Window a ->
     M.Map Module.Name Module.Module ->
     IO (M.Map Module.Name Panel)
-displayModules input frameControls ctrls nb mods = do
-    Controls.create frameControls ctrls $
+displayModules input frameControls nb mods = do
+    Controls.create frameControls
+        (M.unions $ map Module.controls $ M.elems mods) $
         writeChan input . Control
 
     forM mods $ displayModule nb
