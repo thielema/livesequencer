@@ -64,7 +64,7 @@ import Graphics.UI.WX.Controls
              Align(AlignLeft, AlignRight), Wrap(WrapNone) )
 import Graphics.UI.WX.Events
 import Graphics.UI.WX.Layout
-           ( widget, container, layout, margin, row, column )
+           ( widget, container, layout, margin )
 import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
@@ -1079,7 +1079,7 @@ gui input output = do
 
     set frameError
         [ layout := container panelError $ margin 5
-              $ column 5 $
+              $ WX.column 5 $
                  [ WX.fill $ widget errorLog,
                    WX.hfloatLeft $ widget clearLog ]
         , clientSize := sz 500 300
@@ -1245,7 +1245,7 @@ gui input output = do
 
 data Panel =
     Panel {
-        panel :: WX.Panel (),
+        panel :: WX.SplitterWindow (),
         editor, highlighter :: WX.TextCtrl (),
         sourceLocation :: FilePath
     }
@@ -1269,14 +1269,18 @@ displayModule ::
     Module.Module ->
     IO Panel
 displayModule nb modu = do
-    psub <- WX.panel nb []
+    psub <- WX.splitterWindow nb []
     ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
     hl <- WX.textCtrlRich psub
         [ font := fontFixed, wrap := WrapNone, editable := False ]
     set ed [ text := Module.sourceText modu ]
     set hl [ text := Module.sourceText modu ]
-    set psub [ layout := (row 5 $
-        map WX.fill $ [widget ed, widget hl]) ]
+    void $ WXCMZ.splitterWindowSplitVertically psub ed hl 0
+{-
+    set psub [
+        layout :=
+            WX.vsplit psub 5 0 (WX.fill $ widget ed) (WX.fill $ widget hl) ]
+-}
     return $ Panel psub ed hl $ Module.sourceLocation modu
 
 
