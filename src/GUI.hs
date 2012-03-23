@@ -167,7 +167,7 @@ main = do
 
     input <- newChan
     output <- newTChanIO
-    writeTChanIO output $ Register $ Program.modules p
+    STM.atomically $ registerProgram output p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
@@ -207,6 +207,7 @@ data GuiUpdate =
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
    | RenamePage Module.Name Module.Name
+   | RebuildControls Controls.Assignments
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
@@ -340,8 +341,19 @@ modifyModule importPaths program output moduleName sourceCode pos = do
             MW.tell $ map (InsertPage False) $ M.elems $
                 M.difference ( Program.modules p2 ) ( Program.modules p1 )
             -- Refresh must happen after a Rename
-            MW.tell [ Refresh (Module.name m) sourceCode pos ]
+            MW.tell [ Refresh (Module.name m) sourceCode pos,
+                      RebuildControls $ Program.controls p2 ]
             return p2
+
+registerProgram :: TChan GuiUpdate -> Program -> STM ()
+registerProgram output p = do
+    writeTChan output $ Register $ Program.modules p
+    writeTChan output $ RebuildControls $ Program.controls p
+
+updateProgram :: TVar Program -> TChan GuiUpdate -> Program -> STM ()
+updateProgram program output p = do
+    liftSTM $ writeTVar program p
+    liftSTM $ writeTChan output $ RebuildControls $ Program.controls p
 
 
 {-
@@ -449,8 +461,7 @@ machine input output importPaths progInit sq = do
                                 withMode Event.RealTime $ do
                                     writeTVar program p
                                     writeTMVar term mainName
-                                    writeTChan output $
-                                        Register (Program.modules p)
+                                    registerProgram output p
                                 ALSA.continueQueue sq
                                 Log.put "chased and parsed OK"
 
@@ -468,7 +479,7 @@ machine input output importPaths progInit sq = do
                                 Exc.Exception e ->
                                     error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
                                 Exc.Success newPrg ->
-                                    liftSTM $ writeTVar program newPrg
+                                    liftSTM $ updateProgram program output newPrg
                             liftSTM $ writeTChan output $ InsertPage True modu
 
                     CloseModule modName ->
@@ -490,14 +501,15 @@ machine input output importPaths progInit sq = do
                                 "it does not exist"
                             flip Exc.assertT (M.size modules > 1) $
                                 "there must remain at least one module"
-                            liftSTM $ writeTVar program $ Program.removeModule modName prg
+                            liftSTM $ updateProgram program output $
+                                Program.removeModule modName prg
                             liftSTM $ writeTChan output $ DeletePage modName
 
                     FlushModules modName ->
                         STM.atomically $ do
                             prg <- readTVar program
                             let (removed, minPrg) = Program.minimize modName prg
-                            writeTVar program $ minPrg
+                            updateProgram program output minPrg
                             Fold.mapM_ (writeTChan output . DeletePage) removed
 
     void $ forkIO $
@@ -1128,6 +1140,11 @@ gui input output = do
                 highlight 200 0 200 rules
                 highlight 200 200 0 origins
 
+            ResetDisplay -> do
+                hls <- fmap (fmap highlighter) $ readIORef panels
+                setColor hls WXCore.white
+                    =<< varSwap highlights M.empty
+
             Exception exc -> do
                 itemAppend errorLog $ Exception.lineFromMessage exc
                 modifyIORef errorList (Seq.|> exc)
@@ -1153,21 +1170,16 @@ gui input output = do
 
             Register mods -> do
                 void $ WXCMZ.notebookDeleteAllPages nb
-                pnls <- displayModules input frameControls nb mods
-                writeIORef panels pnls
-                forM_ (M.mapWithKey (,) $ fmap panel pnls) $
-                    \(moduleName,sub) ->
-                        WXCMZ.notebookAddPage nb sub (Module.deconsName moduleName) False (-1)
+                (writeIORef panels =<<) $ forM mods $ \modu -> do
+                    pnl <- displayModule nb modu
+                    void $ WXCMZ.notebookAddPage nb (panel pnl)
+                        (Module.deconsName $ Module.name modu) False (-1)
+                    return pnl
 
                 updateErrorLog (const Seq.empty)
 
                 set status [ text :=
                     "modules loaded: " ++ formatModuleList ( M.keys mods ) ]
-
-            ResetDisplay -> do
-                hls <- fmap (fmap highlighter) $ readIORef panels
-                setColor hls WXCore.white
-                    =<< varSwap highlights M.empty
 
             InsertPage act modu -> do
                 pnls <- readIORef panels
@@ -1218,6 +1230,10 @@ gui input output = do
                 set status [ text := "renamed " ++ Module.tellName fromName ++
                                      " to " ++ Module.tellName toName ]
 
+            RebuildControls ctrls ->
+                Controls.create frameControls ctrls $
+                    writeChan input . Control
+
             Running mode -> do
                 case mode of
                     Event.RealTime -> do
@@ -1249,20 +1265,6 @@ data Panel =
         editor, highlighter :: WX.TextCtrl (),
         sourceLocation :: FilePath
     }
-
-displayModules ::
-    Chan Action ->
-    WX.Frame () ->
-    WX.Window a ->
-    M.Map Module.Name Module.Module ->
-    IO (M.Map Module.Name Panel)
-displayModules input frameControls nb mods = do
-    Controls.create frameControls
-        (M.unions $ map Module.controls $ M.elems mods) $
-        writeChan input . Control
-
-    forM mods $ displayModule nb
-
 
 displayModule ::
     WXCore.Window b ->
