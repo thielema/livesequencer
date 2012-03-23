@@ -18,8 +18,9 @@ import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
 import Text.ParserCombinators.Parsec.Expr
            ( Assoc(AssocLeft, AssocRight, AssocNone) )
+import qualified Text.PrettyPrint.HughesPJ as Pretty
 import Text.PrettyPrint.HughesPJ
-           ( (<+>), ($$), empty, hsep, sep, hang, punctuate,
+           ( (<+>), ($$), hsep, sep, hang, punctuate,
              render, text, comma, vcat, parens )
 import qualified Data.Char as Char
 
@@ -73,10 +74,10 @@ instance Input Import where
 
 instance Output Import where
     output i = hsep [ text "import"
-                    , if qualified i then text "qualified" else empty
+                    , if qualified i then text "qualified" else Pretty.empty
                     , output $ source i
                     , case rename i of
-                        Nothing -> empty
+                        Nothing -> Pretty.empty
                         Just r  -> text "as" <+> output r
                     ]
 
@@ -105,7 +106,7 @@ instance Output TypeSig where
             nestDepth
             (sep
                 [if null context
-                   then empty
+                   then Pretty.empty
                    else parens ( hsep ( punctuate ( text "," ) $
                                  map output context ) ) <+> text "=>",
                  output typeExpr <+> text ";"])
@@ -287,6 +288,18 @@ fromDeclarations moduleName decls =
             }
     in  m
 
+empty :: Name -> Module
+empty moduleName =
+    Module {
+        name = moduleName,
+        imports = [],
+        sourceText = show $ outputModuleHead moduleName,
+        sourceLocation = "/dev/null",
+        functions = M.empty,
+        constructors = S.empty,
+        declarations = []
+    }
+
 -- | add, or replace (if rule with exact same lhs is already present)
 addRule :: Rule -> Module -> Module
 addRule rule@(Rule.Rule ident params _rhs) m =
@@ -363,9 +376,13 @@ parseUntilEOF srcLoc srcText = do
     return m
 
 
+outputModuleHead :: Name -> Pretty.Doc
+outputModuleHead nm =
+    hsep [ text "module", output nm, text "where" ]
+
 instance Output Module where
   output p = vcat
-    [ hsep [ text "module", output $ name p, text "where" ]
+    [ outputModuleHead (name p)
     , vcat $ map output $ imports p
     , vcat $ map output $ declarations p
     ]

@@ -144,7 +144,7 @@ main = do
             prepareProgram =<<
             if null $ Option.moduleNames opt
               then return $ Program.singleton $
-                   Module.fromDeclarations (Module.Name "Main") []
+                   Module.empty (Module.Name "Main")
               else {-
                    If a file is not found, we setup an empty module.
                    If a file exists but contains parse errors
@@ -162,7 +162,7 @@ main = do
                                        p (Module.deconsName name) path
                                Exc.Exception _ ->
                                    excT $
-                                   Program.addModule (Module.fromDeclarations name []) p)
+                                   Program.addModule (Module.empty name) p)
                        Program.empty
                        (Option.moduleNames opt)
 
@@ -475,7 +475,7 @@ machine input output importPaths progInit sq = do
                                    map (Module.Name . ("New"++)) $
                                    "" : map show (iterate (1+) (1::Integer))
 
-                                modu = Module.fromDeclarations modName []
+                                modu = Module.empty modName
                             case Program.addModule modu prg of
                                 Exc.Exception e ->
                                     error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
