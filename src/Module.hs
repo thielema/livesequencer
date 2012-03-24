@@ -273,6 +273,16 @@ nameFromIdentifier :: Identifier -> Name
 nameFromIdentifier =
     Name . Pos.sourceName . Term.start . Term.range
 
+{- |
+Make a dummy Range if only the module name is known.
+-}
+nameRange :: Name -> Term.Range
+nameRange (Name n) = Exception.dummyRange n
+
+inoutExceptionMsg :: Module.Name -> String -> Exception.Message
+inoutExceptionMsg moduleName msg =
+    Exception.Message Exception.InOut (Module.nameRange moduleName) msg
+
 makeFileName :: Name -> FilePath
 makeFileName (Name n) =
     FP.addExtension (FP.joinPath $ chop ('.'==) n) "hs"

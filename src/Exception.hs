@@ -81,6 +81,11 @@ removeLeadingNewline ('\n':str) = str
 removeLeadingNewline str = str
 
 
+dummyRange :: String -> Range
+dummyRange f =
+    let pos = Pos.initialPos f
+    in  Range pos pos
+
 
 
 -- also available in explicit-exception>=0.1.7

@@ -253,11 +253,6 @@ parseTerm (MarkedText pos str) =
             Exc.throwT $ Exception.messageFromParserError msg
         Right t -> return t
 
-inoutExceptionMsg :: Module.Name -> String -> Exception.Message
-inoutExceptionMsg moduleName msg =
-    Exception.Message Exception.InOut
-        (Program.dummyRange (Module.deconsName moduleName)) msg
-
 
 formatPitch :: VM.Pitch -> String
 formatPitch p =
@@ -311,8 +306,7 @@ modifyModule importPaths program output moduleName sourceCode pos = do
 --            Log.put "parsed and modified OK"
             return Nothing) $ do
         let exception =
-                Exception.Message Exception.Parse
-                    (Program.dummyRange $ Module.deconsName moduleName)
+                Exception.Message Exception.Parse (Module.nameRange moduleName)
         previous <-
             case M.lookup moduleName $ Program.modules p of
                 Nothing ->
@@ -497,7 +491,7 @@ machine input output importPaths progInit sq = do
                     CloseModule modName ->
                         STM.atomically $ exceptionToGUI output $
                             Exc.mapExceptionT
-                                (inoutExceptionMsg modName .
+                                (Module.inoutExceptionMsg modName .
                                  ("cannot close module: " ++)) $ do
                             prg <- liftSTM $ readTVar program
                             let modules = Program.modules prg
@@ -831,7 +825,7 @@ gui input output = do
             case result of
                 Left err ->
                     writeTChanIO output $ Exception $
-                    inoutExceptionMsg moduleName $
+                    Module.inoutExceptionMsg moduleName $
                     Err.ioeGetErrorString err
                 Right () -> return ()
 
@@ -1166,7 +1160,7 @@ gui input output = do
                     set status [ text := "new " ++ Module.tellName modName ]
                   else
                     writeTChanIO output $ Exception $
-                    inoutExceptionMsg modName $
+                    Module.inoutExceptionMsg modName $
                     "Panic: cannot add page for the module"
 
             DeletePage modName -> do
@@ -1185,7 +1179,7 @@ gui input output = do
                     success <- WXCMZ.notebookRemovePage nb i
                     when (not success) $
                         writeTChanIO output $ Exception $
-                        inoutExceptionMsg fromName $
+                        Module.inoutExceptionMsg fromName $
                         "Panic: cannot remove page for renaming module"
                     let newPnls =
                             M.insert toName pnl $ M.delete fromName pnls

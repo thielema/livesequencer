@@ -1,6 +1,6 @@
 module Program where
 
-import Term ( Range (Range), Identifier )
+import Term ( Identifier )
 import Module ( Module )
 import qualified Term
 import qualified Module
@@ -12,8 +12,6 @@ import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
 
 import qualified Control.Exception as ExcBase
-
-import qualified Text.ParserCombinators.Parsec.Pos as Pos
 
 import qualified System.IO.Strict as StrictIO
 import System.Directory ( doesFileExist )
@@ -165,7 +163,7 @@ load dirs n ff p = do
     content <-
         Exc.mapExceptionT
             (\e -> Exception.Message
-                Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
+                Exception.InOut (Exception.dummyRange ff) (Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $ StrictIO.readFile ff
     m <- Exception.lift $ Module.parse n ff content
     lift $ Log.put $ show m
@@ -187,11 +185,6 @@ chaseFile dirs f =
                 return ff
               else go)
         (Exc.throwT $ Exception.Message Exception.InOut
-             (dummyRange f)
+             (Exception.dummyRange f)
              (unwords [ "module", "not", "found:", f ]))
         dirs
-
-dummyRange :: String -> Range
-dummyRange f =
-    let pos = Pos.initialPos f
-    in  Range pos pos

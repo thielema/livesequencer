@@ -47,8 +47,7 @@ changeControllerModule p event = case event of
         flip Program.replaceModule p .
         Module.addRule ( controllerRule name val ) =<<
         Exc.fromMaybe
-            ( Exception.Message Exception.InOut
-                ( Program.dummyRange $ Module.deconsName moduleName )
+            ( Module.inoutExceptionMsg moduleName
                 "cannot find module for controller updates" )
             ( M.lookup moduleName $ Program.modules p )
 
@@ -59,7 +58,7 @@ controllerRule name val =
     Rule.Rule
         ( read "checkBox" )
         [ Term.StringLiteral
-              ( Program.dummyRange $ Module.deconsName moduleName )
+              ( Module.nameRange moduleName )
               ( deconsName name ),
           read "deflt" ]
         ( Term.Node ( read $ show val ) [] )
