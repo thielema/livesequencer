@@ -1,6 +1,7 @@
 module Rewrite where
 
-import Term ( Term(..), Identifier(..), Range(..), termRange )
+import Term ( Term(Node, Number, StringLiteral),
+              Identifier(Identifier, range, name), Range, termRange )
 import Program ( Program )
 import qualified Program
 import qualified Term

@@ -10,7 +10,7 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Paths_live_sequencer as Paths
 import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
-          (getOpt, ArgOrder(..), ArgDescr(..), usageInfo, )
+          (getOpt, usageInfo, ArgDescr(NoArg, ReqArg), )
 import System.Environment (getArgs, getProgName, )
 import System.FilePath ( (</>), searchPathSeparator )
 
@@ -121,7 +121,7 @@ get = do
     argv <- getArgs
     deflt <- getDeflt
     let (opts, files, errors) =
-            getOpt RequireOrder (description deflt) argv
+            getOpt Opt.RequireOrder (description deflt) argv
     when (not $ null errors) $
         exitFailureMsg (init (concat errors))
 

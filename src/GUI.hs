@@ -59,21 +59,24 @@ import qualified HTTPServer.GUI as HTTPGui
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
+           ( itemAppend, items, checkable, checked, clientSize,
+             close, enabled, font, help, text, visible )
 import Graphics.UI.WX.Controls
            ( Notebook, TextCtrl, wrap, focusOn, columns, listEvent,
              Align(AlignLeft, AlignRight), Wrap(WrapNone) )
 import Graphics.UI.WX.Events
+           ( on, closing, command )
 import Graphics.UI.WX.Layout
            ( widget, container, layout, margin )
 import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.MVar
-import Control.Concurrent.Chan
-import Control.Concurrent.STM.TChan
-import Control.Concurrent.STM.TVar
-import Control.Concurrent.STM.TMVar
+import Control.Concurrent.MVar ( MVar, putMVar )
+import Control.Concurrent.Chan ( Chan, newChan, readChan, writeChan )
+import Control.Concurrent.STM.TChan ( TChan, newTChanIO, readTChan, writeTChan )
+import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
+import Control.Concurrent.STM.TMVar ( TMVar, newTMVarIO, putTMVar, readTMVar, takeTMVar )
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
@@ -84,7 +87,7 @@ import qualified Graphics.UI.WXCore.WxcClassesAL as WXCAL
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 
-import Graphics.UI.WXCore.Events
+import qualified Graphics.UI.WXCore.Events as WXEvent
 import qualified Event
 
 import Foreign.Ptr ( Ptr )
@@ -307,14 +310,19 @@ modifyModule importPaths program output moduleName sourceCode pos = do
                 writeTVar program newP
 --            Log.put "parsed and modified OK"
             return Nothing) $ do
-        let Just previous = M.lookup moduleName $ Program.modules p
+        let exception =
+                Exception.Message Exception.Parse
+                    (Program.dummyRange $ Module.deconsName moduleName)
+        previous <-
+            case M.lookup moduleName $ Program.modules p of
+                Nothing ->
+                    Exc.throwT $ exception $
+                    Module.tellName moduleName ++ " does no longer exist"
+                Just m -> return m
         m <-
             excT $ Module.parse
                 (Module.deconsName moduleName)
                 (Module.sourceLocation previous) sourceCode
-        let exception =
-                Exception.Message Exception.Parse
-                    (Program.dummyRange $ Module.deconsName moduleName)
         {-
         My first thought was that renaming of modules
         should be generally forbidden via HTTP.
@@ -641,7 +649,7 @@ createMyEvent =
     WXCAL.commandEventCreate WXCMZ.wxEVT_COMMAND_MENU_SELECTED myEventId
 
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
-registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
+registerMyEvent win io = WXEvent.evtHandlerOnMenuCommand win myEventId io
 
 
 {-
@@ -804,7 +812,7 @@ gui input output = do
                         set itm [ checked := False ]
                         set win [ visible := False ]
                         -- WXCMZ.closeEventVeto ??? True
-                      else propagateEvent ]
+                      else WXEvent.propagateEvent ]
 
     windowMenuItem "errors" $ errorFrame frameError
     windowMenuItem "controls" frameControls
@@ -1070,7 +1078,7 @@ gui input output = do
             writeIORef appRunning False >>
             close (errorFrame frameError) >> close frameControls
     set quitItem [ on command := closeOther >> close f]
-    set f [ on closing := closeOther >> propagateEvent
+    set f [ on closing := closeOther >> WXEvent.propagateEvent
         {- 'close f' would trigger the closing handler again -} ]
     focusOn f
 
@@ -1286,7 +1294,7 @@ onErrorSelection ::
 onErrorSelection r act =
     set (errorLog r)
         [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
-              ListItemSelected n <- return ev
+              WXEvent.ListItemSelected n <- return ev
               errors <- liftIO $ readIORef (errorList r)
               let msg@(Exception.Message _typ _errorRng descr) =
                       Seq.index errors n

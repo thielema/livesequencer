@@ -1,7 +1,8 @@
 module Program where
 
-import Term ( Range (Range), Identifier (..) )
+import Term ( Range (Range), Identifier )
 import Module ( Module )
+import qualified Term
 import qualified Module
 import qualified Log
 import qualified Exception
@@ -97,16 +98,16 @@ mapFromSet =
     M.fromAscList . map (flip (,) ()) . S.toAscList
 
 unionDecls ::
-    M.Map Term.Identifier a ->
-    M.Map Term.Identifier a ->
-    Exc.Exceptional Exception.Message ( M.Map Term.Identifier a )
+    M.Map Identifier a ->
+    M.Map Identifier a ->
+    Exc.Exceptional Exception.Message ( M.Map Identifier a )
 unionDecls m0 m1 =
     let f = M.mapWithKey (\nm rs -> (nm, Exc.Success rs))
     in  Trav.sequenceA . fmap snd $
         M.unionWith (\(n0,_) (n1,_) ->
             (n0,
              Exc.Exception $ Exception.Message Exception.Parse
-                 (range n0)
+                 (Term.range n0)
                  ("duplicate definition of " ++ show n0 ++
                   " in " ++ (Module.deconsName $ Module.nameFromIdentifier n0) ++
                   " and " ++ (Module.deconsName $ Module.nameFromIdentifier n1))))

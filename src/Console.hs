@@ -1,8 +1,9 @@
 -- module Console where
 
-import Term
+import Term ( Term )
 import Program ( Program )
 import qualified Program
+import qualified Term
 import qualified Event
 import qualified Rewrite
 import qualified Exception
@@ -13,7 +14,7 @@ import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.Chan
+import Control.Concurrent.Chan ( Chan, newChan )
 
 import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.State as MS
@@ -45,7 +46,7 @@ main = do
         void $ forkIO $ Event.listen sq print waitChan
         ALSA.startQueue sq
         Event.runState $
-            execute p sq waitChan mainName
+            execute p sq waitChan Term.mainName
 
 writeExcMsg :: Exception.Message -> IO ()
 writeExcMsg = putStrLn . Exception.statusFromMessage
@@ -73,7 +74,7 @@ execute p sq waitChan =
                     lift $ Event.wait sq waitChan mdur
                     go xs
                 _ -> throwT
-                        (termRange s,
+                        (Term.termRange s,
                          "do not know how to handle term\n" ++ show s)
     in  resolveT
             (\(pos, msg) ->

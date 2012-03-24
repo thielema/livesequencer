@@ -1,7 +1,8 @@
 module Event where
 
-import Term
+import Term ( Term(Number, StringLiteral), termRange )
 import ALSA ( Sequencer(handle, queue, privatePort), sendEvent )
+import qualified Term
 import qualified ALSA
 import qualified Time
 import qualified Exception

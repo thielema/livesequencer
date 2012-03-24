@@ -1,6 +1,6 @@
 module Rule where
 
-import IO
+import IO ( Input(input), Output(output), parsecReader )
 import Term ( Term(Node), Identifier )
 import qualified Term
 

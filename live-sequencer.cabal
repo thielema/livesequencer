@@ -178,6 +178,8 @@ Executable live-sequencer
   Other-Modules:
     Lilypond
   GHC-Options: -Wall -threaded
+  If impl(ghc>=7.0)
+    GHC-Options: -fwarn-unused-do-bind -fwarn-missing-import-lists
   Build-Depends:
     transformers >=0.2.2 && <0.3,
     explicit-exception >=0.1.5 && <0.2,
