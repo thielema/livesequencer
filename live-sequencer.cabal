@@ -85,6 +85,7 @@ Data-Files:
 
   data/Bool.hs
   data/Chords.hs
+  data/Controls.hs
   data/Drum.hs
   data/Function.hs
   data/Instrument.hs
@@ -135,6 +136,7 @@ Library
     Render
     Bool
     Chords
+    Controls
     Drum
     Function
     Instrument
