@@ -3,6 +3,8 @@ module Exception where
 import qualified Term
 import Term ( Range(Range) )
 
+import qualified Control.Monad.Exception.Synchronous as Exc
+
 import qualified Text.ParserCombinators.Parsec.Error as PErr
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec as Parsec
@@ -77,3 +79,18 @@ messageFromParserError err = Message
 removeLeadingNewline :: String -> String
 removeLeadingNewline ('\n':str) = str
 removeLeadingNewline str = str
+
+
+
+
+-- also available in explicit-exception>=0.1.7
+switchT ::
+    (Monad m) =>
+    (e -> m b) -> (a -> m b) ->
+    Exc.ExceptionalT e m a -> m b
+switchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
+
+lift ::
+    (Monad m) =>
+    Exc.Exceptional e a -> Exc.ExceptionalT e m a
+lift = Exc.ExceptionalT . return

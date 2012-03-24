@@ -167,10 +167,9 @@ load dirs n ff p = do
             (\e -> Exception.Message
                 Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
         Exc.fromEitherT $ ExcBase.try $ StrictIO.readFile ff
-    m <- Exc.ExceptionalT $ return $ Module.parse n ff content
+    m <- Exception.lift $ Module.parse n ff content
     lift $ Log.put $ show m
-    chaseImports dirs m =<<
-        ( Exc.ExceptionalT $ return $ addModule m p )
+    chaseImports dirs m =<< Exception.lift ( addModule m p )
 
 -- | look for file, trying to append its name to the directories in the path,
 -- in turn. Will fail if file is not found.

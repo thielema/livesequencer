@@ -169,7 +169,7 @@ main = do
                                         Program.load (Option.importPaths opt)
                                             (Module.deconsName name) path
                                 Exc.Exception _ ->
-                                    voidStateT $ excT .
+                                    voidStateT $ Exception.lift .
                                         Program.addModule (Module.empty name))
                         names
 
@@ -300,7 +300,7 @@ modifyModule ::
     IO (Maybe Exception.Message)
 modifyModule importPaths program output moduleName sourceCode pos = do
     p <- readTVarIO program
-    excSwitchT
+    Exception.switchT
         (\e -> do
             writeTChanIO output $ Exception e
             return $ Just e)
@@ -320,7 +320,7 @@ modifyModule importPaths program output moduleName sourceCode pos = do
                     Module.tellName moduleName ++ " does no longer exist"
                 Just m -> return m
         m <-
-            excT $ Module.parse
+            Exception.lift $ Module.parse
                 (Module.deconsName moduleName)
                 (Module.sourceLocation previous) sourceCode
         {-
@@ -337,14 +337,14 @@ modifyModule importPaths program output moduleName sourceCode pos = do
         MW.runWriterT $ do
             p1 <-
                 if' (moduleName == Module.name m)
-                    (lift $ excT $ Program.replaceModule m p) $
+                    (lift $ Exception.lift $ Program.replaceModule m p) $
                 if' allowRename (do
                      lift $ Exc.assertT
                          (exception $ Module.tellName (Module.name m) ++ " already exists")
                          (not $ M.member (Module.name m) $ Program.modules p)
                      MW.tell
                          [ RenamePage moduleName (Module.name m) ]
-                     lift $ excT $ Program.addModule m $
+                     lift $ Exception.lift $ Program.addModule m $
                          Program.removeModule moduleName p) $
                 (lift $ Exc.throwT $ exception
                     "module name does not match page name and renaming is disallowed")
@@ -399,7 +399,7 @@ machine input output importPaths progInit sq = do
                 Log.put $ show event
                 STM.atomically $ exceptionToGUI output $ do
                     p <- lift $ readTVar program
-                    p' <- excT $ Controls.changeControllerModule p event
+                    p' <- Exception.lift $ Controls.changeControllerModule p event
                     lift $ writeTVar program p'
                     -- return $ Controls.getControllerModule p'
                 -- Log.put $ show m
@@ -558,7 +558,7 @@ executeStep ::
     MW.WriterT [ GuiUpdate ]
         ( MS.StateT Event.State IO ) ( Maybe Event.Time )
 executeStep program term writeExcMsg sq =
-    excSwitchT
+    Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
             -- writeChan waitChan $ Event.ModeChange Event.SingleStep
@@ -616,17 +616,6 @@ executeStep program term writeExcMsg sq =
                     Exc.throwT (Term.termRange s,
                         "I do not know how to handle this term: " ++ show s))
 
--- also available in explicit-exception>=0.1.7
-excSwitchT ::
-    (Monad m) =>
-    (e -> m b) -> (a -> m b) ->
-    Exc.ExceptionalT e m a -> m b
-excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
-
-excT ::
-    (Monad m) =>
-    Exc.Exceptional e a -> Exc.ExceptionalT e m a
-excT = Exc.ExceptionalT . return
 
 voidStateT :: (Monad m) => (s -> m s) -> MS.StateT s m ()
 voidStateT f = MS.StateT $ liftM ((,) ()) . f
