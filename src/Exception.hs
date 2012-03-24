@@ -22,7 +22,7 @@ lineFromMessage (Message typ (Range pos _) descr) =
     Pos.sourceName pos :
     show (Pos.sourceLine pos) : show (Pos.sourceColumn pos) :
     stringFromType typ :
-    flattenMultiline descr :
+    head (lines descr) :
     []
 
 statusFromMessage :: Message -> String

@@ -660,7 +660,9 @@ gui input output = do
 
     panelError <- WX.panel frameError [ ]
 
-    errorLog <- WX.listCtrl panelError
+    errorSplitter <- WX.splitterWindow panelError [ ]
+
+    errorLog <- WX.listCtrl errorSplitter
         [ columns :=
               ("Module", AlignLeft, 120) :
               ("Row", AlignRight, -1) :
@@ -677,9 +679,14 @@ gui input output = do
             set errorLog [ items :=
                   map Exception.lineFromMessage $ Fold.toList newErrors ]
 
+    errorText <- WX.textCtrl errorSplitter
+        [ font := fontFixed, wrap := WrapNone, editable := False ]
+
     clearLog <- WX.button panelError
         [ text := "Clear",
-          on command := updateErrorLog (const Seq.empty) ]
+          on command := do
+              updateErrorLog (const Seq.empty)
+              set errorText [ text := "" ] ]
 
     frameControls <- WX.frame [ text := "controls" ]
 
@@ -1073,11 +1080,12 @@ gui input output = do
         [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
               ListItemSelected n <- return ev
               errors <- liftIO $ readIORef errorList
-              let (Exception.Message typ errorRng _descr) =
+              let (Exception.Message typ errorRng descr) =
                       Seq.index errors n
-              Right moduleIdent <- return $
-                  Parsec.parse IO.input "" $
-                  Pos.sourceName $ Term.start errorRng
+                  moduleIdent =
+                      Module.Name $
+                      Pos.sourceName $ Term.start errorRng
+              liftIO $ set errorText [ text := descr ]
               pnls <- liftIO $ readIORef panels
               pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
               liftIO $ set nb [ notebookSelection := pnl ]
@@ -1097,10 +1105,10 @@ gui input output = do
         ]
 
     set frameError
-        [ layout := container panelError $ margin 5
-              $ WX.column 5 $
-                 [ WX.fill $ widget errorLog,
-                   WX.hfloatLeft $ widget clearLog ]
+        [ layout := container panelError $ margin 5 $ WX.column 5 $
+             [ WX.fill $ WX.hsplit errorSplitter 5 0
+                             (widget errorLog) (widget errorText),
+               WX.hfloatLeft $ widget clearLog ]
         , clientSize := sz 500 300
         ]
 
