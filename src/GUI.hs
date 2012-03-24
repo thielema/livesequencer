@@ -77,7 +77,7 @@ import Control.Concurrent.STM.TMVar
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
-import Data.IORef ( newIORef, readIORef, writeIORef, modifyIORef )
+import Data.IORef ( IORef, newIORef, readIORef, writeIORef, modifyIORef )
 
 import qualified Graphics.UI.WXCore as WXCore
 import qualified Graphics.UI.WXCore.WxcClassesAL as WXCAL
@@ -656,37 +656,7 @@ gui :: Chan Action -- ^  the gui writes here
 gui input output = do
     panels <- newIORef M.empty
 
-    frameError <- WX.frame [ text := "errors" ]
-
-    panelError <- WX.panel frameError [ ]
-
-    errorSplitter <- WX.splitterWindow panelError [ ]
-
-    errorLog <- WX.listCtrl errorSplitter
-        [ columns :=
-              ("Module", AlignLeft, 120) :
-              ("Row", AlignRight, -1) :
-              ("Column", AlignRight, -1) :
-              ("Type", AlignLeft, -1) :
-              ("Description", AlignLeft, 500) :
-              []
-        ]
-    errorList <- newIORef Seq.empty
-    let updateErrorLog f = do
-            errors <- readIORef errorList
-            let newErrors = f errors
-            writeIORef errorList newErrors
-            set errorLog [ items :=
-                  map Exception.lineFromMessage $ Fold.toList newErrors ]
-
-    errorText <- WX.textCtrl errorSplitter
-        [ font := fontFixed, wrap := WrapNone, editable := False ]
-
-    clearLog <- WX.button panelError
-        [ text := "Clear",
-          on command := do
-              updateErrorLog (const Seq.empty)
-              set errorText [ text := "" ] ]
+    frameError <- newFrameError
 
     frameControls <- WX.frame [ text := "controls" ]
 
@@ -836,7 +806,7 @@ gui input output = do
                         -- WXCMZ.closeEventVeto ??? True
                       else propagateEvent ]
 
-    windowMenuItem "errors" frameError
+    windowMenuItem "errors" $ errorFrame frameError
     windowMenuItem "controls" frameControls
     WX.menuLine windowMenu
     reducerVisibleItem <- WX.menuItem windowMenu
@@ -944,7 +914,7 @@ gui input output = do
             pos <- get (editor pnl) cursor
             writeChan input $ Modification $ RefreshModule Nothing moduleName s pos
 
-            updateErrorLog $ Seq.filter $
+            updateErrorLog frameError $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
                     Module.deconsName moduleName /=
                     Pos.sourceName (Term.start errorRng)
@@ -1075,46 +1045,30 @@ gui input output = do
             , clientSize := sz 1280 720
           ]
 
-
-    set errorLog
-        [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
-              ListItemSelected n <- return ev
-              errors <- liftIO $ readIORef errorList
-              let (Exception.Message typ errorRng descr) =
-                      Seq.index errors n
-                  moduleIdent =
-                      Module.Name $
-                      Pos.sourceName $ Term.start errorRng
-              liftIO $ set errorText [ text := descr ]
-              pnls <- liftIO $ readIORef panels
-              pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
-              liftIO $ set nb [ notebookSelection := pnl ]
-              let activateText textField = do
-                      h <- MaybeT.MaybeT $ return $
-                           M.lookup moduleIdent textField
-                      (i,j) <- liftIO $ textRangeFromRange h errorRng
-                      liftIO $ set h [ cursor := i ]
-                      liftIO $ WXCMZ.textCtrlSetSelection h i j
-              case typ of
-                  Exception.Parse ->
-                      activateText $ fmap editor pnls
-                  Exception.Term ->
-                      activateText $ fmap highlighter pnls
-                  Exception.InOut ->
-                      return ()
-        ]
-
-    set frameError
-        [ layout := container panelError $ margin 5 $ WX.column 5 $
-             [ WX.fill $ WX.hsplit errorSplitter 5 0
-                             (widget errorLog) (widget errorText),
-               WX.hfloatLeft $ widget clearLog ]
-        , clientSize := sz 500 300
-        ]
+    onErrorSelection frameError $ \(Exception.Message typ errorRng _descr) -> do
+        let moduleIdent =
+                Module.Name $
+                Pos.sourceName $ Term.start errorRng
+        pnls <- liftIO $ readIORef panels
+        pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
+        liftIO $ set nb [ notebookSelection := pnl ]
+        let activateText textField = do
+                h <- MaybeT.MaybeT $ return $
+                     M.lookup moduleIdent textField
+                (i,j) <- liftIO $ textRangeFromRange h errorRng
+                liftIO $ set h [ cursor := i ]
+                liftIO $ WXCMZ.textCtrlSetSelection h i j
+        case typ of
+            Exception.Parse ->
+                activateText $ fmap editor pnls
+            Exception.Term ->
+                activateText $ fmap highlighter pnls
+            Exception.InOut ->
+                return ()
 
     let closeOther =
             writeIORef appRunning False >>
-            close frameError >> close frameControls
+            close (errorFrame frameError) >> close frameControls
     set quitItem [ on command := closeOther >> close f]
     set f [ on closing := closeOther >> propagateEvent
         {- 'close f' would trigger the closing handler again -} ]
@@ -1161,8 +1115,7 @@ gui input output = do
                     =<< varSwap highlights M.empty
 
             Exception exc -> do
-                itemAppend errorLog $ Exception.lineFromMessage exc
-                modifyIORef errorList (Seq.|> exc)
+                addToErrorLog frameError exc
                 set status [ text := Exception.statusFromMessage exc ]
 
             -- update highlighter text field only if parsing was successful
@@ -1192,7 +1145,7 @@ gui input output = do
                         (Module.name modu == mainModName) (-1)
                     return pnl
 
-                updateErrorLog (const Seq.empty)
+                updateErrorLog frameError (const Seq.empty)
 
                 set status [ text :=
                     "modules loaded: " ++ formatModuleList ( M.keys mods ) ]
@@ -1273,6 +1226,90 @@ gui input output = do
                         writeChan input $ Modification $
                         RefreshModule (Just contentMVar) name newContent pos)
                     status (fmap editor pnls) request
+
+
+data FrameError =
+    FrameError {
+        errorFrame :: WX.Frame (),
+        errorLog :: WX.ListCtrl (),
+        errorText :: WX.TextCtrl (),
+        errorList :: IORef (Seq.Seq Exception.Message)
+    }
+
+newFrameError :: IO FrameError
+newFrameError = do
+    frame <- WX.frame [ text := "errors" ]
+
+    pnl <- WX.panel frame [ ]
+
+    splitter <- WX.splitterWindow pnl [ ]
+
+    log <- WX.listCtrl splitter
+        [ columns :=
+              ("Module", AlignLeft, 120) :
+              ("Row", AlignRight, -1) :
+              ("Column", AlignRight, -1) :
+              ("Type", AlignLeft, -1) :
+              ("Description", AlignLeft, 500) :
+              []
+        ]
+    list <- newIORef Seq.empty
+
+    txt <- WX.textCtrl splitter
+        [ font := fontFixed, wrap := WrapNone, editable := False ]
+
+    let rec =
+            FrameError {
+                errorFrame = frame,
+                errorLog = log,
+                errorText = txt,
+                errorList = list
+            }
+
+    clearLog <- WX.button pnl
+        [ text := "Clear",
+          on command := do
+              updateErrorLog rec (const Seq.empty)
+              set txt [ text := "" ] ]
+
+    set frame
+        [ layout := container pnl $ margin 5 $ WX.column 5 $
+             [ WX.fill $ WX.hsplit splitter 5 0 (widget log) (widget txt),
+               WX.hfloatLeft $ widget clearLog ]
+        , clientSize := sz 500 300
+        ]
+
+    return rec
+
+onErrorSelection ::
+    FrameError -> (Exception.Message -> MaybeT.MaybeT IO ()) -> IO ()
+onErrorSelection r act =
+    set (errorLog r)
+        [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
+              ListItemSelected n <- return ev
+              errors <- liftIO $ readIORef (errorList r)
+              let msg@(Exception.Message _typ _errorRng descr) =
+                      Seq.index errors n
+              liftIO $ set (errorText r) [ text := descr ]
+              act msg
+        ]
+
+updateErrorLog ::
+    FrameError ->
+    (Seq.Seq Exception.Message -> Seq.Seq Exception.Message) ->
+    IO ()
+updateErrorLog r f = do
+    errors <- readIORef (errorList r)
+    let newErrors = f errors
+    writeIORef (errorList r) newErrors
+    set (errorLog r) [ items :=
+          map Exception.lineFromMessage $ Fold.toList newErrors ]
+
+addToErrorLog ::
+    FrameError -> Exception.Message -> IO ()
+addToErrorLog r exc = do
+    itemAppend (errorLog r) $ Exception.lineFromMessage exc
+    modifyIORef (errorList r) (Seq.|> exc)
 
 
 data Panel =
