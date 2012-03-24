@@ -3,6 +3,7 @@ module Exception where
 import qualified Term
 import Term ( Range(Range) )
 
+import qualified Text.ParserCombinators.Parsec.Error as PErr
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec as Parsec
 
@@ -61,3 +62,18 @@ toParsec :: Message -> Parsec.Parser a
 toParsec (Message _ rng msg) = do
     Parsec.setPosition $ Term.start rng
     fail msg
+
+messageFromParserError :: PErr.ParseError -> Message
+messageFromParserError err = Message
+    Parse
+    (let p = PErr.errorPos err
+     in  Range p (Pos.updatePosChar p ' '))
+    (removeLeadingNewline $
+     PErr.showErrorMessages
+         "or" "unknown parse error"
+         "expecting" "unexpected" "end of input" $
+     PErr.errorMessages err)
+
+removeLeadingNewline :: String -> String
+removeLeadingNewline ('\n':str) = str
+removeLeadingNewline str = str

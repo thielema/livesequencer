@@ -364,10 +364,11 @@ the caller should provide the source file path and content.
 instance Input Module where
   input = do
 -}
-parse ::
+parser ::
     FilePath -> String ->
-    Parsec.GenParser Char () Module
-parse srcLoc srcText = do
+    Parsec.GenParser Char ()
+        (Exc.Exceptional Exception.Message Module)
+parser srcLoc srcText = do
     m <- Parsec.option (Name "Main") $ do
         reserved lexer "module"
         m <- input
@@ -376,25 +377,28 @@ parse srcLoc srcText = do
         return m
     is <- Parsec.many input
     ds <- Parsec.many input
-    ctrls <-
-        case makeControls ds of
-            Exc.Success c -> return c
-            Exc.Exception e -> Exception.toParsec e
-    return $ Module {
-        name = m, imports = is, declarations = ds,
-        functions = makeFunctions ds,
-        constructors = makeConstructors ds,
-        controls = ctrls,
-        sourceText = srcText,
-        sourceLocation = srcLoc }
+    return $ do
+        ctrls <- makeControls ds
+        return $ Module {
+            name = m, imports = is, declarations = ds,
+            functions = makeFunctions ds,
+            constructors = makeConstructors ds,
+            controls = ctrls,
+            sourceText = srcText,
+            sourceLocation = srcLoc
+         }
 
-parseUntilEOF ::
-    FilePath -> String ->
-    Parsec.GenParser Char () Module
-parseUntilEOF srcLoc srcText = do
-    m <- parse srcLoc srcText
-    Parsec.eof
-    return m
+parse ::
+    String -> FilePath -> String ->
+    Exc.Exceptional Exception.Message Module
+parse srcName srcLoc srcText =
+    let parserUntilEOF = do
+            m <- parser srcLoc srcText
+            Parsec.eof
+            return m
+    in  either (Exc.Exception . Exception.messageFromParserError) id $
+        Parsec.parse parserUntilEOF srcName srcText
+
 
 
 outputModuleHead :: Name -> Pretty.Doc

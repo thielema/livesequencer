@@ -12,10 +12,9 @@ import Control.Monad.Trans.Class ( lift )
 
 import qualified Control.Exception as ExcBase
 
-import Text.ParserCombinators.Parsec ( parse )
 import qualified Text.ParserCombinators.Parsec.Pos as Pos
-import qualified Text.ParserCombinators.Parsec.Error as PErr
 
+import qualified System.IO.Strict as StrictIO
 import System.Directory ( doesFileExist )
 import System.FilePath ( (</>) )
 import qualified System.IO.Error as Err
@@ -162,18 +161,15 @@ load ::
     [ FilePath ] -> String -> FilePath -> Program ->
     Exc.ExceptionalT Exception.Message IO Program
 load dirs n ff p = do
-    parseResult <-
+    content <-
         Exc.mapExceptionT
             (\e -> Exception.Message
                 Exception.InOut (dummyRange ff) (Err.ioeGetErrorString e)) $
-        Exc.fromEitherT $ ExcBase.try $
-        fmap (\s -> parse (Module.parseUntilEOF ff s) n s) $ readFile ff
-    case parseResult of
-        Left err -> Exc.throwT (messageFromParserError err)
-        Right m -> do
-            lift $ Log.put $ show m
-            chaseImports dirs m =<<
-                ( Exc.ExceptionalT $ return $ addModule m p )
+        Exc.fromEitherT $ ExcBase.try $ StrictIO.readFile ff
+    m <- Exc.ExceptionalT $ return $ Module.parse n ff content
+    lift $ Log.put $ show m
+    chaseImports dirs m =<<
+        ( Exc.ExceptionalT $ return $ addModule m p )
 
 -- | look for file, trying to append its name to the directories in the path,
 -- in turn. Will fail if file is not found.
@@ -199,18 +195,3 @@ dummyRange :: String -> Range
 dummyRange f =
     let pos = Pos.initialPos f
     in  Range pos pos
-
-messageFromParserError :: PErr.ParseError -> Exception.Message
-messageFromParserError err = Exception.Message
-    Exception.Parse
-    (let p = PErr.errorPos err
-     in  Range p (Pos.updatePosChar p ' '))
-    (removeLeadingNewline $
-     PErr.showErrorMessages
-         "or" "unknown parse error"
-         "expecting" "unexpected" "end of input" $
-     PErr.errorMessages err)
-
-removeLeadingNewline :: String -> String
-removeLeadingNewline ('\n':str) = str
-removeLeadingNewline str = str

@@ -247,7 +247,7 @@ parseTerm (MarkedText pos str) =
                  IO.input)
              "" str of
         Left msg ->
-            Exc.throwT $ Program.messageFromParserError msg
+            Exc.throwT $ Exception.messageFromParserError msg
         Right t -> return t
 
 inoutExceptionMsg :: Module.Name -> String -> Exception.Message
@@ -309,11 +309,9 @@ modifyModule importPaths program output moduleName sourceCode pos = do
             return Nothing) $ do
         let Just previous = M.lookup moduleName $ Program.modules p
         m <-
-            Exc.mapExceptionT Program.messageFromParserError $
-            Exc.fromEitherT $ return $
-            Parsec.parse
-                (Module.parseUntilEOF (Module.sourceLocation previous) sourceCode)
-                ( Module.deconsName moduleName ) sourceCode
+            excT $ Module.parse
+                (Module.deconsName moduleName)
+                (Module.sourceLocation previous) sourceCode
         let exception =
                 Exception.Message Exception.Parse
                     (Program.dummyRange $ Module.deconsName moduleName)
