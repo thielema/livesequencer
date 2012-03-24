@@ -1,5 +1,8 @@
 module Bool where
 
+import Prelude ( Bool(True, False) )
+
+
 ifThenElse :: Bool -> a -> a -> a ;
 ifThenElse True  y _ = y ;
 ifThenElse False _ n = n ;
