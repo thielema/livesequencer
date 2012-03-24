@@ -13,7 +13,7 @@ main, chords, drums :: [Event (Channel Message)] ;
 main = merge ( cycle chords ) ( cycle drums ) ;
 
 en, qn, hn :: Time ;
-en = 100 ;
+en = slider "tempo" 50 150 100 ;
 qn = 2 * en ;
 hn = 2 * qn ;
 

@@ -39,7 +39,6 @@ import Data.Accessor.Basic ((^.), )
 
 import qualified Data.Sequence as Seq
 import Data.Maybe ( isJust )
-import Data.Bool.HT ( if' )
 
 import Control.Concurrent.Chan ( Chan, readChan, writeChan )
 import Control.Concurrent ( forkIO )
@@ -75,20 +74,9 @@ checkRange ::
     a -> a ->
     Term ->
     ExceptionalT Exception.Message m a
-checkRange typ fromInt toInt minb maxb (Number rng x) =
-    if' (x < fromIntegral (toInt minb))
-        (throwT $ Exception.Message Exception.Term rng $
-            typ ++ " argument " ++ show x ++
-                " is less than minimum value " ++ show (toInt minb)) $
-    if' (fromIntegral (toInt maxb) < x)
-        (throwT $ Exception.Message Exception.Term rng $
-                 typ ++ " argument " ++ show x ++
-                      " is greater than maximum value " ++ show (toInt maxb)) $
-    return $ fromInt $ fromInteger x
-checkRange typ _ _ _ _ t =
-    throwT $
-    Exception.Message Exception.Term
-        (termRange t) (typ ++ " argument is not a number")
+checkRange typ fromInt toInt minb maxb =
+    Exception.lift .
+    Exception.checkRange Exception.Term typ fromInt toInt minb maxb
 
 checkRangeAuto ::
     (Bounded a, Monad m) =>
@@ -96,7 +84,8 @@ checkRangeAuto ::
     Term ->
     ExceptionalT Exception.Message m a
 checkRangeAuto typ fromInt0 toInt0 =
-    checkRange typ fromInt0 toInt0 minBound maxBound
+    Exception.lift .
+    Exception.checkRangeAuto Exception.Term typ fromInt0 toInt0
 
 
 data State =

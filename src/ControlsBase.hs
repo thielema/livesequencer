@@ -18,7 +18,9 @@ import qualified Data.Traversable as Trav
 
 
 
-data Control = CheckBox Bool
+data Control =
+      CheckBox Bool
+    | Slider Int Int Int
 
 newtype Name = Name String
     deriving (Eq, Ord, Show)
@@ -69,16 +71,32 @@ collect topTerm =
         Just ( "checkBox" , args ) ->
             return $
             case args of
-                [ Term.StringLiteral _rng tag, Term.Node val [] ] ->
-                    case reads $ Term.name val of
+                [ Term.StringLiteral _rng tag, Term.Node deflt [] ] ->
+                    case reads $ Term.name deflt of
                         [(b, "")] ->
                             Exc.Success $ (Name tag, (Term.termRange term, CheckBox b))
                         _ ->
                             Exc.Exception $
-                            exc (Term.range val) $
+                            exc (Term.range deflt) $
                             "cannot parse Bool value " ++
-                            show (Term.name val) ++ " for getBox"
+                            show (Term.name deflt) ++ " for checkBox"
                 _ ->
                     Exc.Exception $
                     exc (Term.termRange term) "invalid checkBox arguments"
+        Just ( "slider" , args ) ->
+            return $
+            case args of
+                [ Term.StringLiteral _rngT tag, lower, upper, deflt ] -> do
+                    let milliard = 1000000000
+                        number arg =
+                            Exception.checkRange
+                                Exception.Parse arg id id
+                                (-milliard) milliard
+                    l <- number "lower slider bound" lower
+                    u <- number "upper slider bound" upper
+                    x <- number "default slider value" deflt
+                    return (Name tag, (Term.termRange term, Slider l u x))
+                _ ->
+                    Exc.Exception $
+                    exc (Term.termRange term) "invalid slider arguments"
         _ -> []

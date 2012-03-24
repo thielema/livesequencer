@@ -1,7 +1,7 @@
 module Exception where
 
 import qualified Term
-import Term ( Range(Range) )
+import Term ( Term, Range(Range) )
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 
@@ -10,6 +10,8 @@ import qualified Text.ParserCombinators.Parsec.Pos as Pos
 import qualified Text.ParserCombinators.Parsec as Parsec
 
 import qualified Data.List as List
+
+import Data.Bool.HT ( if' )
 
 
 data Message = Message Type Range String
@@ -85,6 +87,39 @@ dummyRange :: String -> Range
 dummyRange f =
     let pos = Pos.initialPos f
     in  Range pos pos
+
+
+
+checkRange ::
+    (Bounded a) =>
+    Type ->
+    String -> (Int -> a) -> (a -> Int) ->
+    a -> a ->
+    Term ->
+    Exc.Exceptional Message a
+checkRange excType typ fromInt toInt minb maxb (Term.Number rng x) =
+    if' (x < fromIntegral (toInt minb))
+        (Exc.throw $ Message excType rng $
+            typ ++ " argument " ++ show x ++
+                " is less than minimum value " ++ show (toInt minb)) $
+    if' (fromIntegral (toInt maxb) < x)
+        (Exc.throw $ Message excType rng $
+                 typ ++ " argument " ++ show x ++
+                      " is greater than maximum value " ++ show (toInt maxb)) $
+    return $ fromInt $ fromInteger x
+checkRange excType typ _ _ _ _ t =
+    Exc.throw $
+    Message excType
+        (Term.termRange t) (typ ++ " argument is not a number")
+
+checkRangeAuto ::
+    (Bounded a) =>
+    Type ->
+    String -> (Int -> a) -> (a -> Int) ->
+    Term ->
+    Exc.Exceptional Message a
+checkRangeAuto excType typ fromInt0 toInt0 =
+    checkRange excType typ fromInt0 toInt0 minBound maxBound
 
 
 
