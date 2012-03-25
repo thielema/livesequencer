@@ -323,3 +323,5 @@ poke (Node f xs) (k : ks) s | k < length xs = do
     let (pre, x : post) = splitAt k xs
     y <- poke x ks s
     return $ Node f $ pre ++ y : post
+poke _ (_:_) _ =
+    error "Term.poke: cannot access a leaf with an index"
