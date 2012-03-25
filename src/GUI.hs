@@ -179,7 +179,9 @@ main = do
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
-            void $ forkIO $ machine input output (Option.importPaths opt) p sq
+            void $ forkIO $
+                machine input output
+                    (Option.limits opt) (Option.importPaths opt) p sq
             void $ forkIO $
                 HTTPGui.run
                     (HTTPGui.methods (writeTChanIO output . HTTP))
@@ -372,11 +374,12 @@ machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> TChan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
+        -> Option.Limits
         -> [FilePath]
         -> Program -- ^ initial program
         -> ALSA.Sequencer SndSeq.DuplexMode
         -> IO ()
-machine input output importPaths progInit sq = do
+machine input output limits importPaths progInit sq = do
     program <- newTVarIO progInit
     term <- newTMVarIO mainName
     waitChan <- newChan
@@ -524,34 +527,36 @@ machine input output importPaths progInit sq = do
             waitChan
     ALSA.startQueue sq
     Event.runState $
-        execute program term ( writeTChan output ) sq waitChan
+        execute limits program term ( writeTChan output ) sq waitChan
 
 
-execute :: TVar Program
+execute :: Option.Limits
+        -> TVar Program
                   -- ^ current program (GUI might change the contents)
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> Chan Event.WaitResult
         -> MS.StateT Event.State IO ()
-execute program term output sq waitChan =
+execute limits program term output sq waitChan =
     forever $ do
         (mdur,outputs) <- MW.runWriterT $ do
             waiting <- lift $ AccM.get Event.stateWaiting
             when waiting $ writeUpdate ResetDisplay
-            executeStep program term
+            executeStep limits program term
                 (STM.atomically . output . Exception) sq
         liftIO $ STM.atomically $ mapM_ output outputs
         Event.wait sq waitChan mdur
 
 executeStep ::
+    Option.Limits ->
     TVar Program ->
     TMVar Term ->
     ( Exception.Message -> IO () ) ->
     ALSA.Sequencer SndSeq.DuplexMode ->
     MW.WriterT [ GuiUpdate ]
         ( MS.StateT Event.State IO ) ( Maybe Event.Time )
-executeStep program term writeExcMsg sq =
+executeStep limits program term writeExcMsg sq =
     Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
@@ -583,6 +588,11 @@ executeStep program term writeExcMsg sq =
             -}
             when (waiting || waitMode /= Event.RealTime) $
                 writeUpdate $ CurrentTerm $ show s
+            {-
+            liftIO $ Log.put $
+                "term size: " ++ ( show $ length $ Term.subterms s ) ++
+                ", term depth: " ++ ( show $ length $ Term.breadths s )
+            -}
             return wait)
         (Exc.mapExceptionalT (MW.mapWriterT (liftIO . STM.atomically)) $
             flip Exc.catchT (\(pos,msg) -> do
@@ -597,6 +607,14 @@ executeStep program term writeExcMsg sq =
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                      MW.runWriterT) $
                 Rewrite.runEval p (Rewrite.forceHead t)
+            Exc.assertT
+                (Term.termRange s,
+                 "term size exceeds limit " ++ show (Option.maxTermSize limits))
+                (null $ drop (Option.maxTermSize limits) $ Term.subterms s)
+            Exc.assertT
+                (Term.termRange s,
+                 "term depth exceeds limit " ++ show (Option.maxTermDepth limits))
+                (null $ drop (Option.maxTermDepth limits) $ Term.breadths s)
             lift $ writeUpdate $ ReductionSteps log
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do

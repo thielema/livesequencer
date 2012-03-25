@@ -2,7 +2,7 @@ module Option where
 
 import qualified Module
 import qualified IO
-import Option.Utility ( exitFailureMsg, fmapOptDescr )
+import Option.Utility ( exitFailureMsg, fmapOptDescr, parseNumber )
 import qualified HTTPServer.Option as HTTP
 
 import qualified Text.ParserCombinators.Parsec as Parsec
@@ -30,6 +30,7 @@ data Option = Option {
         importPaths :: [FilePath],
         connect :: NEList.T Port,
         sequencerName :: String,
+        limits :: Limits,
         httpOption :: HTTP.Option
     }
 
@@ -42,6 +43,7 @@ getDeflt = do
             importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
             connect = NEList.singleton (Port "inout" (Just []) (Just [])),
             sequencerName = "Rewrite-Sequencer",
+            limits = limitsDeflt,
             httpOption = HTTP.deflt
         }
 
@@ -50,6 +52,18 @@ data Port =
     Port {
         portName :: String,
         connectFrom, connectTo :: Maybe [String]
+    }
+
+
+data Limits =
+    Limits {
+        maxTermSize, maxTermDepth :: Int
+    }
+
+limitsDeflt :: Limits
+limitsDeflt = Limits {
+        maxTermSize = 2000,
+        maxTermDepth = 100
     }
 
 
@@ -108,12 +122,33 @@ description deflt =
     Opt.Option [] ["sequencer-name"]
         (flip ReqArg "NAME" $ \str flags ->
             return $ flags{sequencerName = str})
-        ("name of the ALSA sequencer client,\ndefault " ++
+        ("name of the ALSA sequencer client, default " ++
          sequencerName deflt) :
+    map (fmapOptDescr $ \update old -> do
+             newLimits <- update $ limits old
+             return $ old {limits = newLimits})
+        (limitsDescription (limits deflt)) ++
     map (fmapOptDescr $ \update old -> do
              newHTTP <- update $ httpOption old
              return $ old {httpOption = newHTTP})
         HTTP.description
+
+
+limitsDescription :: Limits -> [ Opt.OptDescr (Limits -> IO Limits) ]
+limitsDescription deflt =
+    Opt.Option [] ["max-term-size"]
+        (flip ReqArg "SIZE" $ \str flags ->
+            fmap (\p -> flags{maxTermSize = fromInteger p}) $
+            parseNumber "term size" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum allowed term size, default " ++
+         show (maxTermSize deflt)) :
+    Opt.Option [] ["max-term-depth"]
+        (flip ReqArg "SIZE" $ \str flags ->
+            fmap (\p -> flags{maxTermDepth = fromInteger p}) $
+            parseNumber "term depth" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum allowed term depth, default " ++
+         show (maxTermDepth deflt)) :
+    []
 
 
 get :: IO Option
