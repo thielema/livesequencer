@@ -35,8 +35,8 @@ import Control.Functor.HT ( void )
 
 
 
-nestDepth :: Int
-nestDepth = 4
+indent :: Int
+indent = 4
 
 data Import = Import { qualified :: Bool
                      , source :: Name
@@ -107,7 +107,7 @@ instance Output TypeSig where
     output (TypeSig names context typeExpr) =
         hang
             (hsep ( punctuate ( text "," ) $ map output names ) <+> text "::")
-            nestDepth
+            indent
             (sep
                 [if null context
                    then Pretty.empty
@@ -153,7 +153,7 @@ instance Output Type where
     output d =
         hang
             ( text "type" <+> output ( typeLhs d ) <+> text "=" )
-            nestDepth
+            indent
             ( output ( typeRhs d ) <+> text ";" )
 
 
@@ -201,7 +201,7 @@ instance Output Infix where
                     AssocNone  -> ""
         in  hang
                 (text ( "infix" ++ assocStr ) <+> text ( show prec ))
-                nestDepth
+                indent
                 (hsep ( punctuate comma $ map output idents ) <+> text ";")
 
 

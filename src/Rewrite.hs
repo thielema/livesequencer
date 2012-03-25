@@ -6,15 +6,14 @@ import Program ( Program )
 import qualified Program
 import qualified Term
 import qualified Rule
-import qualified Module
 
-import Control.Monad.Trans.Reader ( Reader, runReader, asks )
-import Control.Monad.Trans.Writer ( WriterT, runWriter, tell, mapWriterT )
+import qualified Control.Monad.Trans.Writer as MW
+import qualified Control.Monad.Trans.RWS as MRWS
+import Control.Monad.Trans.RWS ( RWS, asks, tell, get, put )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( liftM2 )
 import Control.Monad.Exception.Synchronous
            ( Exceptional(Exception,Success), ExceptionalT,
-             mapExceptionalT, throwT )
+             mapExceptionalT, throwT, assertT )
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Traversable as Trav
@@ -23,6 +22,8 @@ import Data.Maybe.HT ( toMaybe )
 import Data.Tuple.HT ( mapSnd )
 import Data.List ( intercalate )
 
+-- import Debug.Trace ( trace )
+
 
 data Message =
       Step { target :: Identifier }
@@ -30,15 +31,26 @@ data Message =
     | Data { origin :: Identifier }
     deriving Show
 
+type Count = Int
+
 type Evaluator =
-    ExceptionalT (Range, String) ( WriterT [ Message ] ( Reader Program ) )
+    ExceptionalT (Range, String) ( RWS (Count, Program) [ Message ] Count )
+
 
 runEval ::
     (Monad m) =>
-    Program -> Evaluator a ->
-    ExceptionalT (Range, String) ( WriterT [ Message ] m ) a
-runEval p =
-    mapExceptionalT (mapWriterT (return . flip runReader p))
+    Count -> Program -> Evaluator a ->
+    ExceptionalT (Range, String) ( MW.WriterT [ Message ] m ) a
+runEval maxRed p =
+    -- in transformers-0.3 you can write MW.writer instead of MW.WriterT . return
+    mapExceptionalT (\evl -> MW.WriterT $ return $ MRWS.evalRWS evl (maxRed,p) 0)
+{-
+    mapExceptionalT (\evl ->
+        MW.WriterT $ return $
+        (\(a,s,w) -> trace (show s) (a,w)) $
+        MRWS.runRWS evl (maxRed,p) 0)
+-}
+
 
 exception :: Range -> String -> Evaluator a
 exception rng msg =
@@ -79,19 +91,12 @@ top t = case t of
     Node f xs ->
         if Term.isConstructor f
           then return t
-          else do
-              rs <-
-                  lift $ lift $
-                  liftM2 (,)
-                      ( asks Program.functions )
-                      ( asks Program.constructors )
-              eval rs f xs  >>=  top
+          else eval f xs  >>=  top
 
 -- | do one reduction step at the root
 eval ::
-    (Module.FunctionDeclarations, Module.ConstructorDeclarations) ->
     Identifier -> [Term] -> Evaluator Term
-eval _ i xs
+eval i xs
   | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
       ys <- mapM top xs
       lift $ tell $ [ Step { target = i } ]
@@ -116,25 +121,26 @@ eval _ i xs
                       exception (range i) $ "unknown operation " ++ show opName
           _ -> exception (range i) $ "wrong number of arguments"
 
-eval (funcs, conss) g ys =
+eval g ys = do
+    funcs <- lift $ asks ( Program.functions . snd )
     case M.lookup g funcs of
         Nothing ->
             exception (range g) $
             unwords [ "unknown function", show $ Node g ys ]
         Just rules ->
-            evalDecls conss g rules ys
+            evalDecls g rules ys
 
 
 evalDecls ::
-    Module.ConstructorDeclarations ->
     Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
-evalDecls conss g =
+evalDecls g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
             (m, ys') <- matchExpandList M.empty xs ys
             case m of
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
+                    conss <- lift $ asks ( Program.constructors . snd )
                     lift $ tell $
                         Step g : Rule f :
                         ( map Data $ S.toList $ S.intersection conss $
@@ -214,8 +220,8 @@ matchExpandList s (x:xs) (y:ys) = do
         Nothing -> return ( Nothing, y' : ys )
         Just s' -> do
             s'' <-
-                case runWriter $ Trav.sequenceA $
-                     M.unionWithKey (\var t _ -> tell [var] >> t)
+                case MW.runWriter $ Trav.sequenceA $
+                     M.unionWithKey (\var t _ -> MW.tell [var] >> t)
                          (fmap return s) (fmap return s') of
                     (un, []) -> return $ un
                     (_, vars) -> exception (termRange y') $
@@ -227,10 +233,18 @@ matchExpandList _ (x:_) _ =
     exception (termRange x) "too few arguments"
 
 apply :: M.Map Identifier Term -> Term -> Evaluator Term
-apply m t = case t of
+apply m t = checkMaxReductions (termRange t) >> case t of
     Node f xs -> do
         ys <- mapM ( apply m ) xs
         case M.lookup f m of
             Nothing -> return $ Node f ys
             Just t' -> appendArguments t' ys
     _ -> return t
+
+checkMaxReductions :: Range -> Evaluator ()
+checkMaxReductions rng = do
+    maxCount <- lift $ asks fst
+    count <- lift get
+    assertT (rng, "number of reductions exceeds limit " ++ show maxCount) $
+        count < maxCount
+    lift $ put $ succ count

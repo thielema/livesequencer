@@ -1,8 +1,9 @@
 module Option where
 
 import qualified Module
+import qualified Time
 import qualified IO
-import Option.Utility ( exitFailureMsg, fmapOptDescr )
+import Option.Utility ( exitFailureMsg, fmapOptDescr, parseNumber )
 import qualified HTTPServer.Option as HTTP
 
 import qualified Text.ParserCombinators.Parsec as Parsec
@@ -30,6 +31,7 @@ data Option = Option {
         importPaths :: [FilePath],
         connect :: NEList.T Port,
         sequencerName :: String,
+        limits :: Limits,
         httpOption :: HTTP.Option
     }
 
@@ -42,6 +44,7 @@ getDeflt = do
             importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
             connect = NEList.singleton (Port "inout" (Just []) (Just [])),
             sequencerName = "Rewrite-Sequencer",
+            limits = limitsDeflt,
             httpOption = HTTP.deflt
         }
 
@@ -50,6 +53,24 @@ data Port =
     Port {
         portName :: String,
         connectFrom, connectTo :: Maybe [String]
+    }
+
+
+data Limits =
+    Limits {
+        maxTermSize, maxTermDepth,
+        maxReductions,
+        maxEvents :: Int,
+        eventPeriod :: Time.Milliseconds Integer
+    }
+
+limitsDeflt :: Limits
+limitsDeflt = Limits {
+        maxTermSize = 2000,
+        maxTermDepth = 100,
+        maxReductions = 1000,
+        maxEvents = 150,
+        eventPeriod = Time.milliseconds 1000
     }
 
 
@@ -108,12 +129,51 @@ description deflt =
     Opt.Option [] ["sequencer-name"]
         (flip ReqArg "NAME" $ \str flags ->
             return $ flags{sequencerName = str})
-        ("name of the ALSA sequencer client,\ndefault " ++
+        ("name of the ALSA sequencer client, default " ++
          sequencerName deflt) :
+    map (fmapOptDescr $ \update old -> do
+             newLimits <- update $ limits old
+             return $ old {limits = newLimits})
+        (limitsDescription (limits deflt)) ++
     map (fmapOptDescr $ \update old -> do
              newHTTP <- update $ httpOption old
              return $ old {httpOption = newHTTP})
         HTTP.description
+
+
+limitsDescription :: Limits -> [ Opt.OptDescr (Limits -> IO Limits) ]
+limitsDescription deflt =
+    Opt.Option [] ["max-term-size"]
+        (flip ReqArg "SIZE" $ \str flags ->
+            fmap (\p -> flags{maxTermSize = fromInteger p}) $
+            parseNumber "term size" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum allowed term size, default " ++
+         show (maxTermSize deflt)) :
+    Opt.Option [] ["max-term-depth"]
+        (flip ReqArg "SIZE" $ \str flags ->
+            fmap (\p -> flags{maxTermDepth = fromInteger p}) $
+            parseNumber "term depth" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum allowed term depth, default " ++
+         show (maxTermDepth deflt)) :
+    Opt.Option [] ["max-reductions"]
+        (flip ReqArg "NUMBER" $ \str flags ->
+            fmap (\p -> flags{maxReductions = fromInteger p}) $
+            parseNumber "number of reductions" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum allowed reductions for every list element, default " ++
+         show (maxReductions deflt)) :
+    Opt.Option [] ["max-events-per-period"]
+        (flip ReqArg "NUMBER" $ \str flags ->
+            fmap (\p -> flags{maxEvents = fromInteger p}) $
+            parseNumber "number of events" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum number of allowed events per period, default " ++
+         show (maxEvents deflt)) :
+    Opt.Option [] ["event-period"]
+        (flip ReqArg "MILLISECONDS" $ \str flags ->
+            fmap (\p -> flags{eventPeriod = Time.milliseconds p}) $
+            parseNumber "event period" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("period for limitting adjacent events, default " ++
+         Time.format (eventPeriod deflt)) :
+    []
 
 
 get :: IO Option

@@ -179,7 +179,9 @@ main = do
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
-            void $ forkIO $ machine input output (Option.importPaths opt) p sq
+            void $ forkIO $
+                machine input output
+                    (Option.limits opt) (Option.importPaths opt) p sq
             void $ forkIO $
                 HTTPGui.run
                     (HTTPGui.methods (writeTChanIO output . HTTP))
@@ -372,11 +374,12 @@ machine :: Chan Action -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> TChan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
+        -> Option.Limits
         -> [FilePath]
         -> Program -- ^ initial program
         -> ALSA.Sequencer SndSeq.DuplexMode
         -> IO ()
-machine input output importPaths progInit sq = do
+machine input output limits importPaths progInit sq = do
     program <- newTVarIO progInit
     term <- newTMVarIO mainName
     waitChan <- newChan
@@ -524,34 +527,68 @@ machine input output importPaths progInit sq = do
             waitChan
     ALSA.startQueue sq
     Event.runState $
-        execute program term ( writeTChan output ) sq waitChan
+        execute limits program term ( writeTChan output ) sq waitChan
 
 
-execute :: TVar Program
+execute :: Option.Limits
+        -> TVar Program
                   -- ^ current program (GUI might change the contents)
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
         -> Chan Event.WaitResult
         -> MS.StateT Event.State IO ()
-execute program term output sq waitChan =
+execute limits program term output sq waitChan =
     forever $ do
         (mdur,outputs) <- MW.runWriterT $ do
             waiting <- lift $ AccM.get Event.stateWaiting
             when waiting $ writeUpdate ResetDisplay
-            executeStep program term
-                (STM.atomically . output . Exception) sq
+            maxEventsSat <- lift $ checkMaxEvents limits
+            executeStep limits program term
+                (STM.atomically . output . Exception) sq maxEventsSat
         liftIO $ STM.atomically $ mapM_ output outputs
         Event.wait sq waitChan mdur
 
+{-
+We maintain the timestamps of the last 'maxEvents' events, including 'Wait's.
+Then we check whether the earliest stored event is old enough.
+-}
+checkMaxEvents :: (Monad m) =>
+    Option.Limits -> MS.StateT Event.State m Bool
+checkMaxEvents limits = do
+    mode <- AccM.get Event.stateWaitMode
+    case mode of
+        Event.RealTime -> do
+            current <- AccM.get Event.stateTime
+            recent <- AccM.get Event.stateRecentTimes
+            cont <-
+                case Seq.viewl recent of
+                    Seq.EmptyL -> return True
+                    past Seq.:< ts ->
+                        if' (Seq.length recent < Option.maxEvents limits)
+                            (return True) $
+                        if' (Mn.mappend past
+                                 (Time.up $ Time.up $
+                                  Option.eventPeriod limits)
+                                <= current)
+                            (AccM.set Event.stateRecentTimes ts >> return True)
+                            (AccM.set Event.stateRecentTimes Seq.empty >> return False)
+            AccM.modify Event.stateRecentTimes (Seq.|> current)
+            return cont
+        _ -> do
+            AccM.set Event.stateRecentTimes Seq.empty
+            return True
+
 executeStep ::
+    Option.Limits ->
     TVar Program ->
     TMVar Term ->
     ( Exception.Message -> IO () ) ->
     ALSA.Sequencer SndSeq.DuplexMode ->
+    Bool ->
     MW.WriterT [ GuiUpdate ]
         ( MS.StateT Event.State IO ) ( Maybe Event.Time )
-executeStep program term writeExcMsg sq =
+executeStep limits program term writeExcMsg sq maxEventsSat =
     Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
@@ -583,6 +620,11 @@ executeStep program term writeExcMsg sq =
             -}
             when (waiting || waitMode /= Event.RealTime) $
                 writeUpdate $ CurrentTerm $ show s
+            {-
+            liftIO $ Log.put $
+                "term size: " ++ ( show $ length $ Term.subterms s ) ++
+                ", term depth: " ++ ( show $ length $ Term.breadths s )
+            -}
             return wait)
         (Exc.mapExceptionalT (MW.mapWriterT (liftIO . STM.atomically)) $
             flip Exc.catchT (\(pos,msg) -> do
@@ -592,11 +634,23 @@ executeStep program term writeExcMsg sq =
             p <- liftSTM $ readTVar program
                 {- this happens anew at each click
                    since the program text might have changed in the editor -}
+            Exc.assertT
+                (Term.termRange t, "too many events in a too short period")
+                maxEventsSat
             (s,log) <-
                 Exc.mapExceptionalT
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                      MW.runWriterT) $
-                Rewrite.runEval p (Rewrite.forceHead t)
+                Rewrite.runEval
+                    (Option.maxReductions limits) p (Rewrite.forceHead t)
+            Exc.assertT
+                (Term.termRange s,
+                 "term size exceeds limit " ++ show (Option.maxTermSize limits))
+                (null $ drop (Option.maxTermSize limits) $ Term.subterms s)
+            Exc.assertT
+                (Term.termRange s,
+                 "term depth exceeds limit " ++ show (Option.maxTermDepth limits))
+                (null $ drop (Option.maxTermDepth limits) $ Term.breadths s)
             lift $ writeUpdate $ ReductionSteps log
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do

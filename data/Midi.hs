@@ -18,6 +18,10 @@ module Midi (
     normalVelocity,
     emphasize,
 
+    dropTime,
+    skipTime,
+    compressTime,
+
     (+:+),
     merge, (=:=),
     mergeWait,
@@ -26,6 +30,7 @@ module Midi (
 
 import Function
 import Pitch ( Pitch )
+import Bool ( ifThenElse )
 
 
 type Time = Integer ;
@@ -112,13 +117,65 @@ emphasizeEvent v (Event (On pitch velocity)) = Event (On pitch (velocity+v)) ;
 emphasizeEvent _v event = event ;
 
 
+dropTime :: Time -> [Event a] -> [Event a] ;
+dropTime = applyStrict dropTimeAux ;
+
+dropTimeAux :: Time -> [Event a] -> [Event a] ;
+dropTimeAux _ [] = [] ;
+dropTimeAux t ( Wait x : xs ) =
+  ifThenElse (t<x)
+    ( applyStrict consWait (x-t) xs )
+    ( applyStrict dropTimeAux (t-x) xs ) ;
+dropTimeAux t ( _ : xs ) = dropTimeAux t xs ;
+
+
+{- |
+Like 'dropTime' but does not simply remove events but play them at once.
+This way all tones are correctly stopped and started,
+however you risk the 'too many events in a too short period' exception.
+-}
+skipTime :: Time -> [Event a] -> [Event a] ;
+skipTime = applyStrict skipTimeAux ;
+
+skipTimeAux :: Time -> [Event a] -> [Event a] ;
+skipTimeAux _ [] = [] ;
+skipTimeAux t ( Wait x : xs ) =
+  ifThenElse (t<x)
+    ( applyStrict consWait (x-t) xs )
+    ( applyStrict skipTimeAux (t-x) xs ) ;
+skipTimeAux t ( ev : xs ) = ev : skipTimeAux t xs ;
+
+
+{- |
+Do not simply remove events but play them at once.
+This way all tones are correctly stopped and started,
+however you risk the 'too many events in a too short period' exception.
+-}
+compressTime :: Integer -> Time -> [Event a] -> [Event a] ;
+compressTime k = applyStrict (applyStrict compressTimeAux k) ;
+
+compressTimeAux :: Integer -> Time -> [Event a] -> [Event a] ;
+compressTimeAux k _ [] = [] ;
+compressTimeAux k t ( Wait x : xs ) =
+  ifThenElse (t<x)
+    ( applyStrict consWait (div t k + (x-t)) xs )
+    ( applyStrict consWait (div x k) $
+      applyStrict (compressTimeAux k) (t-x) xs ) ;
+compressTimeAux k t ( ev : xs ) = ev : compressTimeAux k t xs ;
+
+
+consWait :: Time -> [Event a] -> [Event a] ;
+consWait t xs = Wait t : xs ;
+
+
+
 infixr 7 +:+ ;  {- like multiplication -}
 infixr 6 =:= ;  {- like addition -}
 
-(+:+) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+(+:+) :: [Event a] -> [Event a] -> [Event a] ;
 xs +:+ ys  =  xs ++ ys ;
 
-merge, (=:=) :: [Midi.Event a] -> [Midi.Event a] -> [Midi.Event a] ;
+merge, (=:=) :: [Event a] -> [Event a] -> [Event a] ;
 xs =:= ys  =  merge xs ys ;
 
 merge (Wait a : xs) (Wait b : ys) =
@@ -138,10 +195,10 @@ It is important that the match against 0 is really performed
 and is not shadowed by a failing preceding match, say, against the result of (a<b).
 -}
 mergeWait ::
-  Bool -> Midi.Time ->
-  Midi.Time -> [Midi.Event a] ->
-  Midi.Time -> [Midi.Event a] ->
-  [Midi.Event a] ;
+  Bool -> Time ->
+  Time -> [Event a] ->
+  Time -> [Event a] ->
+  [Event a] ;
 mergeWait _eq 0 a xs _b ys =
   Wait a : merge xs ys ;
 mergeWait True d a xs _b ys =
@@ -149,5 +206,5 @@ mergeWait True d a xs _b ys =
 mergeWait False d _a xs b ys =
   Wait b : merge (Wait d : xs) ys ;
 
-mergeMany :: [[Midi.Event a]] -> [Midi.Event a] ;
+mergeMany :: [[Event a]] -> [Event a] ;
 mergeMany = foldl merge [] ;

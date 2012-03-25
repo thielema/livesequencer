@@ -277,12 +277,26 @@ protected t = case t of
   _ -> output t
 
 
-type Position = [ Int ]
-
 termRange :: Term -> Range
 termRange (Node i _) = range i
 termRange (Number rng _) = rng
 termRange (StringLiteral rng _) = rng
+
+{- |
+compute the number of nodes in the same depth
+-}
+breadths :: Term -> [ Int ]
+breadths t = 1 : case t of
+    Node _f xs -> foldl addList [] $ map breadths xs
+    _ -> []
+
+addList :: [ Int ] -> [ Int ] -> [ Int ]
+addList (x:xs) (y:ys) = (x+y) : addList xs ys
+addList [] ys = ys
+addList xs [] = xs
+
+
+type Position = [ Int ]
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of
@@ -309,3 +323,5 @@ poke (Node f xs) (k : ks) s | k < length xs = do
     let (pre, x : post) = splitAt k xs
     y <- poke x ks s
     return $ Node f $ pre ++ y : post
+poke _ (_:_) _ =
+    error "Term.poke: cannot access a leaf with an index"

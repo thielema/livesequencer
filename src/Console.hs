@@ -46,24 +46,27 @@ main = do
         void $ forkIO $ Event.listen sq print waitChan
         ALSA.startQueue sq
         Event.runState $
-            execute p sq waitChan Term.mainName
+            execute
+                (Option.maxReductions $ Option.limits opt)
+                p sq waitChan Term.mainName
 
 writeExcMsg :: Exception.Message -> IO ()
 writeExcMsg = putStrLn . Exception.statusFromMessage
 
 execute ::
+    Rewrite.Count ->
     Program ->
     ALSA.Sequencer SndSeq.DuplexMode ->
     Chan Event.WaitResult ->
     Term ->
     MS.StateT Event.State IO ()
-execute p sq waitChan =
+execute maxRed p sq waitChan =
     let go t = do
             s <-
                 mapExceptionalT
                     (MW.runWriterT >=> \(ms,log) ->
                         forM_ log (liftIO . print) >> return ms) $
-                Rewrite.runEval p (Rewrite.forceHead t)
+                Rewrite.runEval maxRed p (Rewrite.forceHead t)
             lift $ liftIO $ print s
             case Term.viewNode s of
                 Just ("[]", []) -> return ()
