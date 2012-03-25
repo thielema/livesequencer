@@ -59,7 +59,7 @@ data Port =
 data Limits =
     Limits {
         maxTermSize, maxTermDepth, maxEvents :: Int,
-        eventPeriod :: Time.Nanoseconds Integer
+        eventPeriod :: Time.Milliseconds Integer
     }
 
 limitsDeflt :: Limits
@@ -163,7 +163,7 @@ limitsDescription deflt =
             fmap (\p -> flags{eventPeriod = Time.milliseconds p}) $
             parseNumber "event period" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
         ("period for limitting adjacent events, default " ++
-         show (eventPeriod deflt)) :
+         Time.format (eventPeriod deflt)) :
     []
 
 

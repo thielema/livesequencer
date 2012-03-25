@@ -567,7 +567,10 @@ checkMaxEvents limits = do
                     past Seq.:< ts ->
                         if' (Seq.length recent < Option.maxEvents limits)
                             (return True) $
-                        if' (Mn.mappend past (Option.eventPeriod limits) <= current)
+                        if' (Mn.mappend past
+                                 (Time.up $ Time.up $
+                                  Option.eventPeriod limits)
+                                <= current)
                             (AccM.set Event.stateRecentTimes ts >> return True)
                             (AccM.set Event.stateRecentTimes Seq.empty >> return False)
             AccM.modify Event.stateRecentTimes (Seq.|> current)
