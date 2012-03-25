@@ -641,7 +641,8 @@ executeStep limits program term writeExcMsg sq maxEventsSat =
                 Exc.mapExceptionalT
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                      MW.runWriterT) $
-                Rewrite.runEval p (Rewrite.forceHead t)
+                Rewrite.runEval
+                    (Option.maxReductions limits) p (Rewrite.forceHead t)
             Exc.assertT
                 (Term.termRange s,
                  "term size exceeds limit " ++ show (Option.maxTermSize limits))

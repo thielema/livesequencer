@@ -58,7 +58,9 @@ data Port =
 
 data Limits =
     Limits {
-        maxTermSize, maxTermDepth, maxEvents :: Int,
+        maxTermSize, maxTermDepth,
+        maxReductions,
+        maxEvents :: Int,
         eventPeriod :: Time.Milliseconds Integer
     }
 
@@ -66,6 +68,7 @@ limitsDeflt :: Limits
 limitsDeflt = Limits {
         maxTermSize = 2000,
         maxTermDepth = 100,
+        maxReductions = 1000,
         maxEvents = 150,
         eventPeriod = Time.milliseconds 1000
     }
@@ -152,10 +155,16 @@ limitsDescription deflt =
             parseNumber "term depth" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
         ("maximum allowed term depth, default " ++
          show (maxTermDepth deflt)) :
+    Opt.Option [] ["max-reductions"]
+        (flip ReqArg "NUMBER" $ \str flags ->
+            fmap (\p -> flags{maxReductions = fromInteger p}) $
+            parseNumber "number of reductions" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum allowed reductions for every list element, default " ++
+         show (maxReductions deflt)) :
     Opt.Option [] ["max-events-per-period"]
         (flip ReqArg "NUMBER" $ \str flags ->
             fmap (\p -> flags{maxEvents = fromInteger p}) $
-            parseNumber "events" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+            parseNumber "number of events" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
         ("maximum number of allowed events per period, default " ++
          show (maxEvents deflt)) :
     Opt.Option [] ["event-period"]
