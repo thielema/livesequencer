@@ -164,6 +164,15 @@ Description:
    .
    * @dropTime time@ for skipping a part of the music.
      However this may skip some @Off@ events and this yields hanging tones.
+     Additionally you may exceed the number of maximally allowed reductions.
+   .
+   * @skipTime time@ for skipping a part of the music.
+     This one only removes or shortens @Wait@ constructors.
+     Thus all events are played but you risk exceeding the limit
+     for playing many events at once.
+   .
+   * @compressTime acceleration time@ for accelerating the music for a certain time.
+     This should circumvent the problems of @dropTime@ and @skipTime@.
    .
    7. Limits *****
    .
