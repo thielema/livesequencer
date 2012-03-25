@@ -195,10 +195,10 @@ It is important that the match against 0 is really performed
 and is not shadowed by a failing preceding match, say, against the result of (a<b).
 -}
 mergeWait ::
-  Bool -> Midi.Time ->
-  Midi.Time -> [Midi.Event a] ->
-  Midi.Time -> [Midi.Event a] ->
-  [Midi.Event a] ;
+  Bool -> Time ->
+  Time -> [Event a] ->
+  Time -> [Event a] ->
+  [Event a] ;
 mergeWait _eq 0 a xs _b ys =
   Wait a : merge xs ys ;
 mergeWait True d a xs _b ys =
@@ -206,5 +206,5 @@ mergeWait True d a xs _b ys =
 mergeWait False d _a xs b ys =
   Wait b : merge (Wait d : xs) ys ;
 
-mergeMany :: [[Midi.Event a]] -> [Midi.Event a] ;
+mergeMany :: [[Event a]] -> [Event a] ;
 mergeMany = foldl merge [] ;
