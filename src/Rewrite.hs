@@ -6,13 +6,11 @@ import Program ( Program )
 import qualified Program
 import qualified Term
 import qualified Rule
-import qualified Module
 
 import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.RWS as MRWS
 import Control.Monad.Trans.RWS ( RWS, asks, tell, get, put )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( liftM2 )
 import Control.Monad.Exception.Synchronous
            ( Exceptional(Exception,Success), ExceptionalT,
              mapExceptionalT, throwT, assertT )
@@ -93,19 +91,12 @@ top t = case t of
     Node f xs ->
         if Term.isConstructor f
           then return t
-          else do
-              rs <-
-                  lift $
-                  liftM2 (,)
-                      ( asks ( Program.functions . snd ) )
-                      ( asks ( Program.constructors . snd ) )
-              eval rs f xs  >>=  top
+          else eval f xs  >>=  top
 
 -- | do one reduction step at the root
 eval ::
-    (Module.FunctionDeclarations, Module.ConstructorDeclarations) ->
     Identifier -> [Term] -> Evaluator Term
-eval _ i xs
+eval i xs
   | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
       ys <- mapM top xs
       lift $ tell $ [ Step { target = i } ]
@@ -130,25 +121,26 @@ eval _ i xs
                       exception (range i) $ "unknown operation " ++ show opName
           _ -> exception (range i) $ "wrong number of arguments"
 
-eval (funcs, conss) g ys =
+eval g ys = do
+    funcs <- lift $ asks ( Program.functions . snd )
     case M.lookup g funcs of
         Nothing ->
             exception (range g) $
             unwords [ "unknown function", show $ Node g ys ]
         Just rules ->
-            evalDecls conss g rules ys
+            evalDecls g rules ys
 
 
 evalDecls ::
-    Module.ConstructorDeclarations ->
     Identifier -> [ Rule.Rule ] -> [Term] -> Evaluator Term
-evalDecls conss g =
+evalDecls g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
             (m, ys') <- matchExpandList M.empty xs ys
             case m of
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
+                    conss <- lift $ asks ( Program.constructors . snd )
                     lift $ tell $
                         Step g : Rule f :
                         ( map Data $ S.toList $ S.intersection conss $
