@@ -1,5 +1,8 @@
 module Pitch where
 
+import Prelude ( Integer, (+), (-), (*) )
+
+
 type Pitch = Integer ;
 type Octave = Integer ;
 type Class = Integer ;

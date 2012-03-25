@@ -1,7 +1,9 @@
 -- module Console where
 
-import Term
-import Program ( Program (..), chase )
+import Term ( Term )
+import Program ( Program )
+import qualified Program
+import qualified Term
 import qualified Event
 import qualified Rewrite
 import qualified Exception
@@ -12,7 +14,7 @@ import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.Chan
+import Control.Concurrent.Chan ( Chan, newChan )
 
 import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.State as MS
@@ -20,11 +22,11 @@ import Control.Monad.Exception.Synchronous
           ( mapExceptionalT, resolveT, throwT )
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( forM_, (>=>) )
+import Control.Monad ( when, forM_, (>=>) )
 import Control.Functor.HT ( void )
 
 import qualified System.IO as IO
-import qualified System.Exit as Exit
+import Option.Utility ( exitFailureMsg )
 
 import Prelude hiding ( log )
 
@@ -33,17 +35,18 @@ import Prelude hiding ( log )
 main :: IO ()
 main = do
     opt <- Option.get
+    when (null $ Option.moduleNames opt) $
+        exitFailureMsg "no module specified"
     p <-
-        resolveT (\e ->
-            IO.hPutStrLn IO.stderr (Exception.statusFromMessage e) >>
-            Exit.exitFailure) $
-        Program.chase (Option.importPaths opt) $ Option.moduleName opt
+        resolveT (exitFailureMsg . Exception.multilineFromMessage) $
+        Program.chaseMany
+            (Option.importPaths opt) (Option.moduleNames opt) Program.empty
     ALSA.withSequencer opt $ \sq -> do
         waitChan <- newChan
         void $ forkIO $ Event.listen sq print waitChan
         ALSA.startQueue sq
         Event.runState $
-            execute p sq waitChan mainName
+            execute p sq waitChan Term.mainName
 
 writeExcMsg :: Exception.Message -> IO ()
 writeExcMsg = putStrLn . Exception.statusFromMessage
@@ -60,7 +63,7 @@ execute p sq waitChan =
                 mapExceptionalT
                     (MW.runWriterT >=> \(ms,log) ->
                         forM_ log (liftIO . print) >> return ms) $
-                Rewrite.runEval p (Rewrite.force_head t)
+                Rewrite.runEval p (Rewrite.forceHead t)
             lift $ liftIO $ print s
             case Term.viewNode s of
                 Just ("[]", []) -> return ()
@@ -71,7 +74,7 @@ execute p sq waitChan =
                     lift $ Event.wait sq waitChan mdur
                     go xs
                 _ -> throwT
-                        (termRange s,
+                        (Term.termRange s,
                          "do not know how to handle term\n" ++ show s)
     in  resolveT
             (\(pos, msg) ->

@@ -1,5 +1,5 @@
 ghci:
-	ghci -Wall -i:data `ls -1 data/*.hs | fgrep -v BandControlled`
+	ghci -Wall -i:data data/*.hs
 
 ghci-prg:
 	ghci -Wall -i:src:dist/build/autogen:http/enable src/Module.hs

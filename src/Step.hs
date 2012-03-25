@@ -21,9 +21,7 @@ match vs p t = case p of
       _ -> mzero
 
 
-root_step :: Rule -> Term -> Maybe Term
-root_step r t = do
+rootStep :: Rule -> Term -> Maybe Term
+rootStep r t = do
    m <- match ( vars r ) ( lhs r ) t
    return $ apply m ( rhs r )
-
-    

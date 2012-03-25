@@ -3,9 +3,13 @@ module Module where
 import IO ( Input, Output, input, output )
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
+import qualified ControlsBase as Controls
 import qualified Type
 import qualified Term
 import qualified Rule
+
+import qualified Exception
+import qualified Control.Monad.Exception.Synchronous as Exc
 
 import qualified Data.Set as S
 import qualified Data.Map as M
@@ -18,10 +22,14 @@ import Text.ParserCombinators.Parsec ( (<|>) )
 import Text.ParserCombinators.Parsec.Token ( reserved, reservedOp )
 import Text.ParserCombinators.Parsec.Expr
            ( Assoc(AssocLeft, AssocRight, AssocNone) )
+import qualified Text.PrettyPrint.HughesPJ as Pretty
 import Text.PrettyPrint.HughesPJ
-           ( (<+>), ($$), empty, hsep, sep, hang, punctuate,
+           ( (<+>), ($$), hsep, sep, hang, punctuate,
              render, text, comma, vcat, parens )
 import qualified Data.Char as Char
+
+import qualified System.FilePath as FP
+import Data.List.HT ( chop )
 
 import Control.Functor.HT ( void )
 
@@ -70,10 +78,10 @@ instance Input Import where
 
 instance Output Import where
     output i = hsep [ text "import"
-                    , if qualified i then text "qualified" else empty
+                    , if qualified i then text "qualified" else Pretty.empty
                     , output $ source i
                     , case rename i of
-                        Nothing -> empty
+                        Nothing -> Pretty.empty
                         Just r  -> text "as" <+> output r
                     ]
 
@@ -102,7 +110,7 @@ instance Output TypeSig where
             nestDepth
             (sep
                 [if null context
-                   then empty
+                   then Pretty.empty
                    else parens ( hsep ( punctuate ( text "," ) $
                                  map output context ) ) <+> text "=>",
                  output typeExpr <+> text ";"])
@@ -197,18 +205,18 @@ instance Output Infix where
                 (hsep ( punctuate comma $ map output idents ) <+> text ";")
 
 
-data Declaration = Type_Signature TypeSig
-                 | Rule_Declaration Rule
-                 | Type_Declaration Type
-                 | Data_Declaration Data
-                 | Infix_Declaration Infix
+data Declaration = TypeSignature TypeSig
+                 | RuleDeclaration Rule
+                 | TypeDeclaration Type
+                 | DataDeclaration Data
+                 | InfixDeclaration Infix
     deriving (Show)
 
 instance Input Declaration where
-    input = fmap Data_Declaration input
-        <|> fmap Infix_Declaration input
-        <|> fmap Type_Declaration input
-        <|> fmap Type_Signature (do
+    input = fmap DataDeclaration input
+        <|> fmap InfixDeclaration input
+        <|> fmap TypeDeclaration input
+        <|> fmap TypeSignature (do
                 names <- Parsec.try $ do
                     names <- parseIdentList
                     reservedOp lexer "::"
@@ -220,32 +228,34 @@ instance Input Declaration where
                 typeExpr <- Type.parseExpression
                 void $ Token.semi lexer
                 return $ TypeSig names context typeExpr)
-        <|> fmap Rule_Declaration input
+        <|> fmap RuleDeclaration input
 
 instance Output Declaration where
     output decl = case decl of
-        Type_Signature d -> output d
-        Data_Declaration d -> output d
-        Type_Declaration d -> output d
-        Rule_Declaration d -> output d
-        Infix_Declaration d -> output d
+        TypeSignature d -> output d
+        DataDeclaration d -> output d
+        TypeDeclaration d -> output d
+        RuleDeclaration d -> output d
+        InfixDeclaration d -> output d
 
 -- | on module parsing:
 -- identifiers contain information on their source location.
 -- their sourceName (as used by Parsec) is the "show"
 -- of the module name (which is an identifier).
 -- So, sourceName is NOT the actual file name.
--- instead, the actual file name is kept in source_location (defined here)
+-- instead, the actual file name is kept in sourceLocation (defined here)
 
-data Module = Module
-               { name :: Name
-               , imports :: [ Import ]
-               , declarations :: [ Declaration ]
-               , functions :: FunctionDeclarations
-               , constructors :: ConstructorDeclarations
-               , source_text :: String
-               , source_location :: FilePath
-               }
+data Module =
+    Module
+        { name :: Name
+        , imports :: [ Import ]
+        , declarations :: [ Declaration ]
+        , functions :: FunctionDeclarations
+        , constructors :: ConstructorDeclarations
+        , controls :: Controls.Assignments
+        , sourceText :: String
+        , sourceLocation :: FilePath
+        }
 
 newtype Name = Name {deconsName :: String}
     deriving (Eq, Ord)
@@ -263,32 +273,71 @@ nameFromIdentifier :: Identifier -> Name
 nameFromIdentifier =
     Name . Pos.sourceName . Term.start . Term.range
 
+{- |
+Make a dummy Range if only the module name is known.
+-}
+nameRange :: Name -> Term.Range
+nameRange (Name n) = Exception.dummyRange n
+
+inoutExceptionMsg :: Module.Name -> String -> Exception.Message
+inoutExceptionMsg moduleName msg =
+    Exception.Message Exception.InOut (Module.nameRange moduleName) msg
+
+makeFileName :: Name -> FilePath
+makeFileName (Name n) =
+    FP.addExtension (FP.joinPath $ chop ('.'==) n) "hs"
+
 
 type FunctionDeclarations = M.Map Identifier [Rule]
 type ConstructorDeclarations = S.Set Identifier
+
+
+empty :: Name -> Module
+empty moduleName =
+    Module {
+        name = moduleName,
+        imports = [],
+        sourceText = show $ outputModuleHead moduleName,
+        sourceLocation = "/dev/null",
+        functions = M.empty,
+        constructors = S.empty,
+        controls = M.empty,
+        declarations = []
+    }
 
 -- | add, or replace (if rule with exact same lhs is already present)
 addRule :: Rule -> Module -> Module
 addRule rule@(Rule.Rule ident params _rhs) m =
     m { declarations =
-            update
+            revUpdate
                 (\d -> case d of
-                    Rule_Declaration r' ->
+                    RuleDeclaration r' ->
                         ident == Rule.name r' &&
                         params == Rule.parameters r'
                     _ -> False)
-                (Rule_Declaration rule) $
+                (RuleDeclaration rule) $
             declarations m,
         functions =
             M.insertWith
-                (\_ -> update ((params ==) . Rule.parameters) rule)
+                (\_ -> revUpdate ((params ==) . Rule.parameters) rule)
                 ident [rule] $
             functions m }
 
+{- |
+replace a matching element if it exists
+and append the new element otherwise.
+-}
 update :: (a -> Bool) -> a -> [a] -> [a]
 update matches x xs =
     let ( pre, post ) = span ( not . matches ) xs
     in  pre ++ x : drop 1 post
+
+{- |
+replace a matching element if it exists
+and prepend the new element otherwise.
+-}
+revUpdate :: (a -> Bool) -> a -> [a] -> [a]
+revUpdate p x = reverse . update p x . reverse
 
 makeFunctions ::
     [Declaration] -> M.Map Identifier [Rule]
@@ -296,15 +345,25 @@ makeFunctions =
     M.fromListWith (flip (++)) .
     mapMaybe (\decl ->
         case decl of
-            Rule_Declaration rule -> Just (Rule.name rule, [rule])
+            RuleDeclaration rule -> Just (Rule.name rule, [rule])
             _ -> Nothing)
 
 makeConstructors ::
     [Declaration] -> S.Set Identifier
 makeConstructors decls = S.fromList $ do
-    Data_Declaration (Data {dataRhs = summands}) <- decls
+    DataDeclaration (Data {dataRhs = summands}) <- decls
     Term.Node ident _ <- summands
     return ident
+
+makeControls ::
+    [Declaration] ->
+    Exc.Exceptional Exception.Message Controls.Assignments
+makeControls decls =
+    flip (foldr
+        (\r go a -> Controls.collect r >>= Controls.union a >>= go)
+        return) M.empty $ do
+    Module.RuleDeclaration rule <- decls
+    return $ Rule.rhs rule
 
 
 {-
@@ -315,10 +374,11 @@ the caller should provide the source file path and content.
 instance Input Module where
   input = do
 -}
-parse ::
+parser ::
     FilePath -> String ->
-    Parsec.GenParser Char () Module
-parse srcLoc srcText = do
+    Parsec.GenParser Char ()
+        (Exc.Exceptional Exception.Message Module)
+parser srcLoc srcText = do
     m <- Parsec.option (Name "Main") $ do
         reserved lexer "module"
         m <- input
@@ -327,28 +387,40 @@ parse srcLoc srcText = do
         return m
     is <- Parsec.many input
     ds <- Parsec.many input
-    return $ Module {
-        name = m, imports = is, declarations = ds,
-        functions = makeFunctions ds,
-        constructors = makeConstructors ds,
-        source_text = srcText,
-        source_location = srcLoc }
+    return $ do
+        ctrls <- makeControls ds
+        return $ Module {
+            name = m, imports = is, declarations = ds,
+            functions = makeFunctions ds,
+            constructors = makeConstructors ds,
+            controls = ctrls,
+            sourceText = srcText,
+            sourceLocation = srcLoc
+         }
 
-parseUntilEOF ::
-    FilePath -> String ->
-    Parsec.GenParser Char () Module
-parseUntilEOF srcLoc srcText = do
-    m <- parse srcLoc srcText
-    Parsec.eof
-    return m
+parse ::
+    String -> FilePath -> String ->
+    Exc.Exceptional Exception.Message Module
+parse srcName srcLoc srcText =
+    let parserUntilEOF = do
+            m <- parser srcLoc srcText
+            Parsec.eof
+            return m
+    in  either (Exc.Exception . Exception.messageFromParserError) id $
+        Parsec.parse parserUntilEOF srcName srcText
 
+
+
+outputModuleHead :: Name -> Pretty.Doc
+outputModuleHead nm =
+    hsep [ text "module", output nm, text "where" ]
 
 instance Output Module where
   output p = vcat
-    [ hsep [ text "module", output $ name p, text "where" ]
+    [ outputModuleHead (name p)
     , vcat $ map output $ imports p
     , vcat $ map output $ declarations p
     ]
 
 instance Show Module where show = render . output
--- instance Read Module where readsPrec = parsec_reader
+-- instance Read Module where readsPrec = parsecReader

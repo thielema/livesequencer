@@ -85,6 +85,7 @@ Data-Files:
 
   data/Bool.hs
   data/Chords.hs
+  data/Controls.hs
   data/Drum.hs
   data/Function.hs
   data/Instrument.hs
@@ -135,6 +136,7 @@ Library
     Render
     Bool
     Chords
+    Controls
     Drum
     Function
     Instrument
@@ -176,6 +178,8 @@ Executable live-sequencer
   Other-Modules:
     Lilypond
   GHC-Options: -Wall -threaded
+  If impl(ghc>=7.0)
+    GHC-Options: -fwarn-unused-do-bind -fwarn-missing-import-lists
   Build-Depends:
     transformers >=0.2.2 && <0.3,
     explicit-exception >=0.1.5 && <0.2,
@@ -232,6 +236,7 @@ Executable live-sequencer-gui
     Option
     Option.Utility
     Controls
+    ControlsBase
     Program
     Rewrite
     Rule

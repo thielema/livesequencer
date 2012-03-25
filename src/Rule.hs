@@ -1,6 +1,6 @@
 module Rule where
 
-import IO
+import IO ( Input(input), Output(output), parsecReader )
 import Term ( Term(Node), Identifier )
 import qualified Term
 
@@ -14,7 +14,7 @@ data Rule = Rule
     }
 
 instance Show Rule where show = render . output
-instance Read Rule where readsPrec = parsec_reader
+instance Read Rule where readsPrec = parsecReader
 
 instance Output Rule where
   output r =

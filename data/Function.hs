@@ -1,5 +1,7 @@
 module Function where
 
+import Prelude ( Integer, Int, (-) )
+
 
 infixr 9 . ;
 

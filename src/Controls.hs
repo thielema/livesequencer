@@ -3,8 +3,13 @@
 -- * displayed in the GUI,
 -- * read while executing the program.
 
-module Controls where
+module Controls (
+    module Controls,
+    module ControlsBase,
+    ) where
 
+import ControlsBase ( Name, deconsName, Assignments )
+import qualified ControlsBase as C
 import qualified Program
 import qualified Module
 import qualified Rule
@@ -12,100 +17,114 @@ import qualified Term
 import qualified Exception
 
 import qualified Control.Monad.Exception.Synchronous as Exc
+import qualified Control.Monad.Trans.Writer as MW
+import qualified Control.Monad.Trans.Class as MT
+import Control.Monad.IO.Class ( liftIO )
 
 import qualified Graphics.UI.WX as WX
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
-import Graphics.UI.WX.Classes
-import Graphics.UI.WX.Events
-import Graphics.UI.WX.Layout ( layout, container, row, widget )
+import Graphics.UI.WX.Classes ( text, checked, selection )
+import Graphics.UI.WX.Events ( on, command, select )
+import Graphics.UI.WX.Layout ( layout, container, row, column, widget )
 
 import qualified Data.Map as M
-import Control.Monad ( forM )
+
+import Data.Foldable ( forM_ )
 import Control.Functor.HT ( void )
 
 
-data Event = EventBool Term.Identifier Bool
+data Event = Event Name Value
     deriving Show
 
-data Control = CheckBox Bool
+data Value = Bool Bool | Number Int
+    deriving Show
+
 
 
 moduleName :: Module.Name
 moduleName = Module.Name "Controls"
 
-get_controller_module :: Program.Program -> Module.Module
-get_controller_module p =
-    let Just m = M.lookup moduleName $ Program.modules p
-    in  m
+defltIdent :: Term.Term
+defltIdent = read "deflt"
 
-change_controller_module ::
+changeControllerModule ::
     Program.Program ->
-    Controls.Event ->
+    Event ->
     Exc.Exceptional Exception.Message Program.Program
-change_controller_module p event = case event of
-    EventBool name val ->
-        flip Program.add_module p $
-        Module.addRule ( controller_rule name val ) $
-        get_controller_module p
+changeControllerModule p (Event name val) =
+    flip Program.replaceModule p .
+    Module.addRule ( controllerRule name val ) =<<
+    Exc.fromMaybe
+        ( Module.inoutExceptionMsg moduleName
+            "cannot find module for controller updates" )
+        ( M.lookup moduleName $ Program.modules p )
 
-controller_rule ::
-    Show a =>
-    Term.Identifier -> a -> Rule.Rule
-controller_rule name val =
-    Rule.Rule
-        ( read "checkBox" )
-        [ Term.Node name [], read "deflt" ]
-        ( Term.Node ( read $ show val ) [] )
-
-controller_module :: [(Term.Identifier, Control)] -> Module.Module
-controller_module controls =
-    let decls = do
-            ( name, CheckBox deflt ) <- controls
-            return $ Module.Rule_Declaration
-                   $ controller_rule name deflt
-        m = Module.Module { Module.name = moduleName
-                 , Module.imports = []
-                 , Module.source_text = show m
-                 , Module.source_location = "/dev/null"
-                 , Module.functions =
-                      Module.makeFunctions decls
-                 , Module.constructors =
-                      Module.makeConstructors decls
-                 , Module.declarations = decls
-                 }
-    in  m
+controllerRule ::
+    Name -> Value -> Rule.Rule
+controllerRule name val =
+    case val of
+        Bool b ->
+            Rule.Rule
+                ( read "checkBox" )
+                [ Term.StringLiteral
+                      ( Module.nameRange moduleName )
+                      ( deconsName name ),
+                  defltIdent ]
+                ( Term.Node ( read $ show b ) [] )
+        Number x ->
+            Rule.Rule
+                ( read "slider" )
+                [ Term.StringLiteral
+                      ( Module.nameRange moduleName )
+                      ( deconsName name ),
+                  read "lower",
+                  read "upper",
+                  defltIdent ]
+                ( Term.Number ( Module.nameRange moduleName ) ( fromIntegral x ) )
 
 create ::
-    WX.Frame b ->
-    [(Term.Identifier, Control)] ->
-    (Controls.Event -> IO ()) ->
+    WX.Frame () ->
+    Assignments ->
+    (Event -> IO ()) ->
     IO ()
 create frame controls sink = do
     void $ WXCMZ.windowDestroyChildren frame
     panel <- WX.panel frame []
-    ws <- forM controls $ \ ( name, con ) ->
-      case con of
-        CheckBox val -> do
-            cb <- WX.checkBox panel
-               [ text := Term.name name , checked := val ]
-            set cb
-               [ on command := do
-                     c <- get cb checked
-                     sink $ EventBool name c
-               ]
-            return $ widget cb
-    set frame [ layout := container panel $ row 5 ws ]
-
-
-collect :: Program.Program -> [ ( Term.Identifier, Control ) ]
-collect p = do
-    ( _mod, contents ) <- M.toList $ Program.modules p
-    Module.Rule_Declaration rule <- Module.declarations contents
-    ( _pos, term ) <- Term.subterms $ Rule.rhs rule
-    case Term.viewNode term of
-        Just ( "checkBox" , [ Term.Node tag [], Term.Node val [] ] ) ->
-              return ( tag
-                     , CheckBox $ read ( Term.name val )
-                     )
-        _ -> []
+    (cs,ss) <- MW.runWriterT $ MW.execWriterT $ forM_ (M.toList controls) $
+            \ ( name, (_rng, con) ) ->
+        case con of
+            C.CheckBox val -> do
+                cb <- liftIO $ WX.checkBox panel
+                   [ text := deconsName name , checked := val ]
+                liftIO $ set cb
+                   [ on command := do
+                         c <- get cb checked
+                         sink $ Event name $ Bool c
+                   ]
+                MW.tell [ widget cb ]
+            C.Slider lower upper val -> do
+                sl <- liftIO $ WX.hslider panel False lower upper
+                   [ selection := val ]
+                sp <- liftIO $ WX.spinCtrl panel lower upper
+                   [ selection := val ]
+                liftIO $ set sl
+                   [ on command := do
+                         c <- get sl selection
+                         set sp [ selection := c ]
+                         sink $ Event name $ Number c
+                   ]
+                liftIO $ set sp
+                   [ on select := do
+                         c <- get sp selection
+                         set sl [ selection := c ]
+                         sink $ Event name $ Number c
+                   ]
+                MT.lift $ MW.tell [
+                   WX.row 5 [ WX.hfill $ widget sl , widget sp,
+                              WX.label (deconsName name) ]
+                   ]
+    set frame [ layout :=
+        container panel $ column 5 $
+        WX.hfloatCenter (row 5 cs) : ss
+        ]

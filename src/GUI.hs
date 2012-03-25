@@ -7,18 +7,25 @@ GUI:
 The GUI shall be responsive also if a program is loaded or a term is reduced.
 Thus the GUI has its own thread.
 If a GUI element requires a more complicated action,
-it sends an Action message via then 'input' Chan to the 'machine'.
+it sends an Action message via the 'input' Chan to the 'machine'.
+It does not have direct access to the 'program'.
 
 machine:
 This thread manages loading and parsing of modules
 as well as the operation mode of the interpreter.
 It gets most of its messages from the GUI
 and sends its result as GuiUpdate via the 'output' Chan to the GUI.
+It is the only thread that is allowed to modify the 'program'.
+Thus it sequences all accesses to 'program'
+and warrants atomic modification (a single read-write sequence)
+even outside the STM monad.
 
 execute:
 This runs the interpreter.
 It reduces expressions and sends according MIDI messages
 or waits according to Wait events.
+It can read the current state of the 'program'
+but is not allowed to modify it.
 
 ALSA:
 With ALSA we can wait only for all kinds of events at once.
@@ -41,8 +48,9 @@ import qualified Controls
 import qualified Rewrite
 import qualified Option
 import qualified Log
-import Program ( Program, modules )
+import Program ( Program )
 import Term ( Term, Identifier, mainName )
+import Option.Utility ( exitFailureMsg )
 import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
 import Utility.WX ( cursor, editable, notebookSelection )
 
@@ -51,32 +59,35 @@ import qualified HTTPServer.GUI as HTTPGui
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes
+           ( itemAppend, items, checkable, checked, clientSize,
+             close, enabled, font, help, text, visible )
 import Graphics.UI.WX.Controls
            ( Notebook, TextCtrl, wrap, focusOn, columns, listEvent,
              Align(AlignLeft, AlignRight), Wrap(WrapNone) )
 import Graphics.UI.WX.Events
+           ( on, closing, command )
 import Graphics.UI.WX.Layout
-           ( widget, container, layout, margin, row, column )
+           ( widget, container, layout, margin )
 import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.MVar
-import Control.Concurrent.Chan
-import Control.Concurrent.STM.TChan
-import Control.Concurrent.STM.TVar
-import Control.Concurrent.STM.TMVar
+import Control.Concurrent.MVar ( MVar, putMVar )
+import Control.Concurrent.Chan ( Chan, newChan, readChan, writeChan )
+import Control.Concurrent.STM.TChan ( TChan, newTChanIO, readTChan, writeTChan )
+import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
+import Control.Concurrent.STM.TMVar ( TMVar, newTMVarIO, putTMVar, readTMVar, takeTMVar )
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
-import Data.IORef ( newIORef, readIORef, writeIORef, modifyIORef )
+import Data.IORef ( IORef, newIORef, readIORef, writeIORef, modifyIORef )
 
 import qualified Graphics.UI.WXCore as WXCore
 import qualified Graphics.UI.WXCore.WxcClassesAL as WXCAL
 import qualified Graphics.UI.WXCore.WxcClassesMZ as WXCMZ
 import Graphics.UI.WXCore.WxcDefs ( wxID_HIGHEST )
 
-import Graphics.UI.WXCore.Events
+import qualified Graphics.UI.WXCore.Events as WXEvent
 import qualified Event
 
 import Foreign.Ptr ( Ptr )
@@ -94,7 +105,7 @@ import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
-import Control.Monad ( when, liftM2, forever, )
+import Control.Monad ( when, liftM, liftM2, forever )
 import Control.Functor.HT ( void )
 import Data.Foldable ( forM_ )
 import Data.Traversable ( forM )
@@ -105,7 +116,6 @@ import qualified Text.ParserCombinators.Parsec.Token as Token
 import Control.Exception ( bracket, finally, try )
 import qualified System.IO as IO
 import qualified System.IO.Error as Err
-import qualified System.Exit as Exit
 import qualified System.FilePath as FilePath
 
 import qualified Data.Accessor.Monad.Trans.State as AccM
@@ -121,6 +131,7 @@ import qualified Data.Monoid as Mn
 import qualified Data.Char as Char
 import qualified Data.List as List
 import Data.Tuple.HT ( mapSnd )
+import Data.Bool.HT ( if' )
 
 import Prelude hiding ( log )
 
@@ -131,17 +142,40 @@ main = do
     IO.hSetBuffering IO.stderr IO.LineBuffering
     opt <- Option.get
 
-    (p,ctrls) <-
-        Exc.resolveT
-            (\e ->
-                IO.hPutStrLn IO.stderr (Exception.multilineFromMessage e) >>
-                Exit.exitFailure) $
-            prepareProgram =<<
-            Program.chase (Option.importPaths opt) (Option.moduleName opt)
+    (mainMod, p) <-
+        Exc.resolveT (exitFailureMsg . Exception.multilineFromMessage) $
+            case Option.moduleNames opt of
+                [] ->
+                    return $
+                        let name = Module.Name "Main"
+                        in  (name, Program.singleton $ Module.empty name)
+                names@(mainModName:_) ->
+                    {-
+                    If a file is not found, we setup an empty module.
+                    If a file exists but contains parse errors
+                    then we abort loading.
+                    -}
+                    fmap ((,) mainModName) $
+                    flip MS.execStateT Program.empty $
+                    mapM_
+                        (\name -> do
+                            epath <-
+                                lift $ lift $ Exc.tryT $
+                                Program.chaseFile (Option.importPaths opt)
+                                    (Module.makeFileName name)
+                            case epath of
+                                Exc.Success path -> do
+                                    voidStateT $
+                                        Program.load (Option.importPaths opt)
+                                            (Module.deconsName name) path
+                                Exc.Exception _ ->
+                                    voidStateT $ Exception.lift .
+                                        Program.addModule (Module.empty name))
+                        names
 
     input <- newChan
     output <- newTChanIO
-    writeTChanIO output $ Register p ctrls
+    STM.atomically $ registerProgram output mainMod p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
             gui input output
@@ -154,16 +188,21 @@ main = do
 
 -- | messages that are sent from GUI to machine
 data Action =
-     Modification (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
-         -- ^ MVar of the HTTP server, modulename, sourcetext, position
-   | Execution Execution
-   | NextStep
+     Execution Execution
+   | Modification Modification
    | Control Controls.Event
-   | Load FilePath
 
 data Execution =
-    Mode Event.WaitMode | Restart | Stop |
+    Mode Event.WaitMode | Restart | Stop | NextStep |
     PlayTerm MarkedText | ApplyTerm MarkedText
+
+data Modification =
+     Load FilePath
+   | NewModule
+   | CloseModule Module.Name
+   | FlushModules Module.Name
+   | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
+         -- ^ MVar of the HTTP server, modulename, sourcetext, position
 
 
 -- | messages that are sent from machine to GUI
@@ -171,8 +210,12 @@ data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Message ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
-   | Register Program [(Identifier, Controls.Control)]
+   | Register { _mainModName :: Module.Name, _modules :: M.Map Module.Name Module.Module }
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
+   | InsertPage { _activate :: Bool, _module :: Module.Module }
+   | DeletePage Module.Name
+   | RenamePage Module.Name Module.Name
+   | RebuildControls Controls.Assignments
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
@@ -194,17 +237,6 @@ exceptionToGUIIO ::
 exceptionToGUIIO output =
     Exc.resolveT (writeTChanIO output . Exception)
 
-prepareProgram ::
-    (Monad m) =>
-    Program ->
-    Exc.ExceptionalT Exception.Message m
-        (Program, [(Identifier, Controls.Control)])
-prepareProgram p0 = do
-    let ctrls = Controls.collect p0
-    p1 <- Exc.ExceptionalT $ return $
-        Program.add_module (Controls.controller_module ctrls) p0
-    return (p1, ctrls)
-
 parseTerm ::
     (Monad m, IO.Input a) =>
     MarkedText -> Exc.ExceptionalT Exception.Message m a
@@ -218,7 +250,7 @@ parseTerm (MarkedText pos str) =
                  IO.input)
              "" str of
         Left msg ->
-            Exc.throwT $ Program.messageFromParserError msg
+            Exc.throwT $ Exception.messageFromParserError msg
         Right t -> return t
 
 
@@ -242,33 +274,91 @@ formatPitch p =
                 _ -> error "pitch class must be a number from 0 to 11"
     in  "note qn (" ++ name ++ " " ++ show (oct-1) ++ ") : "
 
+formatModuleList :: [Module.Name] -> String
+formatModuleList =
+    List.intercalate ", " . map Module.deconsName
+
 
 {-
-TODO: handle the case that the module changed its name
-(might happen if user changes the text in the editor)
+We do not put the program update into a big a STM
+because loading new imported modules may take a while
+and blocking access to 'program'
+would block the read access by the interpreter.
 -}
 modifyModule ::
+    [ FilePath ] ->
     TVar Program ->
     TChan GuiUpdate ->
     Module.Name ->
-    [Char] ->
+    String ->
     Int ->
-    Exc.ExceptionalT Exception.Message STM ()
-modifyModule program output moduleName sourceCode pos = do
-    p <- lift $ readTVar program
-    let Just previous = M.lookup moduleName $ modules p
-    m <-
-        Exc.mapExceptionT Program.messageFromParserError $
-        Exc.fromEitherT $ return $
-        Parsec.parse
-            (Module.parseUntilEOF (Module.source_location previous) sourceCode)
-            ( Module.deconsName moduleName ) sourceCode
-    lift . writeTVar program =<<
-        (Exc.ExceptionalT $ return $
-         Program.add_module m p)
-    lift $ writeTChan output $
-        Refresh moduleName sourceCode pos
---    lift $ Log.put "parsed and modified OK"
+    IO (Maybe Exception.Message)
+modifyModule importPaths program output moduleName sourceCode pos = do
+    p <- readTVarIO program
+    Exception.switchT
+        (\e -> do
+            writeTChanIO output $ Exception e
+            return $ Just e)
+        (\(newP, updates) -> do
+            STM.atomically $ do
+                mapM_ ( writeTChan output ) updates
+                writeTVar program newP
+--            Log.put "parsed and modified OK"
+            return Nothing) $ do
+        let exception =
+                Exception.Message Exception.Parse (Module.nameRange moduleName)
+        previous <-
+            case M.lookup moduleName $ Program.modules p of
+                Nothing ->
+                    Exc.throwT $ exception $
+                    Module.tellName moduleName ++ " does no longer exist"
+                Just m -> return m
+        m <-
+            Exception.lift $ Module.parse
+                (Module.deconsName moduleName)
+                (Module.sourceLocation previous) sourceCode
+        {-
+        My first thought was that renaming of modules
+        should be generally forbidden via HTTP.
+        My second thought was that renaming of modules
+        can be easily allowed or forbidden using the separation marker.
+        Actually currently renaming via HTTP is not possible,
+        because the separation marker is not allowed before the 'module' line.
+        If you like to strictly forbid renaming in some circumstances,
+        then make 'allowRename' a parameter of the function.
+        -}
+        let allowRename = True
+        MW.runWriterT $ do
+            p1 <-
+                if' (moduleName == Module.name m)
+                    (lift $ Exception.lift $ Program.replaceModule m p) $
+                if' allowRename (do
+                     lift $ Exc.assertT
+                         (exception $ Module.tellName (Module.name m) ++ " already exists")
+                         (not $ M.member (Module.name m) $ Program.modules p)
+                     MW.tell
+                         [ RenamePage moduleName (Module.name m) ]
+                     lift $ Exception.lift $ Program.addModule m $
+                         Program.removeModule moduleName p) $
+                (lift $ Exc.throwT $ exception
+                    "module name does not match page name and renaming is disallowed")
+            p2 <- lift $ Program.chaseImports importPaths m p1
+            MW.tell $ map (InsertPage False) $ M.elems $
+                M.difference ( Program.modules p2 ) ( Program.modules p1 )
+            -- Refresh must happen after a Rename
+            MW.tell [ Refresh (Module.name m) sourceCode pos,
+                      RebuildControls $ Program.controls p2 ]
+            return p2
+
+registerProgram :: TChan GuiUpdate -> Module.Name -> Program -> STM ()
+registerProgram output mainModName p = do
+    writeTChan output $ Register mainModName $ Program.modules p
+    writeTChan output $ RebuildControls $ Program.controls p
+
+updateProgram :: TVar Program -> TChan GuiUpdate -> Program -> STM ()
+updateProgram program output p = do
+    liftSTM $ writeTVar program p
+    liftSTM $ writeTChan output $ RebuildControls $ Program.controls p
 
 
 {-
@@ -303,13 +393,11 @@ machine input output importPaths progInit sq = do
                 Log.put $ show event
                 STM.atomically $ exceptionToGUI output $ do
                     p <- lift $ readTVar program
-                    p' <-
-                        Exc.ExceptionalT $ return $
-                        Controls.change_controller_module p event
+                    p' <- Exception.lift $ Controls.changeControllerModule p event
                     lift $ writeTVar program p'
-                    -- return $ Controls.get_controller_module p'
+                    -- return $ Controls.getControllerModule p'
                 -- Log.put $ show m
-            NextStep -> writeChan waitChan Event.NextStep
+
             Execution exec ->
                 case exec of
                     Mode mode -> do
@@ -327,6 +415,7 @@ machine input output importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
+                    NextStep -> writeChan waitChan Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ ALSA.quietContinueQueue sq
@@ -348,46 +437,86 @@ machine input output importPaths progInit sq = do
                                 Exception.Message Exception.Parse (Term.termRange fterm) $
                                 "tried to apply the non-function term " ++
                                 show (markedString txt)
-            Modification feedback moduleName sourceCode pos -> do
-                Log.put $
-                    Module.tellName moduleName ++
-                    " has new input\n" ++ sourceCode
-                case feedback of
-                    Nothing ->
-                        STM.atomically $
-                        exceptionToGUI output $
-                        modifyModule program output moduleName sourceCode pos
-                    Just mvar -> do
-                        x <-
-                            STM.atomically $
-                            fmap (Exc.switch
-                                (\e ->
-                                    (Just $ Exception.multilineFromMessage e,
-                                     sourceCode))
-                                (\() -> (Nothing, sourceCode))) $
-                            Exc.runExceptionalT $
-                            Exc.catchT
-                                (modifyModule program output moduleName sourceCode pos)
-                                (\e -> do
-                                    lift $ writeTChan output $ Exception e
-                                    Exc.throwT e)
-                        putMVar mvar $ Exc.Success x
-            Load filePath -> do
-                Log.put $
-                    "load " ++ filePath ++ " and all its dependencies"
-                exceptionToGUIIO output $ do
-                    (p,ctrls) <-
-                        prepareProgram =<<
-                        Program.load importPaths Program.empty
-                            (FilePath.takeBaseName filePath) filePath
-                    lift $ do
-                        ALSA.stopQueue sq
-                        withMode Event.RealTime $ do
-                            writeTVar program p
-                            writeTMVar term mainName
-                            writeTChan output $ Register p ctrls
-                        ALSA.continueQueue sq
-                        Log.put "chased and parsed OK"
+
+            Modification modi ->
+                case modi of
+                    RefreshModule feedback moduleName sourceCode pos -> do
+                        Log.put $
+                            Module.tellName moduleName ++
+                            " has new input\n" ++ sourceCode
+                        case feedback of
+                            Nothing ->
+                                void $
+                                modifyModule importPaths program output moduleName sourceCode pos
+                            Just mvar -> do
+                                x <- modifyModule importPaths program output moduleName sourceCode pos
+                                putMVar mvar $ Exc.Success
+                                    (fmap Exception.multilineFromMessage x,
+                                     sourceCode)
+
+                    Load filePath -> do
+                        Log.put $
+                            "load " ++ filePath ++ " and all its dependencies"
+                        exceptionToGUIIO output $ do
+                            let stem = FilePath.takeBaseName filePath
+                            p <-
+                                Program.load importPaths stem filePath
+                                    Program.empty
+                            lift $ do
+                                ALSA.stopQueue sq
+                                withMode Event.RealTime $ do
+                                    writeTVar program p
+                                    writeTMVar term mainName
+                                    registerProgram output (Module.Name stem) p
+                                ALSA.continueQueue sq
+                                Log.put "chased and parsed OK"
+
+                    NewModule ->
+                        STM.atomically $ do
+                            prg <- readTVar program
+                            let modName =
+                                   head $
+                                   filter (not . flip M.member (Program.modules prg)) $
+                                   map (Module.Name . ("New"++)) $
+                                   "" : map show (iterate (1+) (1::Integer))
+
+                                modu = Module.empty modName
+                            case Program.addModule modu prg of
+                                Exc.Exception e ->
+                                    error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
+                                Exc.Success newPrg ->
+                                    liftSTM $ updateProgram program output newPrg
+                            liftSTM $ writeTChan output $ InsertPage True modu
+
+                    CloseModule modName ->
+                        STM.atomically $ exceptionToGUI output $
+                            Exc.mapExceptionT
+                                (Module.inoutExceptionMsg modName .
+                                 ("cannot close module: " ++)) $ do
+                            prg <- liftSTM $ readTVar program
+                            let modules = Program.modules prg
+                                importingModules =
+                                    M.keys $
+                                    M.filter (elem modName . map Module.source .
+                                              Module.imports) $
+                                    M.delete modName modules
+                            flip Exc.assertT (null importingModules) $
+                                "it is still imported by " ++
+                                formatModuleList importingModules
+                            flip Exc.assertT (M.member modName modules) $
+                                "it does not exist"
+                            flip Exc.assertT (M.size modules > 1) $
+                                "there must remain at least one module"
+                            liftSTM $ updateProgram program output $
+                                Program.removeModule modName prg
+                            liftSTM $ writeTChan output $ DeletePage modName
+
+                    FlushModules modName ->
+                        STM.atomically $ do
+                            prg <- readTVar program
+                            let (removed, minPrg) = Program.minimize modName prg
+                            updateProgram program output minPrg
+                            Fold.mapM_ (writeTChan output . DeletePage) removed
 
     void $ forkIO $
         Event.listen sq
@@ -423,7 +552,7 @@ executeStep ::
     MW.WriterT [ GuiUpdate ]
         ( MS.StateT Event.State IO ) ( Maybe Event.Time )
 executeStep program term writeExcMsg sq =
-    excSwitchT
+    Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
             -- writeChan waitChan $ Event.ModeChange Event.SingleStep
@@ -467,7 +596,7 @@ executeStep program term writeExcMsg sq =
                 Exc.mapExceptionalT
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
                      MW.runWriterT) $
-                Rewrite.runEval p (Rewrite.force_head t)
+                Rewrite.runEval p (Rewrite.forceHead t)
             lift $ writeUpdate $ ReductionSteps log
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do
@@ -481,12 +610,10 @@ executeStep program term writeExcMsg sq =
                     Exc.throwT (Term.termRange s,
                         "I do not know how to handle this term: " ++ show s))
 
--- also available in explicit-exception>=0.1.7
-excSwitchT ::
-    (Monad m) =>
-    (e -> m b) -> (a -> m b) ->
-    Exc.ExceptionalT e m a -> m b
-excSwitchT e s m = Exc.switch e s =<< Exc.runExceptionalT m
+
+voidStateT :: (Monad m) => (s -> m s) -> MS.StateT s m ()
+voidStateT f = MS.StateT $ liftM ((,) ()) . f
+
 
 writeUpdate ::
     (Monad m) =>
@@ -505,7 +632,7 @@ createMyEvent =
     WXCAL.commandEventCreate WXCMZ.wxEVT_COMMAND_MENU_SELECTED myEventId
 
 registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
-registerMyEvent win io = evtHandlerOnMenuCommand win myEventId io
+registerMyEvent win io = WXEvent.evtHandlerOnMenuCommand win myEventId io
 
 
 {-
@@ -518,34 +645,9 @@ gui :: Chan Action -- ^  the gui writes here
       -- (a textual representation of "current expression")
     -> IO ()
 gui input output = do
-    program <- newIORef Program.empty
-    controls <- newIORef []
     panels <- newIORef M.empty
 
-    frameError <- WX.frame [ text := "errors" ]
-
-    panelError <- WX.panel frameError [ ]
-
-    errorLog <- WX.listCtrl panelError
-        [ columns :=
-              ("Module", AlignLeft, 120) :
-              ("Row", AlignRight, -1) :
-              ("Column", AlignRight, -1) :
-              ("Type", AlignLeft, -1) :
-              ("Description", AlignLeft, 500) :
-              []
-        ]
-    errorList <- newIORef Seq.empty
-    let updateErrorLog f = do
-            errors <- readIORef errorList
-            let newErrors = f errors
-            writeIORef errorList newErrors
-            set errorLog [ items :=
-                  map Exception.lineFromMessage $ Fold.toList newErrors ]
-
-    clearLog <- WX.button panelError
-        [ text := "Clear",
-          on command := updateErrorLog (const Seq.empty) ]
+    frameError <- newFrameError
 
     frameControls <- WX.frame [ text := "controls" ]
 
@@ -590,6 +692,20 @@ gui input output = do
 
     WX.menuLine fileMenu
 
+    newModuleItem <- WX.menuItem fileMenu
+        [ text := "&New module\tCtrl-Shift-N",
+          help := "add a new empty module" ]
+
+    closeModuleItem <- WX.menuItem fileMenu
+        [ text := "&Close module\tCtrl-W",
+          help := "close the active module" ]
+
+    flushModulesItem <- WX.menuItem fileMenu
+        [ text := "&Flush modules",
+          help := "close all modules that are not transitively imported by the active module" ]
+
+    WX.menuLine fileMenu
+
     quitItem <- WX.menuQuit fileMenu []
 
 
@@ -598,7 +714,9 @@ gui input output = do
     refreshItem <- WX.menuItem execMenu
         [ text := "&Refresh\tCtrl-R",
           help :=
-              "parse the edited program and if successful " ++
+              "parse the edited module and if successful " ++
+              "rename the page to the modified module name, " ++
+              "load new imported modules and " ++
               "replace the executed program" ]
     WX.menuLine execMenu
     realTimeItem <- WX.menuItem execMenu
@@ -627,7 +745,7 @@ gui input output = do
               "with the marked editor area as current term, " ++
               "or use the surrounding identifier if nothing is marked" ]
     applyTermItem <- WX.menuItem execMenu
-        [ text := "Apply function term\tCtrl-Y",
+        [ text := "Apply term\tCtrl-Y",
           help :=
               "apply marked expression as function to the current term, " ++
               "the execution mode remains the same, " ++
@@ -652,7 +770,7 @@ gui input output = do
     nextStepItem <- WX.menuItem execMenu
         [ text := "Next step\tCtrl-N",
           enabled := False,
-          on command := writeChan input NextStep,
+          on command := writeChan input (Execution NextStep),
           help := "perform next step in single step mode" ]
 
 
@@ -677,9 +795,9 @@ gui input output = do
                         set itm [ checked := False ]
                         set win [ visible := False ]
                         -- WXCMZ.closeEventVeto ??? True
-                      else propagateEvent ]
+                      else WXEvent.propagateEvent ]
 
-    windowMenuItem "errors" frameError
+    windowMenuItem "errors" $ errorFrame frameError
     windowMenuItem "controls" frameControls
     WX.menuLine windowMenu
     reducerVisibleItem <- WX.menuItem windowMenu
@@ -690,11 +808,12 @@ gui input output = do
                   "hiding may improve performance drastically" ]
 
 
-    nb <- WX.notebook p [ ]
+    splitter <- WX.splitterWindow p []
 
+    nb <- WX.notebook splitter [ ]
 
     reducer <-
-        WX.textCtrl p
+        WX.textCtrl splitter
             [ font := fontFixed, editable := False, wrap := WrapNone ]
 
     status <- WX.statusField
@@ -705,10 +824,9 @@ gui input output = do
             result <- try act
             case result of
                 Left err ->
-                    writeTChanIO output $
-                    Exception $ Exception.Message Exception.InOut
-                        (Program.dummyRange (Module.deconsName moduleName))
-                        (Err.ioeGetErrorString err)
+                    writeTChanIO output $ Exception $
+                    Module.inoutExceptionMsg moduleName $
+                    Err.ioeGetErrorString err
                 Right () -> return ()
 
     set loadItem [
@@ -716,18 +834,14 @@ gui input output = do
               mfilename <- WX.fileOpenDialog
                   f False {- change current directory -} True
                   "Load Haskell program" haskellFilenames "" ""
-              forM_ mfilename $ writeChan input . Load
+              forM_ mfilename $ writeChan input . Modification . Load
           ]
 
     set reloadItem [
           on command := do
-              index <- get nb notebookSelection
               (moduleName, pnl) <-
-                  fmap ( M.elemAt index ) $ readIORef panels
-              prg <- readIORef program
-              let path =
-                      Module.source_location $ snd $
-                      M.elemAt index (modules prg)
+                  getFromNotebook nb =<< readIORef panels
+              let path = sourceLocation pnl
 
               handleException moduleName $ do
                   content <- readFile path
@@ -737,15 +851,10 @@ gui input output = do
           ]
 
     let getCurrentModule = do
-            index <- get nb notebookSelection
             (moduleName, pnl) <-
-                fmap ( M.elemAt index ) $ readIORef panels
+                getFromNotebook nb =<< readIORef panels
             content <- get (editor pnl) text
-            prg <- readIORef program
-            return
-                (Module.source_location $ snd $
-                 M.elemAt index (modules prg),
-                 moduleName, content)
+            return (sourceLocation pnl, moduleName, content)
         saveModule (path, moduleName, content) =
             handleException moduleName $ do
                 -- Log.put path
@@ -767,20 +876,36 @@ gui input output = do
                   ("Save " ++ Module.tellName moduleName) haskellFilenames path file
               forM_ mfilename $ \fileName -> do
                   saveModule (fileName, moduleName, content)
-                  modifyIORef program $ \prg ->
-                      prg { Program.modules =
-                          M.adjust
-                              (\modu -> modu { Module.source_location = fileName })
-                              moduleName (Program.modules prg) }
+                  modifyIORef panels $
+                      M.adjust
+                          (\pnl -> pnl { sourceLocation = fileName })
+                          moduleName
           ]
 
+
+    set newModuleItem [
+          on command :=
+              writeChan input $ Modification NewModule
+          ]
+
+    set closeModuleItem [
+          on command :=
+              writeChan input . Modification . CloseModule . fst
+                  =<< getFromNotebook nb =<< readIORef panels
+          ]
+
+    set flushModulesItem [
+          on command :=
+              writeChan input . Modification . FlushModules . fst
+                  =<< getFromNotebook nb =<< readIORef panels
+          ]
 
     let refreshProgram (moduleName, pnl) = do
             s <- get (editor pnl) text
             pos <- get (editor pnl) cursor
-            writeChan input $ Modification Nothing moduleName s pos
+            writeChan input $ Modification $ RefreshModule Nothing moduleName s pos
 
-            updateErrorLog $ Seq.filter $
+            updateErrorLog frameError $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
                     Module.deconsName moduleName /=
                     Pos.sourceName (Term.start errorRng)
@@ -871,65 +996,72 @@ gui input output = do
         activateSingleStep
         writeChan input $ Execution $ Mode Event.SingleStep
 
-    set reducerVisibleItem
-        [ on command := do
-             b <- get reducerVisibleItem checked
-             set reducer [ visible := b ]
-             WX.windowReFit reducer ]
+    let initSplitterPosition = 0 {- equal division of heights -}
+    newIORef initSplitterPosition >>= \splitterPosition ->
+        set reducerVisibleItem
+            [ on command := do
+                 b <- get reducerVisibleItem checked
+                 isSplit <- WXCMZ.splitterWindowIsSplit splitter
+                 when (b /= isSplit) $ void $
+                     if b
+                       then WXCMZ.splitterWindowSplitHorizontally
+                                    splitter nb reducer =<<
+                                readIORef splitterPosition
+                       else do
+                            writeIORef splitterPosition =<<
+                                WXCMZ.splitterWindowGetSashPosition splitter
+                            WXCMZ.splitterWindowUnsplit splitter reducer
+            ]
+
+    {-
+    Without this dummy page the notebook sometimes gets a very small height,
+    although we explicitly set the splitter position to 0 (= balanced tiling).
+    However the imbalance is not reproducable.
+    Maybe this is a race condition.
+    -}
+    do
+       pnl <- displayModule nb (Module.empty $ Module.Name "Dummy")
+       void $ WXCMZ.notebookAddPage nb (panel pnl) "Dummy" True (-1)
 
     set f [
-            layout := container p $ margin 5
-            $ column 5
-            [ WX.fill $ WX.tabs nb []
-            , WX.fill $ widget reducer
-            ]
+            layout :=
+                container p $ margin 5 $
+                WX.fill $
+                    WX.hsplit splitter
+                        5 {- sash width -} initSplitterPosition
+                        (widget nb) (widget reducer)
             , WX.statusBar := [status]
             , WX.menuBar   := [fileMenu, execMenu, windowMenu]
             , visible := True
             , clientSize := sz 1280 720
           ]
 
-
-    set errorLog
-        [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
-              ListItemSelected n <- return ev
-              errors <- liftIO $ readIORef errorList
-              let (Exception.Message typ errorRng _descr) =
-                      Seq.index errors n
-              Right moduleIdent <- return $
-                  Parsec.parse IO.input "" $
-                  Pos.sourceName $ Term.start errorRng
-              pnls <- liftIO $ readIORef panels
-              pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
-              liftIO $ set nb [ notebookSelection := pnl ]
-              let activateText textField = do
-                      h <- MaybeT.MaybeT $ return $
-                           M.lookup moduleIdent textField
-                      (i,j) <- liftIO $ textRangeFromRange h errorRng
-                      liftIO $ set h [ cursor := i ]
-                      liftIO $ WXCMZ.textCtrlSetSelection h i j
-              case typ of
-                  Exception.Parse ->
-                      activateText $ fmap editor pnls
-                  Exception.Term ->
-                      activateText $ fmap highlighter pnls
-                  Exception.InOut ->
-                      return ()
-        ]
-
-    set frameError
-        [ layout := container panelError $ margin 5
-              $ column 5 $
-                 [ WX.fill $ widget errorLog,
-                   WX.hfloatLeft $ widget clearLog ]
-        , clientSize := sz 500 300
-        ]
+    onErrorSelection frameError $ \(Exception.Message typ errorRng _descr) -> do
+        let moduleIdent =
+                Module.Name $
+                Pos.sourceName $ Term.start errorRng
+        pnls <- liftIO $ readIORef panels
+        pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
+        liftIO $ set nb [ notebookSelection := pnl ]
+        let activateText textField = do
+                h <- MaybeT.MaybeT $ return $
+                     M.lookup moduleIdent textField
+                (i,j) <- liftIO $ textRangeFromRange h errorRng
+                liftIO $ set h [ cursor := i ]
+                liftIO $ WXCMZ.textCtrlSetSelection h i j
+        case typ of
+            Exception.Parse ->
+                activateText $ fmap editor pnls
+            Exception.Term ->
+                activateText $ fmap highlighter pnls
+            Exception.InOut ->
+                return ()
 
     let closeOther =
             writeIORef appRunning False >>
-            close frameError >> close frameControls
+            close (errorFrame frameError) >> close frameControls
     set quitItem [ on command := closeOther >> close f]
-    set f [ on closing := closeOther >> propagateEvent
+    set f [ on closing := closeOther >> WXEvent.propagateEvent
         {- 'close f' would trigger the closing handler again -} ]
     focusOn f
 
@@ -968,9 +1100,13 @@ gui input output = do
                 highlight 200 0 200 rules
                 highlight 200 200 0 origins
 
+            ResetDisplay -> do
+                hls <- fmap (fmap highlighter) $ readIORef panels
+                setColor hls WXCore.white
+                    =<< varSwap highlights M.empty
+
             Exception exc -> do
-                itemAppend errorLog $ Exception.lineFromMessage exc
-                modifyIORef errorList (Seq.|> exc)
+                addToErrorLog frameError exc
                 set status [ text := Exception.statusFromMessage exc ]
 
             -- update highlighter text field only if parsing was successful
@@ -991,29 +1127,72 @@ gui input output = do
             StatusLine str -> do
                 set status [ text := str ]
 
-            Register prg ctrls -> do
-                writeIORef program prg
-                writeIORef controls ctrls
-
+            Register mainModName mods -> do
                 void $ WXCMZ.notebookDeleteAllPages nb
-                pnls <- displayModules input
-                            frameControls ctrls nb prg
-                writeIORef panels pnls
-                forM_ (M.mapWithKey (,) $ fmap panel pnls) $
-                    \(moduleName,sub) ->
-                        WXCMZ.notebookAddPage nb sub (Module.deconsName moduleName) False (-1)
+                (writeIORef panels =<<) $ forM mods $ \modu -> do
+                    pnl <- displayModule nb modu
+                    void $ WXCMZ.notebookAddPage nb (panel pnl)
+                        (Module.deconsName $ Module.name modu)
+                        (Module.name modu == mainModName) (-1)
+                    return pnl
 
-                updateErrorLog (const Seq.empty)
+                updateErrorLog frameError (const Seq.empty)
 
                 set status [ text :=
-                    "modules loaded: " ++
-                    (List.intercalate ", " $ map Module.deconsName $
-                     M.keys $ Program.modules prg) ]
+                    "modules loaded: " ++ formatModuleList ( M.keys mods ) ]
 
-            ResetDisplay -> do
-                hls <- fmap (fmap highlighter) $ readIORef panels
-                setColor hls WXCore.white
-                    =<< varSwap highlights M.empty
+            InsertPage act modu -> do
+                pnls <- readIORef panels
+                pnl <- displayModule nb modu
+                let modName = Module.name modu
+                    newPnls = M.insert modName pnl pnls
+                writeIORef panels newPnls
+                success <-
+                    WXCMZ.notebookInsertPage nb
+                        (M.findIndex modName newPnls) (panel pnl)
+                        (Module.deconsName modName) act (-1)
+                {- FIXME:
+                if the page cannot be added, we get an inconsistency -
+                how to solve that?
+                -}
+                if success
+                  then
+                    set status [ text := "new " ++ Module.tellName modName ]
+                  else
+                    writeTChanIO output $ Exception $
+                    Module.inoutExceptionMsg modName $
+                    "Panic: cannot add page for the module"
+
+            DeletePage modName -> do
+                pnls <- readIORef panels
+                forM_ ( M.lookupIndex modName pnls ) $
+                    WXCMZ.notebookDeletePage nb
+                writeIORef panels $ M.delete modName pnls
+                set status [ text := "closed " ++ Module.tellName modName ]
+
+            RenamePage fromName toName -> do
+                pnls <- readIORef panels
+                forM_
+                    ( liftM2 (,)
+                        ( M.lookupIndex fromName pnls )
+                        ( M.lookup fromName pnls ) ) $ \(i,pnl) -> do
+                    success <- WXCMZ.notebookRemovePage nb i
+                    when (not success) $
+                        writeTChanIO output $ Exception $
+                        Module.inoutExceptionMsg fromName $
+                        "Panic: cannot remove page for renaming module"
+                    let newPnls =
+                            M.insert toName pnl $ M.delete fromName pnls
+                    writeIORef panels newPnls
+                    forM_ ( M.lookupIndex toName newPnls ) $ \j ->
+                        WXCMZ.notebookInsertPage nb j (panel pnl)
+                            (Module.deconsName toName) True (-1)
+                set status [ text := "renamed " ++ Module.tellName fromName ++
+                                     " to " ++ Module.tellName toName ]
+
+            RebuildControls ctrls ->
+                Controls.create frameControls ctrls $
+                    writeChan input . Control
 
             Running mode -> do
                 case mode of
@@ -1035,38 +1214,120 @@ gui input output = do
                 pnls <- readIORef panels
                 HTTPGui.update
                     (\contentMVar name newContent pos ->
-                        writeChan input $
-                        Modification (Just contentMVar) name newContent pos)
+                        writeChan input $ Modification $
+                        RefreshModule (Just contentMVar) name newContent pos)
                     status (fmap editor pnls) request
+
+
+data FrameError =
+    FrameError {
+        errorFrame :: WX.Frame (),
+        errorLog :: WX.ListCtrl (),
+        errorText :: WX.TextCtrl (),
+        errorList :: IORef (Seq.Seq Exception.Message)
+    }
+
+newFrameError :: IO FrameError
+newFrameError = do
+    frame <- WX.frame [ text := "errors" ]
+
+    pnl <- WX.panel frame [ ]
+
+    splitter <- WX.splitterWindow pnl [ ]
+
+    log <- WX.listCtrl splitter
+        [ columns :=
+              ("Module", AlignLeft, 120) :
+              ("Row", AlignRight, -1) :
+              ("Column", AlignRight, -1) :
+              ("Type", AlignLeft, -1) :
+              ("Description", AlignLeft, 500) :
+              []
+        ]
+    list <- newIORef Seq.empty
+
+    txt <- WX.textCtrl splitter
+        [ font := fontFixed, wrap := WrapNone, editable := False ]
+
+    let rec =
+            FrameError {
+                errorFrame = frame,
+                errorLog = log,
+                errorText = txt,
+                errorList = list
+            }
+
+    clearLog <- WX.button pnl
+        [ text := "Clear",
+          on command := do
+              updateErrorLog rec (const Seq.empty)
+              set txt [ text := "" ] ]
+
+    set frame
+        [ layout := container pnl $ margin 5 $ WX.column 5 $
+             [ WX.fill $ WX.hsplit splitter 5 0 (widget log) (widget txt),
+               WX.hfloatLeft $ widget clearLog ]
+        , clientSize := sz 500 300
+        ]
+
+    return rec
+
+onErrorSelection ::
+    FrameError -> (Exception.Message -> MaybeT.MaybeT IO ()) -> IO ()
+onErrorSelection r act =
+    set (errorLog r)
+        [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
+              WXEvent.ListItemSelected n <- return ev
+              errors <- liftIO $ readIORef (errorList r)
+              let msg@(Exception.Message _typ _errorRng descr) =
+                      Seq.index errors n
+              liftIO $ set (errorText r) [ text := descr ]
+              act msg
+        ]
+
+updateErrorLog ::
+    FrameError ->
+    (Seq.Seq Exception.Message -> Seq.Seq Exception.Message) ->
+    IO ()
+updateErrorLog r f = do
+    errors <- readIORef (errorList r)
+    let newErrors = f errors
+    writeIORef (errorList r) newErrors
+    set (errorLog r) [ items :=
+          map Exception.lineFromMessage $ Fold.toList newErrors ]
+
+addToErrorLog ::
+    FrameError -> Exception.Message -> IO ()
+addToErrorLog r exc = do
+    itemAppend (errorLog r) $ Exception.lineFromMessage exc
+    modifyIORef (errorList r) (Seq.|> exc)
 
 
 data Panel =
     Panel {
-        panel :: WX.Panel (),
-        editor, highlighter :: WX.TextCtrl ()
+        panel :: WX.SplitterWindow (),
+        editor, highlighter :: WX.TextCtrl (),
+        sourceLocation :: FilePath
     }
 
-displayModules ::
-    Chan Action ->
-    WX.Frame c ->
-    [(Identifier, Controls.Control)] ->
+displayModule ::
     WXCore.Window b ->
-    Program ->
-    IO (M.Map Module.Name Panel)
-displayModules input frameControls ctrls nb prog = do
-    Controls.create frameControls ctrls $
-        writeChan input . Control
-
-    forM (modules prog) $ \ content -> do
-        psub <- WX.panel nb []
-        ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
-        hl <- WX.textCtrlRich psub
-            [ font := fontFixed, wrap := WrapNone, editable := False ]
-        set ed [ text := Module.source_text content ]
-        set hl [ text := Module.source_text content ]
-        set psub [ layout := (row 5 $
-            map WX.fill $ [widget ed, widget hl]) ]
-        return $ Panel psub ed hl
+    Module.Module ->
+    IO Panel
+displayModule nb modu = do
+    psub <- WX.splitterWindow nb []
+    ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
+    hl <- WX.textCtrlRich psub
+        [ font := fontFixed, wrap := WrapNone, editable := False ]
+    set ed [ text := Module.sourceText modu ]
+    set hl [ text := Module.sourceText modu ]
+    void $ WXCMZ.splitterWindowSplitVertically psub ed hl 0
+{-
+    set psub [
+        layout :=
+            WX.vsplit psub 5 0 (WX.fill $ widget ed) (WX.fill $ widget hl) ]
+-}
+    return $ Panel psub ed hl $ Module.sourceLocation modu
 
 
 getFromNotebook ::
@@ -1144,7 +1405,7 @@ getMarkedExpr modu ed = do
     marked <- WXCMZ.textCtrlGetStringSelection ed
     if null marked
       then do
-          pos@(i,line) <-
+          (i,line) <-
               textColumnRowFromPos ed =<< get ed cursor
           content <- WXCMZ.textCtrlGetLineText ed line
 {- simpler but inefficient
@@ -1155,10 +1416,11 @@ getMarkedExpr modu ed = do
               (prefix,suffix) ->
                   let identLetter c = Char.isAlphaNum c || c == '_' || c == '.'
                   in  return $
-                      MarkedText (sourcePosFromTextColumnRow modu pos) $
-                          (reverse $ takeWhile identLetter $ reverse prefix)
-                          ++
-                          takeWhile identLetter suffix
+                      MarkedText
+                          (sourcePosFromTextColumnRow modu (i - length prefix, line))
+                          ((reverse $ takeWhile identLetter $ reverse prefix)
+                           ++
+                           takeWhile identLetter suffix)
       else do
           (from, _to) <- textRangeFromSelection ed
           pos <- textColumnRowFromPos ed from

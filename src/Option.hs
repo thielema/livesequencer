@@ -10,7 +10,7 @@ import qualified Text.ParserCombinators.Parsec as Parsec
 import qualified Paths_live_sequencer as Paths
 import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
-          (getOpt, ArgOrder(..), ArgDescr(..), usageInfo, )
+          (getOpt, usageInfo, ArgDescr(NoArg, ReqArg), )
 import System.Environment (getArgs, getProgName, )
 import System.FilePath ( (</>), searchPathSeparator )
 
@@ -20,12 +20,13 @@ import qualified System.Exit as Exit
 import Control.Monad ( when )
 
 import qualified Utility.NonEmptyList as NEList
+import Data.Traversable ( forM )
 import Data.List.HT ( chop )
 import Data.List ( intercalate )
 
 
 data Option = Option {
-        moduleName :: Module.Name,
+        moduleNames :: [Module.Name],
         importPaths :: [FilePath],
         connect :: NEList.T Port,
         sequencerName :: String,
@@ -37,7 +38,7 @@ getDeflt = do
     dataDir <- Paths.getDataDir
     return $
         Option {
-            moduleName = error "no module specified",
+            moduleNames = [],
             importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
             connect = NEList.singleton (Port "inout" (Just []) (Just [])),
             sequencerName = "Rewrite-Sequencer",
@@ -120,7 +121,7 @@ get = do
     argv <- getArgs
     deflt <- getDeflt
     let (opts, files, errors) =
-            getOpt RequireOrder (description deflt) argv
+            getOpt Opt.RequireOrder (description deflt) argv
     when (not $ null errors) $
         exitFailureMsg (init (concat errors))
 
@@ -129,14 +130,12 @@ get = do
         fmap (\o -> o { importPaths = map (dir </>) $ importPaths o } ) $
         foldl (>>=) (return deflt) opts
 
-    case files of
-        [] -> exitFailureMsg "no module specified"
-        _:_:_ -> exitFailureMsg "more than one module specified"
-        [modu] ->
-            case Parsec.parse IO.input "" modu of
-                Right name ->
-                    return $ parsedOpts {
-                        connect = NEList.reverse $ connect parsedOpts,
-                        moduleName = name
-                        }
+    names <-
+        forM files $ \modu ->
+            case Parsec.parse IO.input modu modu of
+                Right name -> return name
                 Left _ -> exitFailureMsg $ show modu ++ " is not a module name"
+    return $ parsedOpts {
+        connect = NEList.reverse $ connect parsedOpts,
+        moduleNames = names
+        }

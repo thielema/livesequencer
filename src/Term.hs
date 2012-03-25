@@ -1,6 +1,6 @@
 module Term where
 
-import IO ( Input, Output, input, output, parsec_reader )
+import IO ( Input, Output, input, output, parsecReader )
 
 import qualified Text.ParserCombinators.Parsec.Token as T
 import qualified Text.ParserCombinators.Parsec.Language as L
@@ -157,16 +157,16 @@ instance Output Identifier where
   output i = text $ name i
 
 instance Show Identifier where show = render . output
-instance Read Identifier where readsPrec = parsec_reader
+instance Read Identifier where readsPrec = parsecReader
 
 
 data Term = Node Identifier [ Term ]
           | Number Range Integer
-          | String_Literal Range String
+          | StringLiteral Range String
     deriving ( Eq, Ord )
 
 instance Show Term where show = render . output
-instance Read Term where readsPrec = parsec_reader
+instance Read Term where readsPrec = parsecReader
 
 
 mainName :: Term
@@ -212,11 +212,11 @@ parseAtom :: Parser Term
 parseAtom =
         (T.lexeme lexer $ fmap (uncurry Number) $
          ranged (fmap read $ Parsec.many1 Parsec.digit))
-    <|> fmap (uncurry String_Literal)
+    <|> fmap (uncurry StringLiteral)
              (T.lexeme lexer (ranged parseStringLiteral))
---    <|> fmap (uncurry String_Literal) (ranged (T.stringLiteral lexer))
+--    <|> fmap (uncurry StringLiteral) (ranged (T.stringLiteral lexer))
     <|> T.parens lexer input
-    <|> bracketed_list
+    <|> bracketedList
     <|> fmap (flip Node []) input
 
 parse :: Parser Term
@@ -248,13 +248,13 @@ binary (s, assoc) = flip Expr.Infix assoc $ do
     return $ \ l r -> Node ( Identifier { name = s, range = rng } ) [ l, r ]
 
 
-bracketed_list :: Parser Term
-bracketed_list = do
+bracketedList :: Parser Term
+bracketedList = do
     (r,_) <- ranged $ symbol "["
-    inside_bracketed_list r
+    insideBracketedList r
 
-inside_bracketed_list :: Range -> Parser Term
-inside_bracketed_list rng =
+insideBracketedList :: Range -> Parser Term
+insideBracketedList rng =
         do (r,_) <- ranged $ symbol "]"
            return $ Node ( Identifier { name = "[]", range = r } ) []
     <|> do x <- input
@@ -262,13 +262,13 @@ inside_bracketed_list rng =
            xs <-   do symbol "]" ; r <- getPosition
                       return $ Node ( Identifier { name = "[]", range = Range q r } ) []
                <|> do symbol "," ; r <- getPosition
-                      inside_bracketed_list $ Range q r
+                      insideBracketedList $ Range q r
            return $ Node ( Identifier { name = ":", range = rng } ) [ x, xs ]
 
 instance Output Term where
   output t = case t of
      Number _ n -> text $ show n
-     String_Literal _ s -> text $ show s
+     StringLiteral _ s -> text $ show s
      Node f args -> output f <+> fsep ( map protected args )
 
 protected :: Term -> Doc
@@ -282,7 +282,7 @@ type Position = [ Int ]
 termRange :: Term -> Range
 termRange (Node i _) = range i
 termRange (Number rng _) = rng
-termRange (String_Literal rng _) = rng
+termRange (StringLiteral rng _) = rng
 
 subterms :: Term -> [ (Position, Term) ]
 subterms t = ( [], t ) : case t of
