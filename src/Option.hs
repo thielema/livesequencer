@@ -1,6 +1,7 @@
 module Option where
 
 import qualified Module
+import qualified Time
 import qualified IO
 import Option.Utility ( exitFailureMsg, fmapOptDescr, parseNumber )
 import qualified HTTPServer.Option as HTTP
@@ -57,13 +58,16 @@ data Port =
 
 data Limits =
     Limits {
-        maxTermSize, maxTermDepth :: Int
+        maxTermSize, maxTermDepth, maxEvents :: Int,
+        eventPeriod :: Time.Nanoseconds Integer
     }
 
 limitsDeflt :: Limits
 limitsDeflt = Limits {
         maxTermSize = 2000,
-        maxTermDepth = 100
+        maxTermDepth = 100,
+        maxEvents = 150,
+        eventPeriod = Time.milliseconds 1000
     }
 
 
@@ -148,6 +152,18 @@ limitsDescription deflt =
             parseNumber "term depth" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
         ("maximum allowed term depth, default " ++
          show (maxTermDepth deflt)) :
+    Opt.Option [] ["max-events-per-period"]
+        (flip ReqArg "NUMBER" $ \str flags ->
+            fmap (\p -> flags{maxEvents = fromInteger p}) $
+            parseNumber "events" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("maximum number of allowed events per period, default " ++
+         show (maxEvents deflt)) :
+    Opt.Option [] ["event-period"]
+        (flip ReqArg "MILLISECONDS" $ \str flags ->
+            fmap (\p -> flags{eventPeriod = Time.milliseconds p}) $
+            parseNumber "event period" (\n -> 0<n && n<1000000000) "positive 30 bit" str)
+        ("period for limitting adjacent events, default " ++
+         show (eventPeriod deflt)) :
     []
 
 

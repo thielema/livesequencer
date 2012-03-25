@@ -92,7 +92,8 @@ data State =
     State {
         stateWaitMode_ :: WaitMode,
         stateWaiting_ :: Bool,
-        stateTime_ :: Time
+        stateTime_ :: Time,
+        stateRecentTimes_ :: Seq.Seq Time
     }
 
 stateWaitMode :: Acc.T State WaitMode
@@ -104,8 +105,11 @@ stateWaiting = Acc.fromSetGet (\x s -> s{stateWaiting_ = x}) stateWaiting_
 stateTime :: Acc.T State Time
 stateTime = Acc.fromSetGet (\x s -> s{stateTime_ = x}) stateTime_
 
+stateRecentTimes :: Acc.T State (Seq.Seq Time)
+stateRecentTimes = Acc.fromSetGet (\x s -> s{stateRecentTimes_ = x}) stateRecentTimes_
+
 initState :: State
-initState = State Event.RealTime False mempty
+initState = State Event.RealTime False mempty Seq.empty
 
 runState :: (Monad m) => MS.StateT State m a -> m a
 runState = flip MS.evalStateT Event.initState
@@ -234,7 +238,7 @@ prepare ::
     MS.StateT State IO (Bool, Maybe Time)
 prepare sq mt = do
     liftIO $ Log.put $ "prepare waiting for " ++ show mt
-    (State waitMode _ currentTime) <- MS.get
+    (State waitMode _ currentTime _) <- MS.get
     case waitMode of
         RealTime -> do
             case mt of

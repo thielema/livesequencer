@@ -543,10 +543,38 @@ execute limits program term output sq waitChan =
         (mdur,outputs) <- MW.runWriterT $ do
             waiting <- lift $ AccM.get Event.stateWaiting
             when waiting $ writeUpdate ResetDisplay
+            maxEventsSat <- lift $ checkMaxEvents limits
             executeStep limits program term
-                (STM.atomically . output . Exception) sq
+                (STM.atomically . output . Exception) sq maxEventsSat
         liftIO $ STM.atomically $ mapM_ output outputs
         Event.wait sq waitChan mdur
+
+{-
+We maintain the timestamps of the last 'maxEvents' events, including 'Wait's.
+Then we check whether the earliest stored event is old enough.
+-}
+checkMaxEvents :: (Monad m) =>
+    Option.Limits -> MS.StateT Event.State m Bool
+checkMaxEvents limits = do
+    mode <- AccM.get Event.stateWaitMode
+    case mode of
+        Event.RealTime -> do
+            current <- AccM.get Event.stateTime
+            recent <- AccM.get Event.stateRecentTimes
+            cont <-
+                case Seq.viewl recent of
+                    Seq.EmptyL -> return True
+                    past Seq.:< ts ->
+                        if' (Seq.length recent < Option.maxEvents limits)
+                            (return True) $
+                        if' (Mn.mappend past (Option.eventPeriod limits) <= current)
+                            (AccM.set Event.stateRecentTimes ts >> return True)
+                            (AccM.set Event.stateRecentTimes Seq.empty >> return False)
+            AccM.modify Event.stateRecentTimes (Seq.|> current)
+            return cont
+        _ -> do
+            AccM.set Event.stateRecentTimes Seq.empty
+            return True
 
 executeStep ::
     Option.Limits ->
@@ -554,9 +582,10 @@ executeStep ::
     TMVar Term ->
     ( Exception.Message -> IO () ) ->
     ALSA.Sequencer SndSeq.DuplexMode ->
+    Bool ->
     MW.WriterT [ GuiUpdate ]
         ( MS.StateT Event.State IO ) ( Maybe Event.Time )
-executeStep limits program term writeExcMsg sq =
+executeStep limits program term writeExcMsg sq maxEventsSat =
     Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
@@ -602,6 +631,9 @@ executeStep limits program term writeExcMsg sq =
             p <- liftSTM $ readTVar program
                 {- this happens anew at each click
                    since the program text might have changed in the editor -}
+            Exc.assertT
+                (Term.termRange t, "too many events in a too short period")
+                maxEventsSat
             (s,log) <-
                 Exc.mapExceptionalT
                     (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
