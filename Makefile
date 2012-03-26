@@ -1,5 +1,5 @@
 ghci:
-	ghci -Wall -i:data data/*.hs
+	ghci -Wall -i:data/base:data/example data/base/*.hs data/example/*.hs
 
 ghci-prg:
 	ghci -Wall -i:src:dist/build/autogen:http/enable src/Module.hs
