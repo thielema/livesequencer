@@ -8,7 +8,9 @@ module Controls (
     module ControlsBase,
     ) where
 
-import ControlsBase ( Name, deconsName, Assignments )
+import ControlsBase
+          ( Name, deconsName, Assignments,
+            Value (Bool, Number), Values (boolValues, numberValues) )
 import qualified ControlsBase as C
 import qualified Program
 import qualified Module
@@ -37,9 +39,6 @@ import Control.Functor.HT ( void )
 data Event = Event Name Value
     deriving Show
 
-data Value = Bool Bool | Number Int
-    deriving Show
-
 
 
 moduleName :: Module.Name
@@ -52,13 +51,25 @@ changeControllerModule ::
     Program.Program ->
     Event ->
     Exc.Exceptional Exception.Message Program.Program
-changeControllerModule p (Event name val) =
-    flip Program.replaceModule p .
+changeControllerModule p0 (Event name val) =
+    fmap (\p -> p{Program.controlValues =
+                     updateValue name val $ Program.controlValues p}) .
+    flip Program.replaceModule p0 .
     Module.addRule ( controllerRule name val ) =<<
     Exc.fromMaybe
         ( Module.inoutExceptionMsg moduleName
             "cannot find module for controller updates" )
-        ( M.lookup moduleName $ Program.modules p )
+        ( M.lookup moduleName $ Program.modules p0 )
+
+updateValue ::
+    Name -> Value -> Values -> Values
+updateValue name val vals =
+    case val of
+        Bool b ->
+            vals{boolValues = M.insert name b $ boolValues vals}
+        Number x ->
+            vals{numberValues = M.insert name x $ numberValues vals}
+
 
 controllerRule ::
     Name -> Value -> Rule.Rule

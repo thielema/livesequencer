@@ -22,11 +22,42 @@ data Control =
       CheckBox Bool
     | Slider Int Int Int
 
+data Value = Bool Bool | Number Int
+    deriving Show
+
+data Values =
+    Values {
+        boolValues :: M.Map Name Bool,
+        numberValues :: M.Map Name Int
+     } deriving Show
+
 newtype Name = Name String
     deriving (Eq, Ord, Show)
 
 deconsName :: Name -> String
 deconsName (Name name) = name
+
+
+emptyValues :: Values
+emptyValues = Values M.empty M.empty
+
+updateValues :: Values -> Assignments -> Assignments
+updateValues (Values bools numbers) assigns =
+    M.union
+        (M.intersectionWith
+            (\b (rng, a) -> (rng,
+                case a of
+                    CheckBox _deflt -> CheckBox b
+                    _ -> a))
+            bools assigns) $
+    M.union
+        (M.intersectionWith
+            (\x (rng, a) -> (rng,
+                case a of
+                    Slider lower upper _deflt -> Slider lower upper x
+                    _ -> a))
+            numbers assigns) $
+    assigns
 
 
 type Assignments = M.Map Name (Term.Range, Control)
