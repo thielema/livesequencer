@@ -18,6 +18,7 @@ module Midi (
     normalVelocity,
     emphasize,
 
+    takeTime,
     dropTime,
     skipTime,
     compressTime,
@@ -115,6 +116,16 @@ and this is handled more efficiently by the MIDI message encoding.
 emphasizeEvent :: Integer -> Event Message -> Event Message ;
 emphasizeEvent v (Event (On pitch velocity)) = Event (On pitch (velocity+v)) ;
 emphasizeEvent _v event = event ;
+
+
+takeTime :: Time -> [Event a] -> [Event a] ;
+takeTime _ [] = [] ;
+takeTime t ( Wait x : xs ) =
+  ifThenElse (t<x)
+    [ Wait t ]
+    ( Wait x : applyStrict takeTime (t-x) xs ) ;
+takeTime t ( ev : xs ) =
+  ev : takeTime t xs ;
 
 
 dropTime :: Time -> [Event a] -> [Event a] ;

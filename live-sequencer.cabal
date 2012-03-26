@@ -243,32 +243,34 @@ Description:
 Build-Type: Simple
 
 Data-Files:
-  data/prelude/Prelude.hs
-  data/Band.hs
-  data/Finite.hs
-  data/Klingklong.hs
-  data/Simplesong.hs
-  data/Sweep.hs
-  data/UD.hs
-  data/CrossSum.hs
-  data/Fibonacci.hs
-  data/DeBruijn.hs
+  data/example/Band.hs
+  data/example/BandControlled.hs
+  data/example/Finite.hs
+  data/example/Klingklong.hs
+  data/example/Simplesong.hs
+  data/example/Sweep.hs
+  data/example/UD.hs
+  data/example/CrossSum.hs
+  data/example/Fibonacci.hs
+  data/example/DeBruijn.hs
+  data/example/Pattern.hs
 
-  data/Bool.hs
-  data/Chords.hs
-  data/Controls.hs
-  data/Drum.hs
-  data/Function.hs
-  data/Instrument.hs
-  data/Integer.hs
-  data/List.hs
-  data/ListLive.hs
-  data/Midi.hs
-  data/Music.hs
-  data/Pattern.hs
-  data/Pitch.hs
-  data/Render.hs
-  data/Tuple.hs
+  data/base/Bool.hs
+  data/base/Chords.hs
+  data/base/Controls.hs
+  data/base/Drum.hs
+  data/base/Function.hs
+  data/base/Instrument.hs
+  data/base/Integer.hs
+  data/base/List.hs
+  data/base/ListLive.hs
+  data/base/Midi.hs
+  data/base/Music.hs
+  data/base/Pitch.hs
+  data/base/Render.hs
+  data/base/Tuple.hs
+
+  data/prelude/Prelude.hs
 
 Extra-Source-Files:
   http/enable/HTTPServer.hs
@@ -296,7 +298,7 @@ Flag httpServer
 
 
 Library
-  Hs-Source-Dirs: data
+  Hs-Source-Dirs: data/base, data/example
   GHC-Options: -Wall
   Build-Depends:
     -- for Render

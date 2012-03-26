@@ -22,7 +22,7 @@ import qualified Data.Foldable as Fold
 import qualified Data.Traversable as Trav
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Control.Monad ( foldM, liftM3 )
+import Control.Monad ( foldM, liftM4 )
 
 
 data Program =
@@ -31,6 +31,7 @@ data Program =
         , functions :: Module.FunctionDeclarations
         , constructors :: Module.ConstructorDeclarations
         , controls :: Controls.Assignments
+        , controlValues :: Controls.Values
         }
 --    deriving (Show)
 
@@ -40,7 +41,8 @@ empty =
         modules = M.empty,
         functions = M.empty,
         constructors = S.empty,
-        controls = M.empty
+        controls = M.empty,
+        controlValues = Controls.emptyValues
     }
 
 singleton :: Module -> Program
@@ -49,7 +51,8 @@ singleton m =
         modules = M.singleton (Module.name m) m,
         functions = Module.functions m,
         constructors = Module.constructors m,
-        controls = Module.controls m
+        controls = Module.controls m,
+        controlValues = Controls.emptyValues
     }
 
 {- |
@@ -62,14 +65,18 @@ addModule ::
     Module -> Program ->
     Exc.Exceptional Exception.Message Program
 addModule m p =
-    liftM3
+    liftM4
         ( Program ( M.insert ( Module.name m ) m ( modules p ) ) )
         ( unionDecls ( Module.functions m ) ( functions p ) )
         ( fmap M.keysSet $
           unionDecls
               ( mapFromSet $ Module.constructors m )
               ( mapFromSet $ constructors p ) )
-        ( Controls.union ( Module.controls m ) ( controls p ) )
+        ( Controls.union
+              ( Controls.updateValues
+                    ( controlValues p ) ( Module.controls m ) )
+              ( controls p ) )
+        ( return $ controlValues p )
 
 removeModule ::
     Module.Name -> Program -> Program
@@ -81,7 +88,8 @@ removeModule nm p =
             functions = M.difference ( functions p ) ( Module.functions m ),
             constructors =
                 S.difference ( constructors p ) ( Module.constructors m ),
-            controls = M.difference ( controls p ) ( Module.controls m )
+            controls = M.difference ( controls p ) ( Module.controls m ),
+            controlValues = controlValues p
           }
 
 replaceModule ::
