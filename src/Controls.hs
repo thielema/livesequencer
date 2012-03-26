@@ -100,6 +100,7 @@ create ::
     (Event -> IO ()) ->
     IO ()
 create frame controls sink = do
+    size <- WX.get frame WX.outerSize
     void $ WXCMZ.windowDestroyChildren frame
     panel <- WX.panel frame []
     (cs,ss) <- MW.runWriterT $ MW.execWriterT $ forM_ (M.toList controls) $
@@ -135,7 +136,9 @@ create frame controls sink = do
                    WX.row 5 [ WX.hfill $ widget sl , widget sp,
                               WX.label (deconsName name) ]
                    ]
-    set frame [ layout :=
-        container panel $ column 5 $
-        WX.hfloatCenter (row 5 cs) : ss
+    set frame [
+        layout :=
+            container panel $ column 5 $
+            WX.hfloatCenter (row 5 cs) : ss,
+        WX.outerSize := size
         ]
