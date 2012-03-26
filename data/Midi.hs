@@ -155,12 +155,12 @@ compressTime :: Integer -> Time -> [Event a] -> [Event a] ;
 compressTime k = applyStrict (applyStrict compressTimeAux k) ;
 
 compressTimeAux :: Integer -> Time -> [Event a] -> [Event a] ;
-compressTimeAux k _ [] = [] ;
+compressTimeAux _ _ [] = [] ;
 compressTimeAux k t ( Wait x : xs ) =
   ifThenElse (t<x)
     ( applyStrict consWait (div t k + (x-t)) xs )
-    ( applyStrict consWait (div x k) $
-      applyStrict (compressTimeAux k) (t-x) xs ) ;
+    ( applyStrict consWait (div x k)
+         ( applyStrict (compressTimeAux k) (t-x) xs ) ) ;
 compressTimeAux k t ( ev : xs ) = ev : compressTimeAux k t xs ;
 
 
