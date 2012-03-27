@@ -35,3 +35,6 @@ notebookSelection =
     WX.newAttr "selection"
         WXCMZ.notebookGetSelection
         (\nb -> void . WXCMZ.notebookSetSelection nb)
+
+splitterWindowSetSashGravity :: WX.SplitterWindow a -> Double -> IO ()
+splitterWindowSetSashGravity _w _g = return ()

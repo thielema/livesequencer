@@ -52,7 +52,7 @@ import Program ( Program )
 import Term ( Term, Identifier, mainName )
 import Option.Utility ( exitFailureMsg )
 import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
-import Utility.WX ( cursor, editable, notebookSelection )
+import Utility.WX ( cursor, editable, notebookSelection, splitterWindowSetSashGravity )
 
 import qualified HTTPServer.GUI as HTTPGui
 
@@ -1050,6 +1050,7 @@ gui input output = do
         activateSingleStep
         writeChan input $ Execution $ Mode Event.SingleStep
 
+    splitterWindowSetSashGravity splitter 0.5
     let initSplitterPosition = 0 {- equal division of heights -}
     newIORef initSplitterPosition >>= \splitterPosition ->
         set reducerVisibleItem
@@ -1288,6 +1289,7 @@ newFrameError = do
     pnl <- WX.panel frame [ ]
 
     splitter <- WX.splitterWindow pnl [ ]
+    splitterWindowSetSashGravity splitter 1
 
     log <- WX.listCtrl splitter
         [ columns :=
@@ -1370,6 +1372,7 @@ displayModule ::
     IO Panel
 displayModule nb modu = do
     psub <- WX.splitterWindow nb []
+    splitterWindowSetSashGravity psub 0.5
     ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
     hl <- WX.textCtrlRich psub
         [ font := fontFixed, wrap := WrapNone, editable := False ]
