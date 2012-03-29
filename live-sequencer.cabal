@@ -1,5 +1,5 @@
 Name:          live-sequencer
-Version:       0.0.0.1
+Version:       0.0.1
 Author:        Henning Thielemann and Johannes Waldmann
 Maintainer:    Johannes Waldmann <waldmann@imn.htwk-leipzig.de>, Henning Thielemann <haskell@henning-thielemann.de>
 Category:      Sound, Music, GUI
