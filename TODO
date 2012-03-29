@@ -1,10 +1,12 @@
-* Module management:
-  allow to start sequencer without any module, or only with Prelude, or only with Main
-  allow to start sequencer with non-existing module and then present an empty module
-      (http://dfa.imn.htwk-leipzig.de/bugzilla/show_bug.cgi?id=298)
-  flush unimported modules
-      compute the transitive import closure for the current module
-      and remove the remaining modules
+* under Ubuntu the splitterwindow position is the left-most on startup
+  This behavior is not nice, but I do not know how to improve it.
+  At least it would be good if moving the sash in one module
+  moves it in others modules as well.
+  I do not know how to do this, as well.
+  Maybe it would work better if we could set the sash gravity to 0.5.
+  Currently this function is not provided by wxcore.
+
+* move to new explicit-exception version and use its Exc.switchT
 
 * rename module - rename imports?
   When renaming a module it would simplify editing a lot,
@@ -23,71 +25,20 @@
   And I think we must do the modification immediately in the GUI
   in order to make it atomically.
 
-* read-only TVar program for interpreter
+* read-only TVar 'program' for interpreter
   We could define a wrapper around TVar that allows only reading.
   This should be used for the interpreter.
 
-* Controllers should not be in an extra module
-  It is difficult too maintain:
-  We have to disable refreshing, renaming and closing of the Control module.
-  We have to update the module when the user adds or removes checkBox calls in a module.
-  It forbids to load the modules into GHCi.
+* layout of controllers
+  How to arrange a set of sliders and checkboxes?
+  Should this be done automatically?
+  Should the user be able to arrange the elements interactively?
+  Should the programmer be able to specify a layout as functional expression?
 
-  I think we should just use plain variable definitions
-  and tag them with a pragma or with special naming scheme.
-  The assigned value should be the default value.
-  Is it a good idea to change the assigned value in the highlighter window
-      when the value is changed?
-
-  Like so:
-  interactiveBool = False ;
-
-  A pragma would allow to specify parameters.
-
-  {-# INTERACTIVE Checkbox #-}
-  bool = False ;
-
-  {-# INTERACTIVE Slider #-}
-  modulation = 0 ;
-
-  {-# INTERACTIVE MIDI Controller 0 7 #-}
-  volume = 64 ;
-
-  Alternatively we keep checkBox and similar functions,
-  and tag their calls uniquely.
-  Every call should be associated with a GUI element.
-  However then it is not clear how to update GUI elements
-  on a module refresh.
-  We might combine both approaches as follows:
-
-  {-# INTERACTIVE #-}
-  bool = checkBox False ;
-
-  {-# INTERACTIVE #-}
-  modulation = slider 0 127 0 ;
-
-  {-# INTERACTIVE #-}
-  volume = midiController 0 7 64 ;
-
-  Then setup a dummy module Control:
-  checkBox :: Bool -> Bool
-  checkBox = id
-
-  This definition takes effect if you do not declare the pragma.
-
-  However handling pragmas is not easy, too.
-  How to cope with multiple defining equations?
-  How about this one:
-
-  bool = interactive "bool" ( checkBox False ) ;
-  modulation = interactive "modulation" ( slider 0 127 0 ) ;
-  volume = interactive "volume" ( midiController 0 7 64 ) ;
-
-  Or we leave it almost as it is and
-  replace the constructors that identify controllers by plain strings.
-
-  In any case the Module record needs a 'controllers' field
-  and the controllers must be updated at every module refresh.
+* shall sliders and checkboxes have distinct namespaces?
+  Currently it is checked that sliders and checkboxes cannot have the same name,
+  but we maintain values for sliders and checkboxes separately
+  in order to make rules in Controls and stored values in Program.controlValues consistent.
 
 * Module system:
   support qualification and all styles of imports
@@ -95,17 +46,7 @@
   check for existence of imported and used qualifiers
   export lists
   hierarchical module names
-
-* avoid denial of service attacks
-  refuse too many events in a short time period,
-      caused by missing, short or invalid Waits
-      e.g.:
-          main = [ Wait Invalid ] ++ main
-          main = [ Event bla ] ++ main
-  restrict the size of the current term
-      and thus prevent memory leaks
-  restrict the number of reduction per element
-      in order to prevent infinite loops
+   -> use Helium
 
 * The current term is actually not current,
   it shows the last state.
@@ -117,12 +58,6 @@
   Maybe we can even display 'head' and 'tail' separately.
   In a left sub-window we could list all emitted events
   and a right sub-window we could show the real current term.
-
-* move to new explicit-exception version and use its Exc.switchT
-
-* Exception
-  move from other modules to Exception module:
-  excT, switchT, dummyRange, inoutExceptionMsg ...
 
 * Library part
   Move modules into module hierarchy.
@@ -137,6 +72,12 @@
   WWW uses CR+LF
   I have observed, that Windows/InternetExplorer submits CR+LF in the modified text lines.
   The question is, what kind of line end is expected by WxWidgets?
+
+* Are encodings in HTTP handled correctly?
+  Currently it seems that browsers prefer to send UTF-8
+  and HTTPdshed can read this.
+  But I am afraid that other browsers or other browser configurations
+  may easily crash the live-sequencer with umlauts and other special characters.
 
 * higher order functions:
   support operator sections like (+) and (:)
@@ -248,10 +189,6 @@
   Try to incorporate Helium/parser/type-checker or Typing Haskell in Haskell.
   Can one of the special Haskell editors Yi or Leksah be of help?
 
-* support different import modes, qualified identifiers
-  and clashing identifiers in modules
-  Only this way, several people can work independently in their modules.
-
 * check all head, read, error, unmatched patterns, irrefutable patterns, print, putStr stderr,
   toProgram, toPitch, toVelocity,
   readFile, writeFile and other IO functions,
@@ -291,3 +228,6 @@
     Since the flattening is lazy,
     we can decide later what information to present to the user.
     We could even reverse steps back to the last sent event.
+
+* replace Pattern.index and distributed/Utility.index
+  by operator section on (!!) once this syntax is availabe in the sequencer
