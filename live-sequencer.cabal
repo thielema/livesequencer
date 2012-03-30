@@ -13,6 +13,9 @@ Description:
    An editor shows a textual description of music (like Haskore),
    an interpreter computes and emits a stream of MIDI events,
    and (that's the main point) the user can change the program on the fly.
+   Additionally the state of the interpreter is shown
+   in the form of the current reduced term
+   for educational and debugging purposes.
    .
    1. example usage *****
    .
@@ -50,20 +53,32 @@ Description:
    in order to assign the event to the particular MIDI channel.
    If you omit this constructor then the event is put to channel 0.
    .
-   2. input language *****
-   .
-   The used language is Haskell with
-   only strict pattern matching and
-   pattern matching only at the definition level (no case),
-   no local bindings (no lambda, let, where),
-   no types (no type inference, type signatures and type declarations are skipped)
-   .
-   Semantics is similar to lazy evaluation,
-   but we have no sharing.
    In each step, the head of the @main@ stream gets reduced
    to head normal form (with @:@ at the top),
    and the first arg of the @:@ gets fully expanded
-   and it must be a midi event.
+   and it must be a MIDI event.
+   .
+   2. input language *****
+   .
+   The used language is syntactically almost a subset of Haskell with
+   only strict pattern matching and
+   pattern matching only at the definition level (no case),
+   no local bindings (no lambda, let, where),
+   no types (no type inference, type signatures and type declarations are skipped),
+   and with diet syntax (i.e. drastically reduced syntactic sugar,
+   like no layout rule, no do syntax, no list comprehension, no operator sections).
+   .
+   Semantics is similar to lazy evaluation,
+   but we have no sharing.
+   The design goal is that code can be changed
+   while the program is running.
+   This implies that evaluation of one expression
+   may give different results at different times
+   (e.g., during a live performance,
+   one changes some chords of a musical theme).
+   In turn, this implies that we do not store
+   and share results of evaluations,
+   hence, we don't have local bindings.
    .
    You may import and use
    the special functions 'Controls.checkBox', 'Controls.slider'
