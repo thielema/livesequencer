@@ -307,6 +307,10 @@ Flag gui
   Description: Build the wxWidgets GUI for the sequencer
   Default: True
 
+Flag mplayer
+  Description: Build the remote controller to the mplayer
+  Default: True
+
 Flag httpServer
   Description: Enable access to modules via a web browser
   Default: True
@@ -457,3 +461,21 @@ Executable live-sequencer-gui
   Other-Modules:
     HTTPServer.Option
     HTTPServer.GUI
+
+Executable live-mplayer-control
+  If flag(mplayer)
+    Build-Depends:
+      alsa-seq >=0.5 && <0.6,
+      alsa-core >=0.5 && <0.6,
+      unix >=2.4 && <2.6,
+      directory >=1.0 && <1.2,
+      base >=4.2 && <5
+  Else
+    Buildable: False
+
+  Hs-Source-Dirs: src
+  Main-is: MPlayer.hs
+
+  GHC-Options: -threaded -Wall
+  If impl(ghc>=7.0)
+    GHC-Options: -fwarn-tabs -fwarn-incomplete-uni-patterns
