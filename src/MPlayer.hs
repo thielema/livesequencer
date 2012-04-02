@@ -8,26 +8,37 @@ import Control.Monad (when, forever, )
 import qualified System.Directory as Dir
 import qualified System.Posix.Files as File
 import qualified System.IO as IO
+import qualified System.Environment as Env
 import qualified Control.Exception as Exc
 
 import qualified Text.Printf as Printf
 
+import Option.Utility (exitFailureMsg)
 
-pipeName :: FilePath
-pipeName = "/tmp/mppipe"
+
+defltPipeName :: FilePath
+defltPipeName = "/tmp/mppipe"
 
 seqName :: String
 seqName = "MPlayer control"
 
 main :: IO ()
-main = (do
-  Exc.bracket_
-    (File.createNamedPipe pipeName 0o644)
-    (Dir.removeFile pipeName) $ do
+main = do
+  args <- Env.getArgs
+  case args of
+    _:_:_ -> exitFailureMsg "too many arguments"
+    [pipeName] -> process pipeName
+    [] ->
+      Exc.bracket_
+        (File.createNamedPipe defltPipeName 0o644 >>
+         putStrLn ("Created pipe: " ++ defltPipeName))
+        (Dir.removeFile defltPipeName)
+        (process defltPipeName)
 
+process :: FilePath -> IO ()
+process pipeName = (do
   pipe <- IO.openFile pipeName IO.WriteMode
   IO.hSetBuffering pipe IO.LineBuffering
-  putStrLn $ "Created pipe: " ++ pipeName
   putStrLn $ "Start MPlayer like this:"
   putStrLn $ "mplayer -input file=" ++ pipeName
   putStrLn ""
