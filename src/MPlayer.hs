@@ -1,9 +1,15 @@
+import qualified Sound.MIDI.Message.Channel as ChannelMsg
+import qualified Sound.MIDI.Message.Channel.Voice as VoiceMsg
+import qualified Sound.MIDI.Message.Channel.Mode as ModeMsg
+import qualified Sound.MIDI.ALSA.Check as Check
+
 import qualified Sound.ALSA.Sequencer.Client as Client
 import qualified Sound.ALSA.Sequencer.Port as Port
 import qualified Sound.ALSA.Sequencer.Event as Event
 import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Sound.ALSA.Exception as AlsaExc
 import Control.Monad (when, forever, )
+import Data.Foldable (forM_, )
 
 import qualified System.Directory as Dir
 import qualified System.Posix.Files as File
@@ -21,6 +27,14 @@ defltPipeName = "/tmp/mppipe"
 
 seqName :: String
 seqName = "MPlayer control"
+
+channel :: ChannelMsg.Channel
+channel = ChannelMsg.toChannel 0
+
+commands :: IO.Handle -> [String] -> IO ()
+commands pipe =
+  mapM_ (\cmd -> putStrLn cmd >> IO.hPutStrLn pipe cmd)
+
 
 main :: IO ()
 main = do
@@ -62,15 +76,21 @@ process pipeName = (do
   forever $ do
      ev <- Event.input h
      -- print ev
-     case Event.body ev of
-       Event.CtrlEv Event.Controller param ->
-         when (Event.ctrlChannel param == 0 &&
-               Event.ctrlParam param == 0) $
-           case Event.ctrlValue param of
-             x ->
-               let cmd = Printf.printf "seek %d 2\n" x
-               in  putStrLn cmd >> IO.hPutStrLn pipe cmd
-       _ -> return ())
+     forM_ (Check.mode channel ev) $ \mode ->
+       case mode of
+         {-
+         'pause' toggles the playing mode
+         To make sure, that 'pause' stops,
+         we have to run the movie with 'seek' first.
+         -}
+         ModeMsg.AllNotesOff -> commands pipe ["seek 0", "pause"]
+         ModeMsg.AllSoundOff -> commands pipe ["seek 0", "pause"]
+         _ -> return ()
 
+     forM_ (Check.anyController channel ev) $ \(ctrl, val) ->
+       when (ctrl == VoiceMsg.toController 0) $
+         commands pipe [Printf.printf "seek %d 2\n" val]
+
+  )
   `AlsaExc.catch` \e ->
      putStrLn $ "alsa_exception: " ++ AlsaExc.show e
