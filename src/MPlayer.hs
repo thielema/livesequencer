@@ -1,3 +1,26 @@
+{- |
+This program receives MIDI commands
+and controls MPlayer accordingly.
+
+The program listens to MIDI channel 0.
+
+When the program receives AllNotesOff or AllNotesOn it pauses MPlayer.
+
+If the program receives a MIDI-CC 0 with value 0,
+then it seeks a certain position in the movie and triggers playback.
+
+You can set the seek time by sending the following controller changes:
+
+* CC 1: 100th seconds
+
+* CC 2: seconds
+
+* CC 3: minutes
+
+* CC 4: hours
+-}
+module Main where
+
 import qualified Sound.MIDI.Message.Channel as ChannelMsg
 import qualified Sound.MIDI.Message.Channel.Voice as VoiceMsg
 import qualified Sound.MIDI.Message.Channel.Mode as ModeMsg
@@ -8,6 +31,9 @@ import qualified Sound.ALSA.Sequencer.Port as Port
 import qualified Sound.ALSA.Sequencer.Event as Event
 import qualified Sound.ALSA.Sequencer as SndSeq
 import qualified Sound.ALSA.Exception as AlsaExc
+
+import qualified Control.Monad.Trans.State as MS
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (when, forever, )
 import Data.Foldable (forM_, )
 
@@ -31,9 +57,13 @@ seqName = "MPlayer control"
 channel :: ChannelMsg.Channel
 channel = ChannelMsg.toChannel 0
 
-commands :: IO.Handle -> [String] -> IO ()
+commands :: MonadIO io => IO.Handle -> [String] -> io ()
 commands pipe =
-  mapM_ (\cmd -> putStrLn cmd >> IO.hPutStrLn pipe cmd)
+  liftIO . mapM_ (\cmd -> putStrLn cmd >> IO.hPutStrLn pipe cmd)
+
+
+data Time = Time {hours, minutes, seconds, fracSecs :: Int}
+  deriving (Show)
 
 
 main :: IO ()
@@ -70,11 +100,8 @@ process pipeName = (do
   Port.withSimple h "control"
      (Port.caps [Port.capWrite, Port.capSubsWrite]) Port.typeMidiGeneric $ \ _p1 -> do
 
-  putStrLn $ "You can seek to second x by sending MIDI-CC 0 x on MIDI channel 0."
-  putStrLn ""
-
-  forever $ do
-     ev <- Event.input h
+  flip MS.evalStateT (Time 0 0 0 0) $ forever $ do
+     ev <- liftIO $ Event.input h
      -- print ev
      forM_ (Check.mode channel ev) $ \mode ->
        case mode of
@@ -87,9 +114,19 @@ process pipeName = (do
          ModeMsg.AllSoundOff -> commands pipe ["seek 0", "pause"]
          _ -> return ()
 
-     forM_ (Check.anyController channel ev) $ \(ctrl, val) ->
-       when (ctrl == VoiceMsg.toController 0) $
-         commands pipe [Printf.printf "seek %d 2\n" val]
+     forM_ (Check.anyController channel ev) $ \(ctrl, val) -> do
+       let setTime update cc =
+             when (ctrl == VoiceMsg.toController cc) $
+               MS.modify update
+
+       setTime (\t -> t {fracSecs = val}) 1
+       setTime (\t -> t {seconds  = val}) 2
+       setTime (\t -> t {minutes  = val}) 3
+       setTime (\t -> t {hours    = val}) 4
+
+       when (ctrl == VoiceMsg.toController 0 && val == 0) $ do
+         (Time hr m s f) <- MS.get
+         commands pipe [Printf.printf "seek %d.%02d 2" (hr*3600 + m*60 + s) f]
 
   )
   `AlsaExc.catch` \e ->
