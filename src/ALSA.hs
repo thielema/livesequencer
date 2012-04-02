@@ -22,6 +22,7 @@ import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Cont ( ContT(ContT), runContT, mapContT )
 import Control.Monad ( (<=<) )
 import Control.Functor.HT ( void )
+import qualified Data.Foldable as Fold
 import Data.Foldable ( Foldable, forM_, foldMap )
 import Data.Monoid ( mappend )
 
@@ -102,11 +103,14 @@ allNotesOff ::
    Sequencer mode -> IO [Event.T]
 allNotesOff sq = do
    c <- Client.getId (handle sq)
-   return $
-      map (Event.simple (Addr.Cons c (publicPort sq)) .
-           Event.CtrlEv Event.Controller .
-           flip MIDI.modeEvent ModeMsg.AllNotesOff)
-         [minBound .. maxBound]
+   return $ do
+      port <- Fold.toList $ ports sq
+      chan <- [minBound .. maxBound]
+      return $
+         Event.simple (Addr.Cons c port) $
+         Event.CtrlEv Event.Controller $
+         MIDI.modeEvent chan ModeMsg.AllNotesOff
+
 
 parseAndConnect ::
    (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
