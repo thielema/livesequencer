@@ -14,6 +14,7 @@ module Midi (
     controller,
     channel,
     transpose, transposeEvent,
+    changeTempo, changeTempoEvent,
     controlCurve,
     normalVelocity,
     emphasize,
@@ -95,6 +96,14 @@ transposeEvent :: Integer -> Event Message -> Event Message ;
 transposeEvent d (Event (On pitch velocity)) = Event (On (pitch+d) velocity) ;
 transposeEvent d (Event (Off pitch velocity)) = Event (Off (pitch+d) velocity) ;
 transposeEvent _d event = event ;
+
+
+changeTempo :: Integer -> [Event Message] -> [Event Message] ;
+changeTempo d = map ( changeTempoEvent d ) ;
+
+changeTempoEvent :: Integer -> Event a -> Event a ;
+changeTempoEvent c (Wait d) = Wait (c*d) ;
+changeTempoEvent _c event = event ;
 
 
 controlCurve :: Time -> Controller -> [Integer] -> [Event Message] ;

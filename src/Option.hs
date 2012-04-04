@@ -41,7 +41,9 @@ getDeflt = do
     return $
         Option {
             moduleNames = [],
-            importPaths = map (dataDir </>) [ "data", "data" </> "prelude" ],
+            importPaths =
+                map ((dataDir </>) . ("data" </>))
+                    [ "prelude", "base", "example" ],
             connect = NEList.singleton (Port "inout" (Just []) (Just [])),
             sequencerName = "Rewrite-Sequencer",
             limits = limitsDeflt,

@@ -2,7 +2,9 @@ ghci:
 	ghci -Wall -i:data/base:data/example data/base/*.hs data/example/*.hs
 
 ghci-prg:
-	ghci -Wall -i:src:dist/build/autogen:http/enable src/Module.hs
+	ghci -Wall -i:src:dist/build/autogen:http/enable \
+	   -package=alsa-seq-0.5.1 -package=midi-alsa-0.1.3 -package=midi-0.1.7 \
+	   src/Module.hs
 
 
 testbuild:
