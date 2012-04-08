@@ -239,18 +239,16 @@ prepare ::
 prepare sq mt = do
     liftIO $ Log.put $ "prepare waiting for " ++ show mt
     (State waitMode _ currentTime _) <- MS.get
+    let sendEchoCont t = do
+            sendEcho sq t
+            return (True, Just t)
     case waitMode of
         RealTime -> do
             case mt of
                 Nothing -> return (False, Nothing)
-                Just dur -> do
-                    let t = mappend currentTime dur
-                    sendEcho sq t
-                    return (True, Just t)
-        SlowMotion dur -> do
-            let t = mappend currentTime $ Time.up $ Time.up dur
-            sendEcho sq t
-            return (True, Just t)
+                Just dur -> sendEchoCont $ mappend currentTime dur
+        SlowMotion dur ->
+            sendEchoCont $ mappend currentTime $ Time.up $ Time.up dur
         SingleStep ->
             return (True, Nothing)
 
