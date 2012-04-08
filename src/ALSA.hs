@@ -1,7 +1,11 @@
 module ALSA where
 
 import qualified Option
+import qualified Time
+import qualified Log
 
+import qualified Sound.ALSA.Sequencer.RealTime as RealTime
+import qualified Sound.ALSA.Sequencer.Time as ATime
 import qualified Sound.ALSA.Sequencer.Connect as Connect
 import qualified Sound.ALSA.Sequencer.Address as Addr
 import qualified Sound.ALSA.Sequencer.Client as Client
@@ -33,18 +37,50 @@ data Sequencer mode =
       handle :: SndSeq.T mode,
       publicPort, privatePort :: Port.T,
       ports :: Seq.Seq Port.T,
-      queue :: Queue.T
+      queue :: Queue.T,
+      latencyNano  :: Time.Nanoseconds  Integer,
+      latencyMicro :: Time.Microseconds Int
    }
 
 
+privateAddress ::
+   (SndSeq.OpenMode mode) =>
+   Sequencer mode -> IO Addr.T
+privateAddress sq = do
+   c <- Client.getId (handle sq)
+
+   return $
+      Addr.Cons {
+         Addr.client = c,
+         Addr.port = privatePort sq
+      }
+
+
+{-
+I tried outputDirect and omitted drainOutput,
+but this lead to drainOutput exception 14 "invalid address"
+after some calls to drainOutput.
+(Maybe buffer overflow?)
+-}
 sendEvent ::
    (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Port.T -> Event.Data -> IO ()
-sendEvent sq port ev = do
-   c <- Client.getId (handle sq)
-   void $
-      Event.outputDirect (handle sq) $
-      Event.simple (Addr.Cons c port) ev
+   Sequencer mode -> Event.T -> IO ()
+sendEvent sq ev = do
+   void $ Event.outputDirect (handle sq) $
+       ev { Event.queue = queue sq }
+   drainOutput sq
+
+
+type Time = Time.Nanoseconds Integer
+
+realTime :: Time -> RealTime.T
+realTime (Time.Time time) =
+   RealTime.fromInteger time
+
+realTimeStamp :: Time -> ATime.T
+realTimeStamp =
+   ATime.consAbs . ATime.Real . realTime
+
 
 queueControl ::
    Sequencer mode -> Event.QueueEv -> IO ()
@@ -72,6 +108,22 @@ stopQueue sq = do
    -- Log.put "stop queue"
    mapM_ (Event.output (handle sq)) =<< allNotesOff sq
    queueControl sq Event.QueueStop
+   drainOutput sq
+
+stopQueueDelayed ::
+   (SndSeq.AllowOutput mode) =>
+   Sequencer mode -> Time -> IO ()
+stopQueueDelayed sq t = do
+   let targetTime = mappend t $ latencyNano sq
+   -- Log.put $ "stop queue delayed from " ++ show t ++ " to " ++ show targetTime
+   let stamp ev =
+           ev{Event.queue = queue sq,
+              Event.time = realTimeStamp targetTime}
+   mapM_ (Event.output (handle sq) . stamp)
+       =<< allNotesOff sq
+   src <- privateAddress sq
+   Queue.control (handle sq) (queue sq) Event.QueueStop $ Just $ stamp $
+       Event.simple src $ Event.EmptyEv Event.None
    drainOutput sq
 
 pauseQueue ::
@@ -113,6 +165,26 @@ allNotesOff sq = do
          MIDI.modeEvent chan ModeMsg.AllNotesOff
 
 
+
+forwardQueue ::
+   (SndSeq.AllowOutput mode) =>
+   Sequencer mode -> Time -> IO ()
+forwardQueue sq t = do
+   Log.put "forward queue"
+   queueControl sq $ Event.QueueSetPosTime $ realTime t
+   drainOutput sq
+
+forwardStoppedQueue ::
+   (SndSeq.AllowOutput mode) =>
+   Sequencer mode -> Time -> IO ()
+forwardStoppedQueue sq t = do
+   Log.put "forward stopped queue"
+   queueControl sq Event.QueueContinue
+   queueControl sq $ Event.QueueSetPosTime $ realTime t
+   queueControl sq Event.QueueStop
+   drainOutput sq
+
+
 parseAndConnect ::
    (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
    SndSeq.T mode ->
@@ -149,4 +221,13 @@ withSequencer opt@(Option.Option { Option.connect = NEList.Cons firstPort otherP
          (Port.caps [Port.capRead, Port.capWrite])
          (Port.types [Port.typeSpecific])
    q <- ContT $ Queue.with h
-   return $ Sequencer h public private ps q
+   return $
+      Sequencer {
+          handle = h,
+          publicPort = public,
+          privatePort = private,
+          ports = ps,
+          queue = q,
+          latencyNano = fmap round $ Time.seconds (Option.latency opt),
+          latencyMicro = fmap round $ Time.seconds (Option.latency opt)
+      }

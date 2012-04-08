@@ -413,14 +413,17 @@ machine input output limits importPaths progInit sq = do
                                 ALSA.pauseQueue sq
                         withMode mode $ return ()
                     Restart -> do
+                        writeChan waitChan Event.FlushQueue
                         ALSA.quietContinueQueue sq
                         withMode Event.RealTime $ writeTMVar term mainName
                     Stop -> do
+                        writeChan waitChan Event.FlushQueue
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
                     NextStep -> writeChan waitChan Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
+                        lift $ writeChan waitChan Event.FlushQueue
                         lift $ ALSA.quietContinueQueue sq
                         lift $ withMode Event.RealTime $ writeTMVar term t
                     ApplyTerm txt -> exceptionToGUIIO output $ do
@@ -467,6 +470,7 @@ machine input output limits importPaths progInit sq = do
                                     Program.empty
                             lift $ do
                                 ALSA.stopQueue sq
+                                writeChan waitChan Event.FlushQueue
                                 withMode Event.RealTime $ do
                                     writeTVar program p
                                     writeTMVar term mainName
@@ -521,32 +525,42 @@ machine input output limits importPaths progInit sq = do
                             updateProgram program output minPrg
                             Fold.mapM_ (writeTChan output . DeletePage) removed
 
+    delayedUpdates <- newChan
+    let sendUpdates us = do
+            lift $ writeChan delayedUpdates us
+            void $ Event.sendEcho sq Event.visualizeId (ALSA.latencyNano sq)
+
     void $ forkIO $
         Event.listen sq
             ( writeTChanIO output . InsertText . formatPitch )
+            ( STM.atomically . mapM_ (writeTChan output)
+                  =<< readChan delayedUpdates )
             waitChan
     ALSA.startQueue sq
     Event.runState $
-        execute limits program term ( writeTChan output ) sq waitChan
+        execute limits program term sendUpdates
+            ( writeTChanIO output . Exception ) sq waitChan
 
-
-execute :: Option.Limits
-        -> TVar Program
-                  -- ^ current program (GUI might change the contents)
-        -> TMVar Term -- ^ current term
-        -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
-        -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
-        -> Chan Event.WaitResult
-        -> MS.StateT Event.State IO ()
-execute limits program term output sq waitChan =
+execute ::
+       Option.Limits
+    -> TVar Program
+           -- ^ current program (GUI might change the contents)
+    -> TMVar Term -- ^ current term
+    -> ( [ GuiUpdate ] -> MS.StateT Event.State IO () )
+           -- ^ sink for time-stamped delayed messages (show current term)
+    -> ( Exception.Message -> IO () )
+           -- ^ sink for asynchronous warnings (currently feedback from festival)
+    -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
+    -> Chan Event.WaitResult
+    -> MS.StateT Event.State IO ()
+execute limits program term sendUpdates sendWarning sq waitChan =
     forever $ do
-        (mdur,outputs) <- MW.runWriterT $ do
+        (mdur, updates) <- MW.runWriterT $ do
             waiting <- lift $ AccM.get Event.stateWaiting
             when waiting $ writeUpdate ResetDisplay
             maxEventsSat <- lift $ checkMaxEvents limits
-            executeStep limits program term
-                (STM.atomically . output . Exception) sq maxEventsSat
-        liftIO $ STM.atomically $ mapM_ output outputs
+            executeStep limits program term sendWarning sq maxEventsSat
+        sendUpdates updates
         Event.wait sq waitChan mdur
 
 {-
@@ -587,17 +601,20 @@ executeStep ::
     ALSA.Sequencer SndSeq.DuplexMode ->
     Bool ->
     MW.WriterT [ GuiUpdate ]
-        ( MS.StateT Event.State IO ) ( Maybe Event.Time )
-executeStep limits program term writeExcMsg sq maxEventsSat =
+        ( MS.StateT Event.State IO ) ( Maybe ALSA.Time )
+executeStep limits program term sendWarning sq maxEventsSat =
     Exception.switchT
         (\e -> do
-            liftIO $ ALSA.stopQueue sq
+--            liftIO $ ALSA.stopQueue sq
+            currentTime <- lift $ AccM.get Event.stateTime
+            liftIO $ Log.put "executeStep: stopQueueDelayed"
+            liftIO $ ALSA.stopQueueDelayed sq currentTime
             -- writeChan waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
             writeUpdate $ Running Event.SingleStep
             {-
             We have to alter the mode directly,
-            since the channel is only read when we wait for a duration other than Nothing
+            since waitChan is only read when we wait for a duration other than Nothing
             -}
             lift $ AccM.set Event.stateWaitMode Event.SingleStep
             return Nothing)
@@ -608,7 +625,7 @@ executeStep limits program term writeExcMsg sq maxEventsSat =
             wait <- Exc.resolveT
                 (fmap (const Nothing) . writeUpdate . Exception)
                 (Exc.mapExceptionalT lift $
-                 Event.play sq writeExcMsg x)
+                 Event.play sq sendWarning x)
 
             waitMode <- lift $ AccM.get Event.stateWaitMode
             waiting  <- lift $ AccM.get Event.stateWaiting

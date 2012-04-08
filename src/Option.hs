@@ -22,6 +22,7 @@ import Control.Monad ( when )
 
 import qualified Utility.NonEmptyList as NEList
 import Data.Traversable ( forM )
+import Data.Bool.HT ( if' )
 import Data.List.HT ( chop )
 import Data.List ( intercalate )
 
@@ -31,9 +32,14 @@ data Option = Option {
         importPaths :: [FilePath],
         connect :: NEList.T Port,
         sequencerName :: String,
+        latency :: Double,
         limits :: Limits,
         httpOption :: HTTP.Option
     }
+
+-- the formatted value might look ugly
+defltLatencyStr :: String
+defltLatencyStr = "0.05"
 
 getDeflt :: IO Option
 getDeflt = do
@@ -46,6 +52,7 @@ getDeflt = do
                     [ "prelude", "base", "example" ],
             connect = NEList.singleton (Port "inout" (Just []) (Just [])),
             sequencerName = "Rewrite-Sequencer",
+            latency = read defltLatencyStr,
             limits = limitsDeflt,
             httpOption = HTTP.deflt
         }
@@ -133,6 +140,18 @@ description deflt =
             return $ flags{sequencerName = str})
         ("name of the ALSA sequencer client, default " ++
          sequencerName deflt) :
+    Opt.Option [] ["latency"]
+        (flip ReqArg "SECONDS" $ \str flags ->
+            case reads str of
+                [(x, "")] ->
+                    if' (x<0)
+                        (exitFailureMsg "latency must be non-negative") $
+                    if' (x>1000)
+                        (exitFailureMsg "latency is certainly too large") $
+                    return $ flags{latency = x}
+                _ -> exitFailureMsg "latency value must be a number")
+        ("delay between evaluation and playing,\ndefault " ++
+         defltLatencyStr) :
     map (fmapOptDescr $ \update old -> do
              newLimits <- update $ limits old
              return $ old {limits = newLimits})
