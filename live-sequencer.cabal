@@ -465,6 +465,8 @@ Executable live-sequencer-gui
 Executable live-mplayer-control
   If flag(mplayer)
     Build-Depends:
+      midi-alsa >=0.1.1 && <0.2,
+      midi >=0.1.5 && <0.2,
       alsa-seq >=0.5 && <0.6,
       alsa-core >=0.5 && <0.6,
       unix >=2.4 && <2.6,
@@ -475,6 +477,9 @@ Executable live-mplayer-control
 
   Hs-Source-Dirs: src
   Main-is: MPlayer.hs
+
+  Other-Modules:
+    Option.Utility
 
   GHC-Options: -threaded -Wall
   If impl(ghc>=7.0)
