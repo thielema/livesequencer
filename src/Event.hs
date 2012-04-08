@@ -50,8 +50,8 @@ data WaitMode = RealTime | SlowMotion (Time.Milliseconds Integer) | SingleStep
     deriving (Eq, Show)
 
 data WaitResult =
-         ModeChange WaitMode | ReachedTime Time | NextStep | FlushQueue
-    deriving (Show)
+         ModeChange WaitMode | ReachedTime Time | NextStep |
+         AlsaSend (MS.StateT State ALSA.Send ())
 
 
 termException ::
@@ -211,7 +211,7 @@ wait sq waitChan mdur = do
     let loop target = do
            liftIO $ Log.put $ "readChan waitChan"
            ev <- liftIO $ readChan waitChan
-           liftIO $ Log.put $ "read from waitChan: " ++ show ev
+           -- liftIO $ Log.put $ "read from waitChan: " ++ show ev
            case ev of
                ModeChange newMode -> do
                    oldMode <- AccM.get stateWaitMode
@@ -230,8 +230,8 @@ wait sq waitChan mdur = do
                NextStep -> do
                    runSend sq forwardStoppedQueue
                    when (isJust target) $ loop target
-               FlushQueue -> do
-                   runSend sq forwardQueue
+               AlsaSend send -> do
+                   runSend sq send
                    loop target
 
     (cont,targetTime) <- runSend sq $ prepare mdur

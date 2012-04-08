@@ -386,8 +386,9 @@ machine input output limits importPaths progInit sq = do
 
     void $ forkIO $ forever $ do
         action <- readChan input
-        let withMode mode transaction = do
+        let withMode mode send transaction = do
                 writeChan waitChan $ Event.ModeChange mode
+                writeChan waitChan $ Event.AlsaSend send
                 STM.atomically $ do
                     writeTChan output $ Running mode
                     transaction
@@ -403,27 +404,26 @@ machine input output limits importPaths progInit sq = do
 
             Execution exec ->
                 case exec of
-                    Mode mode -> do
-                        ALSA.runSend sq $
+                    Mode mode ->
+                        flip (withMode mode) (return ()) $
                             case mode of
                                 Event.RealTime     -> ALSA.continueQueue
                                 Event.SlowMotion _ -> ALSA.continueQueue
                                 Event.SingleStep   -> ALSA.pauseQueue
-                        withMode mode $ return ()
-                    Restart -> do
-                        writeChan waitChan Event.FlushQueue
-                        ALSA.runSend sq ALSA.quietContinueQueue
-                        withMode Event.RealTime $ writeTMVar term mainName
-                    Stop -> do
-                        writeChan waitChan Event.FlushQueue
-                        ALSA.runSend sq ALSA.stopQueue
-                        withMode Event.SingleStep $ writeTMVar term mainName
+                    Restart ->
+                        withMode Event.RealTime
+                            (Event.forwardQueue >> ALSA.quietContinueQueue)
+                            (writeTMVar term mainName)
+                    Stop ->
+                        withMode Event.SingleStep
+                            (Event.forwardQueue >> ALSA.stopQueue)
+                            (writeTMVar term mainName)
                     NextStep -> writeChan waitChan Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
-                        lift $ writeChan waitChan Event.FlushQueue
-                        lift $ ALSA.runSend sq ALSA.quietContinueQueue
-                        lift $ withMode Event.RealTime $ writeTMVar term t
+                        lift $ withMode Event.RealTime
+                                   (Event.forwardQueue >> ALSA.quietContinueQueue)
+                                   (writeTMVar term t)
                     ApplyTerm txt -> exceptionToGUIIO output $ do
                         fterm <- parseTerm txt
                         case fterm of
@@ -467,13 +467,13 @@ machine input output limits importPaths progInit sq = do
                                 Program.load importPaths stem filePath
                                     Program.empty
                             lift $ do
-                                ALSA.runSend sq ALSA.stopQueue
-                                writeChan waitChan Event.FlushQueue
-                                withMode Event.RealTime $ do
+                                withMode Event.RealTime
+                                    (ALSA.stopQueue >>
+                                     Event.forwardQueue >>
+                                     ALSA.continueQueue) $ do
                                     writeTVar program p
                                     writeTMVar term mainName
                                     registerProgram output (Module.Name stem) p
-                                ALSA.runSend sq ALSA.continueQueue
                                 Log.put "chased and parsed OK"
 
                     NewModule ->
