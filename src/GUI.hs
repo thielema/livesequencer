@@ -607,7 +607,8 @@ executeStep limits program term sendWarning sq maxEventsSat =
 --            liftIO $ ALSA.stopQueue sq
             currentTime <- lift $ AccM.get Event.stateTime
             liftIO $ Log.put "executeStep: stopQueueDelayed"
-            liftIO $ ALSA.runSend sq $ ALSA.stopQueueDelayed currentTime
+            newTime <-
+                liftIO $ ALSA.runSend sq $ ALSA.stopQueueDelayed currentTime
             -- writeChan waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
             writeUpdate $ Running Event.SingleStep
@@ -616,6 +617,7 @@ executeStep limits program term sendWarning sq maxEventsSat =
             since waitChan is only read when we wait for a duration other than Nothing
             -}
             lift $ AccM.set Event.stateWaitMode Event.SingleStep
+            lift $ AccM.set Event.stateTime newTime
             return Nothing)
         (\(x,s) -> do
             {-

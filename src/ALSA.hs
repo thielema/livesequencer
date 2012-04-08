@@ -129,7 +129,7 @@ stopQueue = do
    mapM_ sendEvent =<< allNotesOff
    queueControl Event.QueueStop Nothing
 
-stopQueueDelayed :: SendClass send => Time -> send ()
+stopQueueDelayed :: SendClass send => Time -> send Time
 stopQueueDelayed t = do
    sq <- askSeq
    let targetTime = mappend t $ latencyNano sq
@@ -140,6 +140,7 @@ stopQueueDelayed t = do
    mapM_ (sendEvent . stamp) =<< allNotesOff
    queueControl Event.QueueStop $ Just $ stamp $
        Event.simple Addr.unknown $ Event.EmptyEv Event.None
+   return targetTime
 
 pauseQueue ::SendClass send => send ()
 pauseQueue = do
