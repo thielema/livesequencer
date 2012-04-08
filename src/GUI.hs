@@ -177,7 +177,7 @@ main = do
     output <- newTChanIO
     STM.atomically $ registerProgram output mainMod p
     ALSA.withSequencer opt $ \sq -> do
-        flip finally (ALSA.stopQueue sq) $ WX.start $ do
+        flip finally (ALSA.runSend sq ALSA.stopQueue) $ WX.start $ do
             gui input output
             void $ forkIO $
                 machine input output
@@ -404,27 +404,25 @@ machine input output limits importPaths progInit sq = do
             Execution exec ->
                 case exec of
                     Mode mode -> do
-                        case mode of
-                            Event.RealTime -> do
-                                ALSA.continueQueue sq
-                            Event.SlowMotion _ -> do
-                                ALSA.continueQueue sq
-                            Event.SingleStep -> do
-                                ALSA.pauseQueue sq
+                        ALSA.runSend sq $
+                            case mode of
+                                Event.RealTime     -> ALSA.continueQueue
+                                Event.SlowMotion _ -> ALSA.continueQueue
+                                Event.SingleStep   -> ALSA.pauseQueue
                         withMode mode $ return ()
                     Restart -> do
                         writeChan waitChan Event.FlushQueue
-                        ALSA.quietContinueQueue sq
+                        ALSA.runSend sq ALSA.quietContinueQueue
                         withMode Event.RealTime $ writeTMVar term mainName
                     Stop -> do
                         writeChan waitChan Event.FlushQueue
-                        ALSA.stopQueue sq
+                        ALSA.runSend sq ALSA.stopQueue
                         withMode Event.SingleStep $ writeTMVar term mainName
                     NextStep -> writeChan waitChan Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ writeChan waitChan Event.FlushQueue
-                        lift $ ALSA.quietContinueQueue sq
+                        lift $ ALSA.runSend sq ALSA.quietContinueQueue
                         lift $ withMode Event.RealTime $ writeTMVar term t
                     ApplyTerm txt -> exceptionToGUIIO output $ do
                         fterm <- parseTerm txt
@@ -469,13 +467,13 @@ machine input output limits importPaths progInit sq = do
                                 Program.load importPaths stem filePath
                                     Program.empty
                             lift $ do
-                                ALSA.stopQueue sq
+                                ALSA.runSend sq ALSA.stopQueue
                                 writeChan waitChan Event.FlushQueue
                                 withMode Event.RealTime $ do
                                     writeTVar program p
                                     writeTMVar term mainName
                                     registerProgram output (Module.Name stem) p
-                                ALSA.continueQueue sq
+                                ALSA.runSend sq ALSA.continueQueue
                                 Log.put "chased and parsed OK"
 
                     NewModule ->
@@ -528,7 +526,8 @@ machine input output limits importPaths progInit sq = do
     delayedUpdates <- newChan
     let sendUpdates us = do
             lift $ writeChan delayedUpdates us
-            void $ Event.sendEcho sq Event.visualizeId (ALSA.latencyNano sq)
+            void $ Event.runSend sq $
+                Event.sendEcho Event.visualizeId (ALSA.latencyNano sq)
 
     void $ forkIO $
         Event.listen sq
@@ -536,7 +535,7 @@ machine input output limits importPaths progInit sq = do
             ( STM.atomically . mapM_ (writeTChan output)
                   =<< readChan delayedUpdates )
             waitChan
-    ALSA.startQueue sq
+    ALSA.runSend sq ALSA.startQueue
     Event.runState $
         execute limits program term sendUpdates
             ( writeTChanIO output . Exception ) sq waitChan
@@ -608,7 +607,7 @@ executeStep limits program term sendWarning sq maxEventsSat =
 --            liftIO $ ALSA.stopQueue sq
             currentTime <- lift $ AccM.get Event.stateTime
             liftIO $ Log.put "executeStep: stopQueueDelayed"
-            liftIO $ ALSA.stopQueueDelayed sq currentTime
+            liftIO $ ALSA.runSend sq $ ALSA.stopQueueDelayed currentTime
             -- writeChan waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
             writeUpdate $ Running Event.SingleStep

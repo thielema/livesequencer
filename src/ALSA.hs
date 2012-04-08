@@ -1,8 +1,9 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module ALSA where
 
 import qualified Option
 import qualified Time
-import qualified Log
+-- import qualified Log
 
 import qualified Sound.ALSA.Sequencer.RealTime as RealTime
 import qualified Sound.ALSA.Sequencer.Time as ATime
@@ -23,9 +24,13 @@ import qualified System.IO as IO
 import qualified Data.Sequence as Seq
 import qualified Utility.NonEmptyList as NEList
 
+import qualified Control.Monad.Trans.Class as MT
+import qualified Control.Monad.Trans.State as MS
+import qualified Control.Monad.Trans.Reader as MR
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Cont ( ContT(ContT), runContT, mapContT )
 import Control.Monad ( (<=<) )
+import Control.Applicative ( Applicative )
 import Control.Functor.HT ( void )
 import qualified Data.Foldable as Fold
 import Data.Foldable ( Foldable, forM_, foldMap )
@@ -56,21 +61,6 @@ privateAddress sq = do
       }
 
 
-{-
-I tried outputDirect and omitted drainOutput,
-but this lead to drainOutput exception 14 "invalid address"
-after some calls to drainOutput.
-(Maybe buffer overflow?)
--}
-sendEvent ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Event.T -> IO ()
-sendEvent sq ev = do
-   void $ Event.outputDirect (handle sq) $
-       ev { Event.queue = queue sq }
-   drainOutput sq
-
-
 type Time = Time.Nanoseconds Integer
 
 realTime :: Time -> RealTime.T
@@ -82,107 +72,114 @@ realTimeStamp =
    ATime.consAbs . ATime.Real . realTime
 
 
-queueControl ::
-   Sequencer mode -> Event.QueueEv -> IO ()
-queueControl sq cmd =
-   Queue.control (handle sq) (queue sq) cmd Nothing
+newtype Send a = Send (MR.ReaderT (Sequencer SndSeq.DuplexMode) IO a)
+   deriving (Functor, Applicative, Monad)
 
-drainOutput ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO ()
-drainOutput sq =
+runSend :: Sequencer SndSeq.DuplexMode -> Send a -> IO a
+runSend sq (Send m) = do
+   a <- MR.runReaderT m sq
    void $ Event.drainOutput (handle sq)
+   return a
 
-startQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO ()
-startQueue sq = do
+
+class Monad send => SendClass send where
+   liftSend :: Send a -> send a
+
+instance SendClass Send where
+   liftSend = id
+
+instance SendClass send => SendClass (MS.StateT s send) where
+   liftSend = MT.lift . liftSend
+
+makeSend ::
+   SendClass send =>
+   (Sequencer SndSeq.DuplexMode -> IO a) -> send a
+makeSend act =
+   liftSend $ Send $ MR.ReaderT act
+
+askSeq ::
+   SendClass send =>
+   send (Sequencer SndSeq.DuplexMode)
+askSeq = makeSend return
+
+
+sendEvent :: SendClass send => Event.T -> send ()
+sendEvent ev = makeSend $ \sq ->
+   void $ Event.output (handle sq) ev
+
+sendEventOnQueue :: SendClass send => Event.T -> send ()
+sendEventOnQueue ev = do
+   sq <- askSeq
+   sendEvent $ ev { Event.queue = queue sq }
+
+queueControl ::
+   SendClass send =>
+   Event.QueueEv -> Maybe Event.T -> send ()
+queueControl cmd proto =
+   makeSend $ \sq -> Queue.control (handle sq) (queue sq) cmd proto
+
+startQueue :: SendClass send => send ()
+startQueue = do
    -- Log.put "start queue"
-   queueControl sq Event.QueueStart
-   drainOutput sq
+   queueControl Event.QueueStart Nothing
 
-stopQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO ()
-stopQueue sq = do
+stopQueue :: SendClass send => send ()
+stopQueue = do
    -- Log.put "stop queue"
-   mapM_ (Event.output (handle sq)) =<< allNotesOff sq
-   queueControl sq Event.QueueStop
-   drainOutput sq
+   mapM_ sendEvent =<< allNotesOff
+   queueControl Event.QueueStop Nothing
 
-stopQueueDelayed ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Time -> IO ()
-stopQueueDelayed sq t = do
+stopQueueDelayed :: SendClass send => Time -> send ()
+stopQueueDelayed t = do
+   sq <- askSeq
    let targetTime = mappend t $ latencyNano sq
    -- Log.put $ "stop queue delayed from " ++ show t ++ " to " ++ show targetTime
    let stamp ev =
            ev{Event.queue = queue sq,
               Event.time = realTimeStamp targetTime}
-   mapM_ (Event.output (handle sq) . stamp)
-       =<< allNotesOff sq
-   src <- privateAddress sq
-   Queue.control (handle sq) (queue sq) Event.QueueStop $ Just $ stamp $
-       Event.simple src $ Event.EmptyEv Event.None
-   drainOutput sq
+   mapM_ (sendEvent . stamp) =<< allNotesOff
+   queueControl Event.QueueStop $ Just $ stamp $
+       Event.simple Addr.unknown $ Event.EmptyEv Event.None
 
-pauseQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO ()
-pauseQueue sq = do
+pauseQueue ::SendClass send => send ()
+pauseQueue = do
    -- Log.put "pause queue"
-   queueControl sq Event.QueueStop
-   drainOutput sq
+   queueControl Event.QueueStop Nothing
 
-continueQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO ()
-continueQueue sq = do
+continueQueue :: SendClass send => send ()
+continueQueue = do
    -- Log.put "continue queue"
-   queueControl sq Event.QueueContinue
-   drainOutput sq
+   queueControl Event.QueueContinue Nothing
 
-quietContinueQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO ()
-quietContinueQueue sq = do
+quietContinueQueue :: SendClass send => send ()
+quietContinueQueue = do
    -- Log.put "continue queue"
-   mapM_ (Event.output (handle sq)) =<< allNotesOff sq
-   queueControl sq Event.QueueContinue
-   drainOutput sq
+   mapM_ sendEvent =<< allNotesOff
+   queueControl Event.QueueContinue Nothing
 
-allNotesOff ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> IO [Event.T]
-allNotesOff sq = do
-   c <- Client.getId (handle sq)
-   return $ do
+allNotesOff :: SendClass send => send [Event.T]
+allNotesOff =
+   makeSend $ \sq -> return $ do
       port <- Fold.toList $ ports sq
       chan <- [minBound .. maxBound]
       return $
-         Event.simple (Addr.Cons c port) $
+         Event.forSourcePort port $
          Event.CtrlEv Event.Controller $
          MIDI.modeEvent chan ModeMsg.AllNotesOff
 
 
 
-forwardQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Time -> IO ()
-forwardQueue sq t = do
-   Log.put "forward queue"
-   queueControl sq $ Event.QueueSetPosTime $ realTime t
-   drainOutput sq
+forwardQueue :: SendClass send => Time -> send ()
+forwardQueue t = do
+   -- Log.put "forward queue"
+   queueControl (Event.QueueSetPosTime (realTime t)) Nothing
 
-forwardStoppedQueue ::
-   (SndSeq.AllowOutput mode) =>
-   Sequencer mode -> Time -> IO ()
-forwardStoppedQueue sq t = do
-   Log.put "forward stopped queue"
-   queueControl sq Event.QueueContinue
-   queueControl sq $ Event.QueueSetPosTime $ realTime t
-   queueControl sq Event.QueueStop
-   drainOutput sq
+forwardStoppedQueue :: SendClass send => Time -> send ()
+forwardStoppedQueue t = do
+   -- Log.put "forward stopped queue"
+   queueControl Event.QueueContinue Nothing
+   queueControl (Event.QueueSetPosTime (realTime t)) Nothing
+   queueControl Event.QueueStop Nothing
 
 
 parseAndConnect ::

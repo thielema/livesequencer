@@ -114,9 +114,15 @@ runState :: (Monad m) => MS.StateT State m a -> m a
 runState = flip MS.evalStateT Event.initState
 
 
+runSend ::
+    Sequencer SndSeq.DuplexMode ->
+    MS.StateT s ALSA.Send a ->
+    MS.StateT s IO a
+runSend sq = MS.mapStateT (ALSA.runSend sq)
+
+
 play ::
-    (SndSeq.AllowInput mode, SndSeq.AllowOutput mode) =>
-    Sequencer mode ->
+    Sequencer SndSeq.DuplexMode ->
     (Exception.Message -> IO ()) ->
     Term ->
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
@@ -163,8 +169,7 @@ play sq throwAsync x = case Term.viewNode x of
     _ -> termException x "can only process Wait or Event, but not "
 
 processChannelMsg ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode ->
+    Sequencer SndSeq.DuplexMode ->
     (Port.T, CM.Channel) -> Term ->
     ExceptionalT Exception.Message (MS.StateT State IO) (Maybe Time)
 processChannelMsg sq chanPort@(port, chan) body = do
@@ -172,33 +177,33 @@ processChannelMsg sq chanPort@(port, chan) body = do
     let checkVelocity =
             checkRange "velocity" CM.toVelocity CM.fromVelocity
                 (CM.toVelocity 1) (CM.toVelocity 127)
+        runSendE = MT.lift . runSend sq
     case Term.viewNode body of
         Just ("On", [pn, vn]) -> do
             p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
             v <- checkVelocity vn
-            MT.lift $ sendNote sq SeqEvent.NoteOn chanPort p v
+            runSendE $ sendNote SeqEvent.NoteOn chanPort p v
         Just ("Off", [pn, vn]) -> do
             p <- checkRangeAuto "pitch" CM.toPitch CM.fromPitch pn
             v <- checkVelocity vn
-            MT.lift $ sendNote sq SeqEvent.NoteOff chanPort p v
+            runSendE $ sendNote SeqEvent.NoteOff chanPort p v
         Just ("PgmChange", [pn]) -> do
             p <- checkRangeAuto "program" CM.toProgram CM.fromProgram pn
-            MT.lift $
-                sendEvent sq port $ SeqEvent.CtrlEv SeqEvent.PgmChange $
+            runSendE $
+                sendEvent port $ SeqEvent.CtrlEv SeqEvent.PgmChange $
                 MidiAlsa.programChangeEvent chan p
         Just ("Controller", [ccn, vn]) -> do
             cc <- checkRangeAuto "controller" CM.toController CM.fromController ccn
             v <- checkRange "controller value" id id 0 127 vn
-            MT.lift $
-                sendEvent sq port $ SeqEvent.CtrlEv SeqEvent.Controller $
+            runSendE $
+                sendEvent port $ SeqEvent.CtrlEv SeqEvent.Controller $
                 MidiAlsa.controllerEvent chan cc (fromIntegral v)
         _ -> termException body "invalid channel event: "
     return Nothing
 
 
 wait ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode ->
+    Sequencer SndSeq.DuplexMode ->
     Chan WaitResult ->
     Maybe Time ->
     MS.StateT State IO ()
@@ -213,7 +218,7 @@ wait sq waitChan mdur = do
                    if newMode /= oldMode
                      then do
                          AccM.set stateWaitMode newMode
-                         (cont,newTarget) <- prepare sq mdur
+                         (cont,newTarget) <- runSend sq $ prepare mdur
                          when cont $ loop newTarget
                      else loop target
                ReachedTime reached ->
@@ -223,41 +228,38 @@ wait sq waitChan mdur = do
                      then AccM.set stateTime reached
                      else loop target
                NextStep -> do
-                   forwardStoppedQueue sq
+                   runSend sq forwardStoppedQueue
                    when (isJust target) $ loop target
                FlushQueue -> do
-                   forwardQueue sq
+                   runSend sq forwardQueue
                    loop target
 
-    (cont,targetTime) <- prepare sq mdur
+    (cont,targetTime) <- runSend sq $ prepare mdur
     when cont $ loop targetTime
 
 
 forwardQueue ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode -> MS.StateT State IO ()
-forwardQueue sq =
-    liftIO . ALSA.forwardQueue sq
-        . mappend (ALSA.latencyNano sq)
+    MS.StateT State ALSA.Send ()
+forwardQueue = do
+    sq <- ALSA.askSeq
+    ALSA.forwardQueue . mappend (ALSA.latencyNano sq)
         =<< AccM.get stateTime
 
 forwardStoppedQueue ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode -> MS.StateT State IO ()
-forwardStoppedQueue sq =
-    liftIO . ALSA.forwardStoppedQueue sq
-        . mappend (ALSA.latencyNano sq)
+    MS.StateT State ALSA.Send ()
+forwardStoppedQueue = do
+    sq <- ALSA.askSeq
+    ALSA.forwardStoppedQueue . mappend (ALSA.latencyNano sq)
         =<< AccM.get stateTime
 
 prepare ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode -> Maybe Time ->
-    MS.StateT State IO (Bool, Maybe Time)
-prepare sq mdur = do
-    liftIO $ Log.put $ "prepare waiting for " ++ show mdur
+    Maybe Time ->
+    MS.StateT State ALSA.Send (Bool, Maybe Time)
+prepare mdur = do
+    -- liftIO $ Log.put $ "prepare waiting for " ++ show mdur
     waitMode <- AccM.get stateWaitMode
     let sendEchoCont d = do
-            t <- sendEcho sq evaluateId d
+            t <- sendEcho evaluateId d
             return (True, Just t)
     case waitMode of
         RealTime -> do
@@ -281,20 +283,19 @@ echoIdFromCustom (SeqEvent.Custom echoWord _ _) =
 
 
 sendEcho ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode -> EchoId -> Time ->
-    MS.StateT State IO Time
-sendEcho sq (EchoId echoId) dur = do
+    EchoId -> Time ->
+    MS.StateT State ALSA.Send Time
+sendEcho (EchoId echoId) dur = do
     {-
     liftIO $ Log.put . ("wait, send echo for " ++) . show =<< MS.get
     -}
-    dest <- liftIO $ ALSA.privateAddress sq
+    dest <- ALSA.makeSend ALSA.privateAddress
 
     currentTime <- AccM.get stateTime
     let targetTime = mappend currentTime dur
 
-    liftIO $ Log.put $ "send echo message to " ++ show dest
-    liftIO $ ALSA.sendEvent sq $
+    -- liftIO $ Log.put $ "send echo message to " ++ show dest
+    ALSA.sendEventOnQueue $
         (SeqEvent.simple dest
             (SeqEvent.CustomEv SeqEvent.Echo
                 (SeqEvent.Custom echoId 0 0)))
@@ -345,24 +346,22 @@ listen sq noteInput visualize waitChan = do
 
 
 sendNote ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode ->
     SeqEvent.NoteEv ->
     (Port.T, CM.Channel) ->
     CM.Pitch ->
     CM.Velocity ->
-    MS.StateT State IO ()
-sendNote sq onoff (port,chan) pitch velocity =
-    sendEvent sq port $ SeqEvent.NoteEv onoff $
+    MS.StateT State ALSA.Send ()
+sendNote onoff (port,chan) pitch velocity =
+    sendEvent port $ SeqEvent.NoteEv onoff $
     MidiAlsa.noteEvent chan pitch velocity velocity 0
 
 sendEvent ::
-    (SndSeq.AllowOutput mode) =>
-    Sequencer mode -> Port.T -> SeqEvent.Data ->
-    MS.StateT State IO ()
-sendEvent sq p ev = do
+    Port.T -> SeqEvent.Data ->
+    MS.StateT State ALSA.Send ()
+sendEvent p ev = do
+    sq <- ALSA.askSeq
     currentTime <- AccM.get stateTime
-    liftIO $ ALSA.sendEvent sq $
+    ALSA.sendEventOnQueue $
         (SeqEvent.forSourcePort p ev) {
             SeqEvent.time =
                 ALSA.realTimeStamp $

@@ -47,7 +47,7 @@ main = do
         waitChan <- newChan
         visChan <- newChan
         void $ forkIO $ Event.listen sq print (readChan visChan >>= print) waitChan
-        ALSA.startQueue sq
+        ALSA.runSend sq ALSA.startQueue
         Event.runState $
             execute
                 (Option.maxReductions $ Option.limits opt)
@@ -72,7 +72,8 @@ execute maxRed p sq visChan waitChan =
                         {- liftIO (mapM_ print log) >> -} return ms) $
                 Rewrite.runEval maxRed p (Rewrite.forceHead t)
             lift $ liftIO $ writeChan visChan s
-            lift $ void $ Event.sendEcho sq Event.visualizeId $ ALSA.latencyNano sq
+            lift $ void $ Event.runSend sq$
+                Event.sendEcho Event.visualizeId $ ALSA.latencyNano sq
             case Term.viewNode s of
                 Just (":", [x, xs]) -> do
                     mdur <- lift $ resolveT
