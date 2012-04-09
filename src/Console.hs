@@ -14,7 +14,7 @@ import qualified ALSA
 import qualified Sound.ALSA.Sequencer as SndSeq
 
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.Chan ( Chan, newChan )
+import qualified Control.Concurrent.Split.Chan as Chan
 
 import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.State as MS
@@ -42,13 +42,13 @@ main = do
         Program.chaseMany
             (Option.importPaths opt) (Option.moduleNames opt) Program.empty
     ALSA.withSequencer opt $ \sq -> do
-        waitChan <- newChan
-        void $ forkIO $ Event.listen sq print waitChan
+        (waitIn,waitOut) <- Chan.new
+        void $ forkIO $ Event.listen sq print waitIn
         ALSA.startQueue sq
         Event.runState $
             execute
                 (Option.maxReductions $ Option.limits opt)
-                p sq waitChan Term.mainName
+                p sq waitOut Term.mainName
 
 writeExcMsg :: Exception.Message -> IO ()
 writeExcMsg = putStrLn . Exception.statusFromMessage
@@ -57,10 +57,10 @@ execute ::
     Rewrite.Count ->
     Program ->
     ALSA.Sequencer SndSeq.DuplexMode ->
-    Chan Event.WaitResult ->
+    Chan.Out Event.WaitResult ->
     Term ->
     MS.StateT Event.State IO ()
-execute maxRed p sq waitChan =
+execute maxRed p sq waitOut =
     let go t = do
             s <-
                 mapExceptionalT
@@ -74,7 +74,7 @@ execute maxRed p sq waitChan =
                     mdur <- lift $ resolveT
                         (liftIO . fmap (const Nothing) . writeExcMsg)
                         (Event.play sq writeExcMsg x)
-                    lift $ Event.wait sq waitChan mdur
+                    lift $ Event.wait sq waitOut mdur
                     go xs
                 _ -> throwT
                         (Term.termRange s,

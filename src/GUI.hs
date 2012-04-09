@@ -73,7 +73,7 @@ import Graphics.UI.WX.Types
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
 import Control.Concurrent.MVar ( MVar, putMVar )
-import Control.Concurrent.Chan ( Chan, newChan, readChan, writeChan )
+import qualified Control.Concurrent.Split.Chan as Chan
 import Control.Concurrent.STM.TChan ( TChan, newTChanIO, readTChan, writeTChan )
 import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
 import Control.Concurrent.STM.TMVar ( TMVar, newTMVarIO, putTMVar, readTMVar, takeTMVar )
@@ -173,14 +173,14 @@ main = do
                                         Program.addModule (Module.empty name))
                         names
 
-    input <- newChan
+    (guiIn,guiOut) <- Chan.new
     output <- newTChanIO
     STM.atomically $ registerProgram output mainMod p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
-            gui input output
+            gui guiIn output
             void $ forkIO $
-                machine input output
+                machine guiOut output
                     (Option.limits opt) (Option.importPaths opt) p sq
             void $ forkIO $
                 HTTPGui.run
@@ -370,7 +370,7 @@ It parses them and provides the parsed modules to the execution engine.
 Since parsing is a bit of work
 we can keep the GUI and the execution of code going while parsing.
 -}
-machine :: Chan Action -- ^ machine reads program text from here
+machine :: Chan.Out Action -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> TChan GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
@@ -382,12 +382,12 @@ machine :: Chan Action -- ^ machine reads program text from here
 machine input output limits importPaths progInit sq = do
     program <- newTVarIO progInit
     term <- newTMVarIO mainName
-    waitChan <- newChan
+    (waitIn,waitOut) <- Chan.new
 
     void $ forkIO $ forever $ do
-        action <- readChan input
+        action <- Chan.read input
         let withMode mode transaction = do
-                writeChan waitChan $ Event.ModeChange mode
+                Chan.write waitIn $ Event.ModeChange mode
                 STM.atomically $ do
                     writeTChan output $ Running mode
                     transaction
@@ -418,7 +418,7 @@ machine input output limits importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
-                    NextStep -> writeChan waitChan Event.NextStep
+                    NextStep -> Chan.write waitIn Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ ALSA.quietContinueQueue sq
@@ -524,10 +524,10 @@ machine input output limits importPaths progInit sq = do
     void $ forkIO $
         Event.listen sq
             ( writeTChanIO output . InsertText . formatPitch )
-            waitChan
+            waitIn
     ALSA.startQueue sq
     Event.runState $
-        execute limits program term ( writeTChan output ) sq waitChan
+        execute limits program term ( writeTChan output ) sq waitOut
 
 
 execute :: Option.Limits
@@ -536,7 +536,7 @@ execute :: Option.Limits
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
-        -> Chan Event.WaitResult
+        -> Chan.Out Event.WaitResult
         -> MS.StateT Event.State IO ()
 execute limits program term output sq waitChan =
     forever $ do
@@ -592,7 +592,7 @@ executeStep limits program term writeExcMsg sq maxEventsSat =
     Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
-            -- writeChan waitChan $ Event.ModeChange Event.SingleStep
+            -- Chan.write waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
             writeUpdate $ Running Event.SingleStep
             {-
@@ -693,7 +693,7 @@ registerMyEvent win io = WXEvent.evtHandlerOnMenuCommand win myEventId io
 The order of widget creation is important
 for cycling through widgets using tabulator key.
 -}
-gui :: Chan Action -- ^  the gui writes here
+gui :: Chan.In Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
     -> TChan GuiUpdate -- ^ the machine writes here
       -- (a textual representation of "current expression")
@@ -709,10 +709,10 @@ gui input output = do
         [ text := "live-sequencer", visible := False
         ]
 
-    out <- newChan
+    (inC,out) <- Chan.new
 
     void $ forkIO $ forever $ do
-        writeChan out =<< STM.atomically (readTChan output)
+        Chan.write inC =<< STM.atomically (readTChan output)
         WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
@@ -789,7 +789,7 @@ gui input output = do
     WX.menuLine execMenu
     _restartItem <- WX.menuItem execMenu
         [ text := "Res&tart\tCtrl-T",
-          on command := writeChan input (Execution Restart),
+          on command := Chan.write input (Execution Restart),
           help :=
               "stop sound and restart program execution with 'main'" ]
     playTermItem <- WX.menuItem execMenu
@@ -806,7 +806,7 @@ gui input output = do
               "example terms: (merge track) or (flip append track)" ]
     _stopItem <- WX.menuItem execMenu
         [ text := "Stop\tCtrl-Space",
-          on command := writeChan input (Execution Stop),
+          on command := Chan.write input (Execution Stop),
           help :=
               "stop program execution and sound, " ++
               "reset term to 'main'" ]
@@ -824,7 +824,7 @@ gui input output = do
     nextStepItem <- WX.menuItem execMenu
         [ text := "Next step\tCtrl-N",
           enabled := False,
-          on command := writeChan input (Execution NextStep),
+          on command := Chan.write input (Execution NextStep),
           help := "perform next step in single step mode" ]
 
 
@@ -888,7 +888,7 @@ gui input output = do
               mfilename <- WX.fileOpenDialog
                   f False {- change current directory -} True
                   "Load Haskell program" haskellFilenames "" ""
-              forM_ mfilename $ writeChan input . Modification . Load
+              forM_ mfilename $ Chan.write input . Modification . Load
           ]
 
     set reloadItem [
@@ -939,25 +939,25 @@ gui input output = do
 
     set newModuleItem [
           on command :=
-              writeChan input $ Modification NewModule
+              Chan.write input $ Modification NewModule
           ]
 
     set closeModuleItem [
           on command :=
-              writeChan input . Modification . CloseModule . fst
+              Chan.write input . Modification . CloseModule . fst
                   =<< getFromNotebook nb =<< readIORef panels
           ]
 
     set flushModulesItem [
           on command :=
-              writeChan input . Modification . FlushModules . fst
+              Chan.write input . Modification . FlushModules . fst
                   =<< getFromNotebook nb =<< readIORef panels
           ]
 
     let refreshProgram (moduleName, pnl) = do
             s <- get (editor pnl) text
             pos <- get (editor pnl) cursor
-            writeChan input $ Modification $ RefreshModule Nothing moduleName s pos
+            Chan.write input $ Modification $ RefreshModule Nothing moduleName s pos
 
             updateErrorLog frameError $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
@@ -972,14 +972,14 @@ gui input output = do
 
     set playTermItem
         [ on command :=
-            writeChan input . Execution . PlayTerm
+            Chan.write input . Execution . PlayTerm
                 =<< uncurry getMarkedExpr . mapSnd editor
                 =<< getFromNotebook nb
                 =<< readIORef panels ]
 
     set applyTermItem
         [ on command :=
-            writeChan input . Execution . ApplyTerm
+            Chan.write input . Execution . ApplyTerm
                 =<< uncurry getMarkedExpr . mapSnd editor
                 =<< getFromNotebook nb
                 =<< readIORef panels ]
@@ -988,7 +988,7 @@ gui input output = do
 
     let updateSlowMotionDur = do
             dur <- readIORef waitDuration
-            writeChan input $ Execution $ Mode $ Event.SlowMotion dur
+            Chan.write input $ Execution $ Mode $ Event.SlowMotion dur
         slowmoUnit = Time.milliseconds 100
 
     set fasterItem [
@@ -1042,13 +1042,13 @@ gui input output = do
 
     onActivation realTimeItem $ do
         activateRealTime
-        writeChan input $ Execution $ Mode Event.RealTime
+        Chan.write input $ Execution $ Mode Event.RealTime
     onActivation slowMotionItem $ do
         activateSlowMotion
         updateSlowMotionDur
     onActivation singleStepItem $ do
         activateSingleStep
-        writeChan input $ Execution $ Mode Event.SingleStep
+        Chan.write input $ Execution $ Mode Event.SingleStep
 
     splitterWindowSetSashGravity splitter 0.5
     let initSplitterPosition = 0 {- equal division of heights -}
@@ -1124,7 +1124,7 @@ gui input output = do
     highlights <- varCreate M.empty
 
     registerMyEvent f $ do
-        msg <- readChan out
+        msg <- Chan.read out
         case msg of
             CurrentTerm sr -> do
                 get reducerVisibleItem checked >>=
@@ -1247,7 +1247,7 @@ gui input output = do
 
             RebuildControls ctrls ->
                 Controls.create frameControls ctrls $
-                    writeChan input . Control
+                    Chan.write input . Control
 
             Running mode -> do
                 case mode of
@@ -1269,7 +1269,7 @@ gui input output = do
                 pnls <- readIORef panels
                 HTTPGui.update
                     (\contentMVar name newContent pos ->
-                        writeChan input $ Modification $
+                        Chan.write input $ Modification $
                         RefreshModule (Just contentMVar) name newContent pos)
                     status (fmap editor pnls) request
 
