@@ -72,7 +72,7 @@ import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.MVar ( MVar, putMVar )
+import qualified Control.Concurrent.Split.MVar as MVar
 import qualified Control.Concurrent.Split.Chan as Chan
 import Control.Concurrent.STM.TChan ( TChan, newTChanIO, readTChan, writeTChan )
 import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
@@ -203,7 +203,7 @@ data Modification =
    | NewModule
    | CloseModule Module.Name
    | FlushModules Module.Name
-   | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
+   | RefreshModule (Maybe (MVar.In HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
 
 
@@ -453,7 +453,7 @@ machine input output limits importPaths progInit sq = do
                                 modifyModule importPaths program output moduleName sourceCode pos
                             Just mvar -> do
                                 x <- modifyModule importPaths program output moduleName sourceCode pos
-                                putMVar mvar $ Exc.Success
+                                MVar.put mvar $ Exc.Success
                                     (fmap Exception.multilineFromMessage x,
                                      sourceCode)
 
