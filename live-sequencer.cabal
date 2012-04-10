@@ -373,6 +373,7 @@ Executable live-sequencer
   If impl(ghc>=7.0)
     GHC-Options: -fwarn-unused-do-bind -fwarn-missing-import-lists
   Build-Depends:
+    stm-split >=0.0 && <0.1,
     concurrent-split >=0.0 && <0.1,
     transformers >=0.2.2 && <0.4,
     explicit-exception >=0.1.5 && <0.2,

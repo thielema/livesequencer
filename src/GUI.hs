@@ -51,7 +51,6 @@ import qualified Log
 import Program ( Program )
 import Term ( Term, Identifier, mainName )
 import Option.Utility ( exitFailureMsg )
-import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
 import Utility.WX ( cursor, editable, notebookSelection, splitterWindowSetSashGravity )
 
 import qualified HTTPServer.GUI as HTTPGui
@@ -74,9 +73,10 @@ import Graphics.UI.WX.Types
 import Control.Concurrent ( forkIO )
 import qualified Control.Concurrent.Split.MVar as MVar
 import qualified Control.Concurrent.Split.Chan as Chan
-import Control.Concurrent.STM.TChan ( TChan, newTChanIO, readTChan, writeTChan )
+import qualified Control.Concurrent.STM.Split.Chan as TChan
 import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
 import Control.Concurrent.STM.TMVar ( TMVar, newTMVarIO, putTMVar, readTMVar, takeTMVar )
+import Utility.Concurrent ( writeTMVar, liftSTM )
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
@@ -174,17 +174,17 @@ main = do
                         names
 
     (guiIn,guiOut) <- Chan.new
-    output <- newTChanIO
-    STM.atomically $ registerProgram output mainMod p
+    (machineIn,machineOut) <- TChan.newIO
+    STM.atomically $ registerProgram machineIn mainMod p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
-            gui guiIn output
+            gui guiIn machineIn (forEvent machineOut)
             void $ forkIO $
-                machine guiOut output
+                machine guiOut machineIn
                     (Option.limits opt) (Option.importPaths opt) p sq
             void $ forkIO $
                 HTTPGui.run
-                    (HTTPGui.methods (writeTChanIO output . HTTP))
+                    (HTTPGui.methods (TChan.writeIO machineIn . HTTP))
                     (Option.httpOption opt)
 
 
@@ -226,18 +226,18 @@ data GuiUpdate =
 
 
 exceptionToGUI ::
-    TChan GuiUpdate ->
+    TChan.In GuiUpdate ->
     Exc.ExceptionalT Exception.Message STM () ->
     STM ()
 exceptionToGUI output =
-    Exc.resolveT (writeTChan output . Exception)
+    Exc.resolveT (TChan.write output . Exception)
 
 exceptionToGUIIO ::
-    TChan GuiUpdate ->
+    TChan.In GuiUpdate ->
     Exc.ExceptionalT Exception.Message IO () ->
     IO ()
 exceptionToGUIIO output =
-    Exc.resolveT (writeTChanIO output . Exception)
+    Exc.resolveT (TChan.writeIO output . Exception)
 
 parseTerm ::
     (Monad m, IO.Input a) =>
@@ -290,7 +290,7 @@ would block the read access by the interpreter.
 modifyModule ::
     [ FilePath ] ->
     TVar Program ->
-    TChan GuiUpdate ->
+    TChan.In GuiUpdate ->
     Module.Name ->
     String ->
     Int ->
@@ -299,11 +299,11 @@ modifyModule importPaths program output moduleName sourceCode pos = do
     p <- readTVarIO program
     Exception.switchT
         (\e -> do
-            writeTChanIO output $ Exception e
+            TChan.writeIO output $ Exception e
             return $ Just e)
         (\(newP, updates) -> do
             STM.atomically $ do
-                mapM_ ( writeTChan output ) updates
+                mapM_ ( TChan.write output ) updates
                 writeTVar program newP
 --            Log.put "parsed and modified OK"
             return Nothing) $ do
@@ -352,15 +352,15 @@ modifyModule importPaths program output moduleName sourceCode pos = do
                       RebuildControls $ Program.controls p2 ]
             return p2
 
-registerProgram :: TChan GuiUpdate -> Module.Name -> Program -> STM ()
+registerProgram :: TChan.In GuiUpdate -> Module.Name -> Program -> STM ()
 registerProgram output mainModName p = do
-    writeTChan output $ Register mainModName $ Program.modules p
-    writeTChan output $ RebuildControls $ Program.controls p
+    TChan.write output $ Register mainModName $ Program.modules p
+    TChan.write output $ RebuildControls $ Program.controls p
 
-updateProgram :: TVar Program -> TChan GuiUpdate -> Program -> STM ()
+updateProgram :: TVar Program -> TChan.In GuiUpdate -> Program -> STM ()
 updateProgram program output p = do
     liftSTM $ writeTVar program p
-    liftSTM $ writeTChan output $ RebuildControls $ Program.controls p
+    liftSTM $ TChan.write output $ RebuildControls $ Program.controls p
 
 
 {-
@@ -372,7 +372,7 @@ we can keep the GUI and the execution of code going while parsing.
 -}
 machine :: Chan.Out Action -- ^ machine reads program text from here
                    -- (module name, module contents)
-        -> TChan GuiUpdate -- ^ and writes output to here
+        -> TChan.In GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
         -> Option.Limits
         -> [FilePath]
@@ -389,7 +389,7 @@ machine input output limits importPaths progInit sq = do
         let withMode mode transaction = do
                 Chan.write waitIn $ Event.ModeChange mode
                 STM.atomically $ do
-                    writeTChan output $ Running mode
+                    TChan.write output $ Running mode
                     transaction
         case action of
             Control event -> do
@@ -431,8 +431,8 @@ machine input output limits importPaths progInit sq = do
                                     t0 <- readTMVar term
                                     let t1 = Term.Node f (xs++[t0])
                                     writeTMVar term t1
-                                    writeTChan output $ CurrentTerm $ show t1
-                                    writeTChan output $ StatusLine $
+                                    TChan.write output $ CurrentTerm $ show t1
+                                    TChan.write output $ StatusLine $
                                         "applied function term " ++
                                         show (markedString txt)
                             _ ->
@@ -489,7 +489,7 @@ machine input output limits importPaths progInit sq = do
                                     error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
                                 Exc.Success newPrg ->
                                     liftSTM $ updateProgram program output newPrg
-                            liftSTM $ writeTChan output $ InsertPage True modu
+                            liftSTM $ TChan.write output $ InsertPage True modu
 
                     CloseModule modName ->
                         STM.atomically $ exceptionToGUI output $
@@ -512,22 +512,22 @@ machine input output limits importPaths progInit sq = do
                                 "there must remain at least one module"
                             liftSTM $ updateProgram program output $
                                 Program.removeModule modName prg
-                            liftSTM $ writeTChan output $ DeletePage modName
+                            liftSTM $ TChan.write output $ DeletePage modName
 
                     FlushModules modName ->
                         STM.atomically $ do
                             prg <- readTVar program
                             let (removed, minPrg) = Program.minimize modName prg
                             updateProgram program output minPrg
-                            Fold.mapM_ (writeTChan output . DeletePage) removed
+                            Fold.mapM_ (TChan.write output . DeletePage) removed
 
     void $ forkIO $
         Event.listen sq
-            ( writeTChanIO output . InsertText . formatPitch )
+            ( TChan.writeIO output . InsertText . formatPitch )
             waitIn
     ALSA.startQueue sq
     Event.runState $
-        execute limits program term ( writeTChan output ) sq waitOut
+        execute limits program term ( TChan.write output ) sq waitOut
 
 
 execute :: Option.Limits
@@ -689,16 +689,33 @@ registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = WXEvent.evtHandlerOnMenuCommand win myEventId io
 
 
+{- |
+The machine writes to this channel
+(a textual representation of "current expression")
+but sometimes the GUI also controls itself.
+-}
+forEvent :: TChan.Out a -> WX.Frame f -> (a -> IO ()) -> IO ()
+forEvent chan f act = do
+    (inC,out) <- Chan.new
+
+    void $ forkIO $ forever $ do
+        Chan.write inC =<< STM.atomically (TChan.read chan)
+        WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
+
+    registerMyEvent f $ Chan.read out >>= act
+
+
+
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
 -}
 gui :: Chan.In Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> TChan GuiUpdate -- ^ the machine writes here
-      -- (a textual representation of "current expression")
+    -> TChan.In GuiUpdate
+    -> (WX.Frame () -> (GuiUpdate -> IO ()) -> IO ())
     -> IO ()
-gui input output = do
+gui input output procEvent = do
     panels <- newIORef M.empty
 
     frameError <- newFrameError
@@ -708,12 +725,6 @@ gui input output = do
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]
-
-    (inC,out) <- Chan.new
-
-    void $ forkIO $ forever $ do
-        Chan.write inC =<< STM.atomically (readTChan output)
-        WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
 
@@ -878,7 +889,7 @@ gui input output = do
             result <- try act
             case result of
                 Left err ->
-                    writeTChanIO output $ Exception $
+                    TChan.writeIO output $ Exception $
                     Module.inoutExceptionMsg moduleName $
                     Err.ioeGetErrorString err
                 Right () -> return ()
@@ -1123,8 +1134,7 @@ gui input output = do
 
     highlights <- varCreate M.empty
 
-    registerMyEvent f $ do
-        msg <- Chan.read out
+    procEvent f $ \msg ->
         case msg of
             CurrentTerm sr -> do
                 get reducerVisibleItem checked >>=
@@ -1214,7 +1224,7 @@ gui input output = do
                   then
                     set status [ text := "new " ++ Module.tellName modName ]
                   else
-                    writeTChanIO output $ Exception $
+                    TChan.writeIO output $ Exception $
                     Module.inoutExceptionMsg modName $
                     "Panic: cannot add page for the module"
 
@@ -1233,7 +1243,7 @@ gui input output = do
                         ( M.lookup fromName pnls ) ) $ \(i,pnl) -> do
                     success <- WXCMZ.notebookRemovePage nb i
                     when (not success) $
-                        writeTChanIO output $ Exception $
+                        TChan.writeIO output $ Exception $
                         Module.inoutExceptionMsg fromName $
                         "Panic: cannot remove page for renaming module"
                     let newPnls =
