@@ -14,7 +14,7 @@ import qualified HTTPServer
 import qualified Graphics.UI.WX as WX
 import Graphics.UI.WX.Attributes ( Prop((:=)), set, get )
 import Graphics.UI.WX.Classes ( text )
-import Control.Concurrent.MVar
+import qualified Control.Concurrent.Split.MVar as MVar
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
@@ -23,14 +23,14 @@ import qualified Data.Map as M
 
 
 data GuiUpdate =
-     GetModuleList { _moduleList :: MVar [ Module.Name ] }
+     GetModuleList { _moduleList :: MVar.In [ Module.Name ] }
    | GetModuleContent {
          _moduleName :: Module.Name,
-         _moduleContent :: MVar (Exc.Exceptional HTTPServer.Error String) }
+         _moduleContent :: MVar.In (Exc.Exceptional HTTPServer.Error String) }
    | UpdateModuleContent {
          _moduleName :: Module.Name,
          _moduleEditableContent :: String,
-         _moduleNewContent :: MVar Feedback }
+         _moduleNewContent :: MVar.In Feedback }
 
 type Feedback = Exc.Exceptional HTTPServer.Error (Maybe String, String)
 
@@ -39,21 +39,21 @@ methods :: (GuiUpdate -> IO ()) -> HTTPServer.Methods
 methods output =
     HTTPServer.Methods {
         HTTPServer.getModuleList = do
-            modList <- newEmptyMVar
-            output $ GetModuleList modList
-            takeMVar modList,
+            (modListIn,modListOut) <- MVar.new
+            output $ GetModuleList modListIn
+            MVar.take modListOut,
         HTTPServer.getModuleContent = \name -> Exc.ExceptionalT $ do
-            content <- newEmptyMVar
-            output $ GetModuleContent name content
-            takeMVar content,
+            (contentIn,contentOut) <- MVar.new
+            output $ GetModuleContent name contentIn
+            MVar.take contentOut,
         HTTPServer.updateModuleContent = \name edited -> Exc.ExceptionalT $ do
-            newContent <- newEmptyMVar
-            output $ UpdateModuleContent name edited newContent
-            takeMVar newContent
+            (newContentIn,newContentOut) <- MVar.new
+            output $ UpdateModuleContent name edited newContentIn
+            MVar.take newContentOut
     }
 
 update ::
-    (MVar Feedback -> Module.Name -> String -> Int -> IO ()) ->
+    (MVar.In Feedback -> Module.Name -> String -> Int -> IO ()) ->
     WX.StatusField ->
     M.Map Module.Name (WX.TextCtrl ()) ->
     GuiUpdate ->
@@ -61,10 +61,10 @@ update ::
 update input status editors req =
     case req of
         GetModuleList modList ->
-            putMVar modList . M.keys $ editors
+            MVar.put modList . M.keys $ editors
 
         GetModuleContent name content ->
-            (putMVar content =<<) $ Exc.runExceptionalT $ do
+            (MVar.put content =<<) $ Exc.runExceptionalT $ do
                 editor <- getModule editors name
                 lift $ set status [ text :=
                     Module.tellName name ++ " downloaded by web client" ]
@@ -97,7 +97,7 @@ update input status editors req =
                                 return (newContent, pos)
             case result of
                 Exc.Exception (e, protected) ->
-                    putMVar contentMVar $
+                    MVar.put contentMVar $
                         Exc.Success (Just e,
                             protected ++ HTTPServer.separatorLine ++ '\n' : content)
                 Exc.Success (newContent, pos) ->

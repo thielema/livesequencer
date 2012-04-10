@@ -11,7 +11,7 @@ import qualified HTTPServer.Option as Option
 import qualified Module
 
 import qualified Graphics.UI.WX as WX
-import Control.Concurrent.MVar
+import qualified Control.Concurrent.Split.MVar as MVar
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 
@@ -35,7 +35,7 @@ methods :: (GuiUpdate -> IO ()) -> Methods
 methods _output = Methods
 
 update ::
-    (MVar Feedback -> Module.Name -> String -> Int -> IO ()) ->
+    (MVar.In Feedback -> Module.Name -> String -> Int -> IO ()) ->
     WX.StatusField ->
     M.Map Module.Name (WX.TextCtrl ()) ->
     GuiUpdate ->

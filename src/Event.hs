@@ -41,7 +41,7 @@ import Data.Accessor.Basic ((^.), )
 import qualified Data.Sequence as Seq
 import Data.Maybe ( isJust )
 
-import Control.Concurrent.Chan ( Chan, readChan, writeChan )
+import qualified Control.Concurrent.Split.Chan as Chan
 import Control.Concurrent ( forkIO )
 
 
@@ -200,13 +200,13 @@ processChannelMsg sq chanPort@(port, chan) body = do
 wait ::
     (SndSeq.AllowOutput mode) =>
     Sequencer mode ->
-    Chan WaitResult ->
+    Chan.Out WaitResult ->
     Maybe Time ->
     MS.StateT State IO ()
 wait sq waitChan mdur = do
     let loop target = do
-           liftIO $ Log.put $ "readChan waitChan"
-           ev <- liftIO $ readChan waitChan
+           liftIO $ Log.put $ "Chan.read waitChan"
+           ev <- liftIO $ Chan.read waitChan
            liftIO $ Log.put $ "read from waitChan: " ++ show ev
            case ev of
                ModeChange newMode -> do
@@ -288,7 +288,7 @@ listen ::
     (SndSeq.AllowInput mode) =>
     Sequencer mode ->
     (VM.Pitch -> IO ()) ->
-    Chan WaitResult -> IO ()
+    Chan.In WaitResult -> IO ()
 listen sq noteInput waitChan = do
     Log.put "listen to ALSA port"
     c <- Client.getId (handle sq)
@@ -311,7 +311,7 @@ listen sq noteInput waitChan = do
                     Log.put "write waitChan"
                     case SeqEvent.time ev of
                        ATime.Cons ATime.Absolute (ATime.Real rt) ->
-                          writeChan waitChan $ ReachedTime $ 
+                          Chan.write waitChan $ ReachedTime $ 
                           Time.nanoseconds $ RealTime.toInteger rt
                        _ -> return ()
             _ -> return ()

@@ -51,7 +51,6 @@ import qualified Log
 import Program ( Program )
 import Term ( Term, Identifier, mainName )
 import Option.Utility ( exitFailureMsg )
-import Utility.Concurrent ( writeTMVar, writeTChanIO, liftSTM )
 import Utility.WX ( cursor, editable, notebookSelection, splitterWindowSetSashGravity )
 
 import qualified HTTPServer.GUI as HTTPGui
@@ -72,11 +71,12 @@ import Graphics.UI.WX.Types
            ( Color, rgb, fontFixed, Point2(Point), sz,
              varCreate, varSwap, varUpdate )
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.MVar ( MVar, putMVar )
-import Control.Concurrent.Chan ( Chan, newChan, readChan, writeChan )
-import Control.Concurrent.STM.TChan ( TChan, newTChanIO, readTChan, writeTChan )
+import qualified Control.Concurrent.Split.MVar as MVar
+import qualified Control.Concurrent.Split.Chan as Chan
+import qualified Control.Concurrent.STM.Split.Chan as TChan
 import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
 import Control.Concurrent.STM.TMVar ( TMVar, newTMVarIO, putTMVar, readTMVar, takeTMVar )
+import Utility.Concurrent ( writeTMVar, liftSTM )
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
@@ -173,18 +173,18 @@ main = do
                                         Program.addModule (Module.empty name))
                         names
 
-    input <- newChan
-    output <- newTChanIO
-    STM.atomically $ registerProgram output mainMod p
+    (guiIn,guiOut) <- Chan.new
+    (machineIn,machineOut) <- TChan.newIO
+    STM.atomically $ registerProgram machineIn mainMod p
     ALSA.withSequencer opt $ \sq -> do
         flip finally (ALSA.stopQueue sq) $ WX.start $ do
-            gui input output
+            gui guiIn machineIn (forEvent machineOut)
             void $ forkIO $
-                machine input output
+                machine guiOut machineIn
                     (Option.limits opt) (Option.importPaths opt) p sq
             void $ forkIO $
                 HTTPGui.run
-                    (HTTPGui.methods (writeTChanIO output . HTTP))
+                    (HTTPGui.methods (TChan.writeIO machineIn . HTTP))
                     (Option.httpOption opt)
 
 
@@ -203,7 +203,7 @@ data Modification =
    | NewModule
    | CloseModule Module.Name
    | FlushModules Module.Name
-   | RefreshModule (Maybe (MVar HTTPGui.Feedback)) Module.Name String Int
+   | RefreshModule (Maybe (MVar.In HTTPGui.Feedback)) Module.Name String Int
          -- ^ MVar of the HTTP server, modulename, sourcetext, position
 
 
@@ -226,18 +226,18 @@ data GuiUpdate =
 
 
 exceptionToGUI ::
-    TChan GuiUpdate ->
+    TChan.In GuiUpdate ->
     Exc.ExceptionalT Exception.Message STM () ->
     STM ()
 exceptionToGUI output =
-    Exc.resolveT (writeTChan output . Exception)
+    Exc.resolveT (TChan.write output . Exception)
 
 exceptionToGUIIO ::
-    TChan GuiUpdate ->
+    TChan.In GuiUpdate ->
     Exc.ExceptionalT Exception.Message IO () ->
     IO ()
 exceptionToGUIIO output =
-    Exc.resolveT (writeTChanIO output . Exception)
+    Exc.resolveT (TChan.writeIO output . Exception)
 
 parseTerm ::
     (Monad m, IO.Input a) =>
@@ -290,7 +290,7 @@ would block the read access by the interpreter.
 modifyModule ::
     [ FilePath ] ->
     TVar Program ->
-    TChan GuiUpdate ->
+    TChan.In GuiUpdate ->
     Module.Name ->
     String ->
     Int ->
@@ -299,11 +299,11 @@ modifyModule importPaths program output moduleName sourceCode pos = do
     p <- readTVarIO program
     Exception.switchT
         (\e -> do
-            writeTChanIO output $ Exception e
+            TChan.writeIO output $ Exception e
             return $ Just e)
         (\(newP, updates) -> do
             STM.atomically $ do
-                mapM_ ( writeTChan output ) updates
+                mapM_ ( TChan.write output ) updates
                 writeTVar program newP
 --            Log.put "parsed and modified OK"
             return Nothing) $ do
@@ -352,15 +352,15 @@ modifyModule importPaths program output moduleName sourceCode pos = do
                       RebuildControls $ Program.controls p2 ]
             return p2
 
-registerProgram :: TChan GuiUpdate -> Module.Name -> Program -> STM ()
+registerProgram :: TChan.In GuiUpdate -> Module.Name -> Program -> STM ()
 registerProgram output mainModName p = do
-    writeTChan output $ Register mainModName $ Program.modules p
-    writeTChan output $ RebuildControls $ Program.controls p
+    TChan.write output $ Register mainModName $ Program.modules p
+    TChan.write output $ RebuildControls $ Program.controls p
 
-updateProgram :: TVar Program -> TChan GuiUpdate -> Program -> STM ()
+updateProgram :: TVar Program -> TChan.In GuiUpdate -> Program -> STM ()
 updateProgram program output p = do
     liftSTM $ writeTVar program p
-    liftSTM $ writeTChan output $ RebuildControls $ Program.controls p
+    liftSTM $ TChan.write output $ RebuildControls $ Program.controls p
 
 
 {-
@@ -370,9 +370,9 @@ It parses them and provides the parsed modules to the execution engine.
 Since parsing is a bit of work
 we can keep the GUI and the execution of code going while parsing.
 -}
-machine :: Chan Action -- ^ machine reads program text from here
+machine :: Chan.Out Action -- ^ machine reads program text from here
                    -- (module name, module contents)
-        -> TChan GuiUpdate -- ^ and writes output to here
+        -> TChan.In GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
         -> Option.Limits
         -> [FilePath]
@@ -382,14 +382,14 @@ machine :: Chan Action -- ^ machine reads program text from here
 machine input output limits importPaths progInit sq = do
     program <- newTVarIO progInit
     term <- newTMVarIO mainName
-    waitChan <- newChan
+    (waitIn,waitOut) <- Chan.new
 
     void $ forkIO $ forever $ do
-        action <- readChan input
+        action <- Chan.read input
         let withMode mode transaction = do
-                writeChan waitChan $ Event.ModeChange mode
+                Chan.write waitIn $ Event.ModeChange mode
                 STM.atomically $ do
-                    writeTChan output $ Running mode
+                    TChan.write output $ Running mode
                     transaction
         case action of
             Control event -> do
@@ -418,7 +418,7 @@ machine input output limits importPaths progInit sq = do
                     Stop -> do
                         ALSA.stopQueue sq
                         withMode Event.SingleStep $ writeTMVar term mainName
-                    NextStep -> writeChan waitChan Event.NextStep
+                    NextStep -> Chan.write waitIn Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ ALSA.quietContinueQueue sq
@@ -431,8 +431,8 @@ machine input output limits importPaths progInit sq = do
                                     t0 <- readTMVar term
                                     let t1 = Term.Node f (xs++[t0])
                                     writeTMVar term t1
-                                    writeTChan output $ CurrentTerm $ show t1
-                                    writeTChan output $ StatusLine $
+                                    TChan.write output $ CurrentTerm $ show t1
+                                    TChan.write output $ StatusLine $
                                         "applied function term " ++
                                         show (markedString txt)
                             _ ->
@@ -453,7 +453,7 @@ machine input output limits importPaths progInit sq = do
                                 modifyModule importPaths program output moduleName sourceCode pos
                             Just mvar -> do
                                 x <- modifyModule importPaths program output moduleName sourceCode pos
-                                putMVar mvar $ Exc.Success
+                                MVar.put mvar $ Exc.Success
                                     (fmap Exception.multilineFromMessage x,
                                      sourceCode)
 
@@ -489,7 +489,7 @@ machine input output limits importPaths progInit sq = do
                                     error ("new module has no declarations and thus should not lead to conflicts with existing modules - " ++ Exception.statusFromMessage e)
                                 Exc.Success newPrg ->
                                     liftSTM $ updateProgram program output newPrg
-                            liftSTM $ writeTChan output $ InsertPage True modu
+                            liftSTM $ TChan.write output $ InsertPage True modu
 
                     CloseModule modName ->
                         STM.atomically $ exceptionToGUI output $
@@ -512,22 +512,22 @@ machine input output limits importPaths progInit sq = do
                                 "there must remain at least one module"
                             liftSTM $ updateProgram program output $
                                 Program.removeModule modName prg
-                            liftSTM $ writeTChan output $ DeletePage modName
+                            liftSTM $ TChan.write output $ DeletePage modName
 
                     FlushModules modName ->
                         STM.atomically $ do
                             prg <- readTVar program
                             let (removed, minPrg) = Program.minimize modName prg
                             updateProgram program output minPrg
-                            Fold.mapM_ (writeTChan output . DeletePage) removed
+                            Fold.mapM_ (TChan.write output . DeletePage) removed
 
     void $ forkIO $
         Event.listen sq
-            ( writeTChanIO output . InsertText . formatPitch )
-            waitChan
+            ( TChan.writeIO output . InsertText . formatPitch )
+            waitIn
     ALSA.startQueue sq
     Event.runState $
-        execute limits program term ( writeTChan output ) sq waitChan
+        execute limits program term ( TChan.write output ) sq waitOut
 
 
 execute :: Option.Limits
@@ -536,7 +536,7 @@ execute :: Option.Limits
         -> TMVar Term -- ^ current term
         -> ( GuiUpdate -> STM () ) -- ^ sink for messages (show current term)
         -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
-        -> Chan Event.WaitResult
+        -> Chan.Out Event.WaitResult
         -> MS.StateT Event.State IO ()
 execute limits program term output sq waitChan =
     forever $ do
@@ -592,7 +592,7 @@ executeStep limits program term writeExcMsg sq maxEventsSat =
     Exception.switchT
         (\e -> do
             liftIO $ ALSA.stopQueue sq
-            -- writeChan waitChan $ Event.ModeChange Event.SingleStep
+            -- Chan.write waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
             writeUpdate $ Running Event.SingleStep
             {-
@@ -689,16 +689,33 @@ registerMyEvent :: WXCore.EvtHandler a -> IO () -> IO ()
 registerMyEvent win io = WXEvent.evtHandlerOnMenuCommand win myEventId io
 
 
+{- |
+The machine writes to this channel
+(a textual representation of "current expression")
+but sometimes the GUI also controls itself.
+-}
+forEvent :: TChan.Out a -> WX.Frame f -> (a -> IO ()) -> IO ()
+forEvent chan f act = do
+    (inC,out) <- Chan.new
+
+    void $ forkIO $ forever $ do
+        Chan.write inC =<< STM.atomically (TChan.read chan)
+        WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
+
+    registerMyEvent f $ Chan.read out >>= act
+
+
+
 {-
 The order of widget creation is important
 for cycling through widgets using tabulator key.
 -}
-gui :: Chan Action -- ^  the gui writes here
+gui :: Chan.In Action -- ^  the gui writes here
       -- (if the program text changes due to an edit action)
-    -> TChan GuiUpdate -- ^ the machine writes here
-      -- (a textual representation of "current expression")
+    -> TChan.In GuiUpdate
+    -> (WX.Frame () -> (GuiUpdate -> IO ()) -> IO ())
     -> IO ()
-gui input output = do
+gui input output procEvent = do
     panels <- newIORef M.empty
 
     frameError <- newFrameError
@@ -708,12 +725,6 @@ gui input output = do
     f <- WX.frame
         [ text := "live-sequencer", visible := False
         ]
-
-    out <- newChan
-
-    void $ forkIO $ forever $ do
-        writeChan out =<< STM.atomically (readTChan output)
-        WXCAL.evtHandlerAddPendingEvent f =<< createMyEvent
 
     p <- WX.panel f [ ]
 
@@ -789,7 +800,7 @@ gui input output = do
     WX.menuLine execMenu
     _restartItem <- WX.menuItem execMenu
         [ text := "Res&tart\tCtrl-T",
-          on command := writeChan input (Execution Restart),
+          on command := Chan.write input (Execution Restart),
           help :=
               "stop sound and restart program execution with 'main'" ]
     playTermItem <- WX.menuItem execMenu
@@ -806,7 +817,7 @@ gui input output = do
               "example terms: (merge track) or (flip append track)" ]
     _stopItem <- WX.menuItem execMenu
         [ text := "Stop\tCtrl-Space",
-          on command := writeChan input (Execution Stop),
+          on command := Chan.write input (Execution Stop),
           help :=
               "stop program execution and sound, " ++
               "reset term to 'main'" ]
@@ -824,7 +835,7 @@ gui input output = do
     nextStepItem <- WX.menuItem execMenu
         [ text := "Next step\tCtrl-N",
           enabled := False,
-          on command := writeChan input (Execution NextStep),
+          on command := Chan.write input (Execution NextStep),
           help := "perform next step in single step mode" ]
 
 
@@ -878,7 +889,7 @@ gui input output = do
             result <- try act
             case result of
                 Left err ->
-                    writeTChanIO output $ Exception $
+                    TChan.writeIO output $ Exception $
                     Module.inoutExceptionMsg moduleName $
                     Err.ioeGetErrorString err
                 Right () -> return ()
@@ -888,7 +899,7 @@ gui input output = do
               mfilename <- WX.fileOpenDialog
                   f False {- change current directory -} True
                   "Load Haskell program" haskellFilenames "" ""
-              forM_ mfilename $ writeChan input . Modification . Load
+              forM_ mfilename $ Chan.write input . Modification . Load
           ]
 
     set reloadItem [
@@ -939,25 +950,25 @@ gui input output = do
 
     set newModuleItem [
           on command :=
-              writeChan input $ Modification NewModule
+              Chan.write input $ Modification NewModule
           ]
 
     set closeModuleItem [
           on command :=
-              writeChan input . Modification . CloseModule . fst
+              Chan.write input . Modification . CloseModule . fst
                   =<< getFromNotebook nb =<< readIORef panels
           ]
 
     set flushModulesItem [
           on command :=
-              writeChan input . Modification . FlushModules . fst
+              Chan.write input . Modification . FlushModules . fst
                   =<< getFromNotebook nb =<< readIORef panels
           ]
 
     let refreshProgram (moduleName, pnl) = do
             s <- get (editor pnl) text
             pos <- get (editor pnl) cursor
-            writeChan input $ Modification $ RefreshModule Nothing moduleName s pos
+            Chan.write input $ Modification $ RefreshModule Nothing moduleName s pos
 
             updateErrorLog frameError $ Seq.filter $
                 \(Exception.Message _ errorRng _) ->
@@ -972,14 +983,14 @@ gui input output = do
 
     set playTermItem
         [ on command :=
-            writeChan input . Execution . PlayTerm
+            Chan.write input . Execution . PlayTerm
                 =<< uncurry getMarkedExpr . mapSnd editor
                 =<< getFromNotebook nb
                 =<< readIORef panels ]
 
     set applyTermItem
         [ on command :=
-            writeChan input . Execution . ApplyTerm
+            Chan.write input . Execution . ApplyTerm
                 =<< uncurry getMarkedExpr . mapSnd editor
                 =<< getFromNotebook nb
                 =<< readIORef panels ]
@@ -988,7 +999,7 @@ gui input output = do
 
     let updateSlowMotionDur = do
             dur <- readIORef waitDuration
-            writeChan input $ Execution $ Mode $ Event.SlowMotion dur
+            Chan.write input $ Execution $ Mode $ Event.SlowMotion dur
         slowmoUnit = Time.milliseconds 100
 
     set fasterItem [
@@ -1042,13 +1053,13 @@ gui input output = do
 
     onActivation realTimeItem $ do
         activateRealTime
-        writeChan input $ Execution $ Mode Event.RealTime
+        Chan.write input $ Execution $ Mode Event.RealTime
     onActivation slowMotionItem $ do
         activateSlowMotion
         updateSlowMotionDur
     onActivation singleStepItem $ do
         activateSingleStep
-        writeChan input $ Execution $ Mode Event.SingleStep
+        Chan.write input $ Execution $ Mode Event.SingleStep
 
     splitterWindowSetSashGravity splitter 0.5
     let initSplitterPosition = 0 {- equal division of heights -}
@@ -1123,8 +1134,7 @@ gui input output = do
 
     highlights <- varCreate M.empty
 
-    registerMyEvent f $ do
-        msg <- readChan out
+    procEvent f $ \msg ->
         case msg of
             CurrentTerm sr -> do
                 get reducerVisibleItem checked >>=
@@ -1214,7 +1224,7 @@ gui input output = do
                   then
                     set status [ text := "new " ++ Module.tellName modName ]
                   else
-                    writeTChanIO output $ Exception $
+                    TChan.writeIO output $ Exception $
                     Module.inoutExceptionMsg modName $
                     "Panic: cannot add page for the module"
 
@@ -1233,7 +1243,7 @@ gui input output = do
                         ( M.lookup fromName pnls ) ) $ \(i,pnl) -> do
                     success <- WXCMZ.notebookRemovePage nb i
                     when (not success) $
-                        writeTChanIO output $ Exception $
+                        TChan.writeIO output $ Exception $
                         Module.inoutExceptionMsg fromName $
                         "Panic: cannot remove page for renaming module"
                     let newPnls =
@@ -1247,7 +1257,7 @@ gui input output = do
 
             RebuildControls ctrls ->
                 Controls.create frameControls ctrls $
-                    writeChan input . Control
+                    Chan.write input . Control
 
             Running mode -> do
                 case mode of
@@ -1269,7 +1279,7 @@ gui input output = do
                 pnls <- readIORef panels
                 HTTPGui.update
                     (\contentMVar name newContent pos ->
-                        writeChan input $ Modification $
+                        Chan.write input $ Modification $
                         RefreshModule (Just contentMVar) name newContent pos)
                     status (fmap editor pnls) request
 
