@@ -16,7 +16,7 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 -- import qualified Sound.ALSA.Sequencer.Event as SeqEvent
 
 import Control.Concurrent ( forkIO )
-import Control.Concurrent.Chan ( Chan, newChan, readChan, writeChan )
+import qualified Control.Concurrent.Split.Chan as Chan
 
 import qualified Control.Monad.Trans.Writer as MW
 import qualified Control.Monad.Trans.State as MS
@@ -44,14 +44,14 @@ main = do
         Program.chaseMany
             (Option.importPaths opt) (Option.moduleNames opt) Program.empty
     ALSA.withSequencer opt $ \sq -> do
-        waitChan <- newChan
-        visChan <- newChan
-        void $ forkIO $ Event.listen sq print (readChan visChan >>= print) waitChan
+        (waitIn,waitOut) <- Chan.new
+        (visIn,visOut) <- Chan.new
+        void $ forkIO $ Event.listen sq print (Chan.read visOut >>= print) waitIn
         ALSA.runSend sq ALSA.startQueue
         Event.runState $
             execute
                 (Option.maxReductions $ Option.limits opt)
-                p sq visChan waitChan Term.mainName
+                p sq visIn waitOut Term.mainName
 
 writeExcMsg :: Exception.Message -> IO ()
 writeExcMsg = putStrLn . Exception.statusFromMessage
@@ -60,18 +60,18 @@ execute ::
     Rewrite.Count ->
     Program ->
     ALSA.Sequencer SndSeq.DuplexMode ->
-    Chan Term ->
-    Chan Event.WaitResult ->
+    Chan.In Term ->
+    Chan.Out Event.WaitResult ->
     Term ->
     MS.StateT Event.State IO ()
-execute maxRed p sq visChan waitChan =
+execute maxRed p sq visIn waitOut =
     let go t = do
             s <-
                 mapExceptionalT
                     (MW.runWriterT >=> \(ms,_log) ->
                         {- liftIO (mapM_ print log) >> -} return ms) $
                 Rewrite.runEval maxRed p (Rewrite.forceHead t)
-            lift $ liftIO $ writeChan visChan s
+            lift $ liftIO $ Chan.write visIn s
             lift $ void $ Event.runSend sq$
                 Event.sendEcho Event.visualizeId $ ALSA.latencyNano sq
             case Term.viewNode s of
@@ -79,7 +79,7 @@ execute maxRed p sq visChan waitChan =
                     mdur <- lift $ resolveT
                         (liftIO . fmap (const Nothing) . writeExcMsg)
                         (Event.play sq writeExcMsg x)
-                    lift $ Event.wait sq waitChan mdur
+                    lift $ Event.wait sq waitOut mdur
                     go xs
                 Just ("[]", []) ->
                     lift $ liftIO $
