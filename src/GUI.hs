@@ -387,8 +387,8 @@ machine input output limits importPaths progInit sq = do
     void $ forkIO $ forever $ do
         action <- Chan.read input
         let withMode mode send transaction = do
-                Chan.write waitIn $ Event.ModeChange mode
                 Chan.write waitIn $ Event.AlsaSend send
+                Chan.write waitIn $ Event.ModeChange mode
                 STM.atomically $ do
                     TChan.write output $ Running mode
                     transaction
