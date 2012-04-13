@@ -522,10 +522,6 @@ machine input output limits importPaths progInit sq = do
                             Fold.mapM_ (TChan.write output . DeletePage) removed
 
     (delayedUpdatesIn, delayedUpdatesOut) <- Chan.new
-    let sendUpdates us = do
-            lift $ Chan.write delayedUpdatesIn us
-            void $ Event.runSend sq $
-                Event.sendEcho Event.visualizeId (ALSA.latencyNano sq)
 
     void $ forkIO $
         Event.listen sq
@@ -535,7 +531,7 @@ machine input output limits importPaths progInit sq = do
             waitIn
     ALSA.runSend sq ALSA.startQueue
     Event.runState $
-        execute limits program term sendUpdates
+        execute limits program term delayedUpdatesIn
             ( TChan.writeIO output . Exception ) sq waitOut
 
 execute ::
@@ -543,21 +539,23 @@ execute ::
     -> TVar Program
            -- ^ current program (GUI might change the contents)
     -> TMVar Term -- ^ current term
-    -> ( [ GuiUpdate ] -> MS.StateT Event.State IO () )
+    -> Chan.In [ GuiUpdate ]
            -- ^ sink for time-stamped delayed messages (show current term)
     -> ( Exception.Message -> IO () )
            -- ^ sink for asynchronous warnings (currently feedback from festival)
     -> ALSA.Sequencer SndSeq.DuplexMode -- ^ for playing MIDI events
     -> Chan.Out Event.WaitResult
     -> MS.StateT Event.State IO ()
-execute limits program term sendUpdates sendWarning sq waitChan =
+execute limits program term delayedUpdatesIn sendWarning sq waitChan =
     forever $ do
         (mdur, updates) <- MW.runWriterT $ do
             waiting <- lift $ AccM.get Event.stateWaiting
             when waiting $ writeUpdate ResetDisplay
             maxEventsSat <- lift $ checkMaxEvents limits
             executeStep limits program term sendWarning sq maxEventsSat
-        sendUpdates updates
+        lift $ Chan.write delayedUpdatesIn updates
+        void $ Event.runSend sq $
+            Event.sendEcho Event.visualizeId (ALSA.latencyNano sq)
         Event.wait sq waitChan mdur
 
 {-
