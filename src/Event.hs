@@ -238,19 +238,29 @@ wait sq waitChan mdur = do
     when cont $ loop targetTime
 
 
-forwardQueue ::
-    MS.StateT State ALSA.Send ()
-forwardQueue = do
-    sq <- ALSA.askSeq
-    ALSA.forwardQueue . mappend (ALSA.latencyNano sq)
-        =<< AccM.get stateTime
-
 forwardStoppedQueue ::
     MS.StateT State ALSA.Send ()
 forwardStoppedQueue = do
     sq <- ALSA.askSeq
-    ALSA.forwardStoppedQueue . mappend (ALSA.latencyNano sq)
-        =<< AccM.get stateTime
+    t <- fmap (mappend (ALSA.latencyNano sq)) $ AccM.get stateTime
+    ALSA.forwardStoppedQueue t
+
+forwardQuietContinueQueue ::
+    MS.StateT State ALSA.Send ()
+forwardQuietContinueQueue = do
+    sq <- ALSA.askSeq
+    t <- fmap (mappend (ALSA.latencyNano sq)) $ AccM.get stateTime
+    ALSA.sendAllNotesOffLater t
+    ALSA.forwardContinueQueue t
+
+forwardStopQueue ::
+    MS.StateT State ALSA.Send ()
+forwardStopQueue = do
+    sq <- ALSA.askSeq
+    t <- fmap (mappend (ALSA.latencyNano sq)) $ AccM.get stateTime
+    ALSA.sendAllNotesOffLater t
+    ALSA.forwardStoppedQueue t
+
 
 prepare ::
     Maybe Time ->

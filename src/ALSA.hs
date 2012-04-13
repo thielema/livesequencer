@@ -129,17 +129,14 @@ stopQueue = do
    mapM_ sendEvent =<< allNotesOff
    queueControl Event.QueueStop Nothing
 
-stopQueueDelayed :: SendClass send => Time -> send Time
-stopQueueDelayed t = do
+stopQueueLater :: SendClass send => Time -> send Time
+stopQueueLater t = do
    sq <- askSeq
    let targetTime = mappend t $ latencyNano sq
    -- Log.put $ "stop queue delayed from " ++ show t ++ " to " ++ show targetTime
-   let stamp ev =
-           ev{Event.queue = queue sq,
-              Event.time = realTimeStamp targetTime}
-   mapM_ (sendEvent . stamp) =<< allNotesOff
-   queueControl Event.QueueStop $ Just $ stamp $
-       Event.simple Addr.unknown $ Event.EmptyEv Event.None
+   sendAllNotesOffLater targetTime
+   queueControl Event.QueueStop . Just =<<
+       (stamp targetTime $ Event.simple Addr.unknown $ Event.EmptyEv Event.None)
    return targetTime
 
 pauseQueue ::SendClass send => send ()
@@ -152,11 +149,16 @@ continueQueue = do
    -- Log.put "continue queue"
    queueControl Event.QueueContinue Nothing
 
-quietContinueQueue :: SendClass send => send ()
-quietContinueQueue = do
-   -- Log.put "continue queue"
-   mapM_ sendEvent =<< allNotesOff
-   queueControl Event.QueueContinue Nothing
+sendAllNotesOffLater :: SendClass send => Time -> send ()
+sendAllNotesOffLater t = do
+   mapM_ (sendEvent <=< stamp t) =<< allNotesOff
+
+stamp :: SendClass send => Time -> Event.T -> send Event.T
+stamp t ev = do
+   sq <- askSeq
+   return $
+       ev{Event.queue = queue sq,
+          Event.time = realTimeStamp t}
 
 allNotesOff :: SendClass send => send [Event.T]
 allNotesOff =
@@ -181,6 +183,12 @@ forwardStoppedQueue t = do
    queueControl Event.QueueContinue Nothing
    queueControl (Event.QueueSetPosTime (realTime t)) Nothing
    queueControl Event.QueueStop Nothing
+
+forwardContinueQueue :: SendClass send => Time -> send ()
+forwardContinueQueue t = do
+   -- Log.put "forward and continue queue"
+   queueControl (Event.QueueSetPosTime (realTime t)) Nothing
+   queueControl Event.QueueContinue Nothing
 
 
 parseAndConnect ::

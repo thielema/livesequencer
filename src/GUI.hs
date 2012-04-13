@@ -412,17 +412,17 @@ machine input output limits importPaths progInit sq = do
                                 Event.SingleStep   -> ALSA.pauseQueue
                     Restart ->
                         withMode Event.RealTime
-                            (Event.forwardQueue >> ALSA.quietContinueQueue)
+                            Event.forwardQuietContinueQueue
                             (writeTMVar term mainName)
                     Stop ->
                         withMode Event.SingleStep
-                            (Event.forwardQueue >> ALSA.stopQueue)
+                            Event.forwardStopQueue
                             (writeTMVar term mainName)
                     NextStep -> Chan.write waitIn Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ withMode Event.RealTime
-                                   (Event.forwardQueue >> ALSA.quietContinueQueue)
+                                   Event.forwardQuietContinueQueue
                                    (writeTMVar term t)
                     ApplyTerm txt -> exceptionToGUIIO output $ do
                         fterm <- parseTerm txt
@@ -468,9 +468,7 @@ machine input output limits importPaths progInit sq = do
                                     Program.empty
                             lift $ do
                                 withMode Event.RealTime
-                                    (ALSA.stopQueue >>
-                                     Event.forwardQueue >>
-                                     ALSA.continueQueue) $ do
+                                      Event.forwardQuietContinueQueue $ do
                                     writeTVar program p
                                     writeTMVar term mainName
                                     registerProgram output (Module.Name stem) p
@@ -606,9 +604,9 @@ executeStep limits program term sendWarning sq maxEventsSat =
         (\e -> do
 --            liftIO $ ALSA.stopQueue sq
             currentTime <- lift $ AccM.get Event.stateTime
-            liftIO $ Log.put "executeStep: stopQueueDelayed"
+            liftIO $ Log.put "executeStep: stopQueueLater"
             newTime <-
-                liftIO $ ALSA.runSend sq $ ALSA.stopQueueDelayed currentTime
+                liftIO $ ALSA.runSend sq $ ALSA.stopQueueLater currentTime
             -- Chan.write waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
             writeUpdate $ Running Event.SingleStep
