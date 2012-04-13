@@ -135,14 +135,18 @@ stopQueueLater t = do
    let targetTime = mappend t $ latencyNano sq
    -- Log.put $ "stop queue delayed from " ++ show t ++ " to " ++ show targetTime
    sendAllNotesOffLater targetTime
-   queueControl Event.QueueStop . Just =<<
-       (stamp targetTime $ Event.simple Addr.unknown $ Event.EmptyEv Event.None)
+   pauseQueueLater targetTime
    return targetTime
 
 pauseQueue ::SendClass send => send ()
 pauseQueue = do
    -- Log.put "pause queue"
    queueControl Event.QueueStop Nothing
+
+pauseQueueLater ::SendClass send => Time -> send ()
+pauseQueueLater t = do
+   -- Log.put "pause queue later"
+   queueControl Event.QueueStop . Just =<< stampedQueueEvent t
 
 continueQueue :: SendClass send => send ()
 continueQueue = do
@@ -159,6 +163,10 @@ stamp t ev = do
    return $
        ev{Event.queue = queue sq,
           Event.time = realTimeStamp t}
+
+stampedQueueEvent :: SendClass send => Time -> send Event.T
+stampedQueueEvent t =
+   stamp t $ Event.simple Addr.unknown $ Event.EmptyEv Event.None
 
 allNotesOff :: SendClass send => send [Event.T]
 allNotesOff =
@@ -180,9 +188,17 @@ forwardQueue t = do
 forwardStoppedQueue :: SendClass send => Time -> send ()
 forwardStoppedQueue t = do
    -- Log.put "forward stopped queue"
+   {-
+   This event is not scheduled,
+   since it must work also if the queue is stopped.
+   -}
    queueControl Event.QueueContinue Nothing
    queueControl (Event.QueueSetPosTime (realTime t)) Nothing
-   queueControl Event.QueueStop Nothing
+   {-
+   This event is scheduled,
+   because it must wait until after the AllNotesOff events.
+   -}
+   pauseQueueLater t
 
 forwardContinueQueue :: SendClass send => Time -> send ()
 forwardContinueQueue t = do
