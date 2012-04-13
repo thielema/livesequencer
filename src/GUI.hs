@@ -548,14 +548,23 @@ execute ::
     -> MS.StateT Event.State IO ()
 execute limits program term delayedUpdatesIn sendWarning sq waitChan =
     forever $ do
+        {-
+        executeStep may call stopQueueLater in case of an exception.
+        Thus we must register the visualisation trigger before that event,
+        in order to display the exception.
+        -}
+        void $ Event.runSend sq $
+            Event.sendEcho Event.visualizeId (ALSA.latencyNano sq)
         (mdur, updates) <- MW.runWriterT $ do
             waiting <- lift $ AccM.get Event.stateWaiting
             when waiting $ writeUpdate ResetDisplay
             maxEventsSat <- lift $ checkMaxEvents limits
             executeStep limits program term sendWarning sq maxEventsSat
+        {-
+        This update will take effect
+        when the above visualisation trigger event is arrives.
+        -}
         lift $ Chan.write delayedUpdatesIn updates
-        void $ Event.runSend sq $
-            Event.sendEcho Event.visualizeId (ALSA.latencyNano sq)
         Event.wait sq waitChan mdur
 
 {-
