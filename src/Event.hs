@@ -42,7 +42,6 @@ import Data.Maybe ( isJust )
 import qualified Control.Concurrent.Split.Chan as Chan
 import Control.Concurrent ( forkIO )
 
-import Data.Word ( Word32 )
 import Data.Bool.HT ( if' )
 
 
@@ -280,16 +279,12 @@ prepare mdur = do
         SingleStep -> return (True, Nothing)
 
 
-newtype EchoId = EchoId Word32
+newtype EchoId = EchoId SeqEvent.Tag
     deriving (Eq, Show)
 
 evaluateId, visualizeId :: EchoId
-evaluateId  = EchoId 0
-visualizeId = EchoId 1
-
-echoIdFromCustom :: SeqEvent.Custom -> EchoId
-echoIdFromCustom (SeqEvent.Custom echoWord _ _) =
-    EchoId echoWord
+evaluateId  = EchoId (SeqEvent.Tag 0)
+visualizeId = EchoId (SeqEvent.Tag 1)
 
 
 sendEcho ::
@@ -308,8 +303,9 @@ sendEcho (EchoId echoId) dur = do
     ALSA.sendEventOnQueue $
         (SeqEvent.simple dest
             (SeqEvent.CustomEv SeqEvent.Echo
-                (SeqEvent.Custom echoId 0 0)))
-           { SeqEvent.dest = dest,
+                (SeqEvent.customZero)))
+           { SeqEvent.tag = echoId,
+             SeqEvent.dest = dest,
              SeqEvent.time =
                  ALSA.realTimeStamp targetTime
            }
@@ -340,9 +336,9 @@ listen sq noteInput visualize waitChan = do
         case SeqEvent.body ev of
             SeqEvent.NoteEv SeqEvent.NoteOn note ->
                 noteInput $ note ^. MidiAlsa.notePitch
-            SeqEvent.CustomEv SeqEvent.Echo cust ->
+            SeqEvent.CustomEv SeqEvent.Echo _cust ->
                 when (dest == SeqEvent.dest ev) $
-                    if' (echoIdFromCustom cust == evaluateId)
+                    if' (EchoId (SeqEvent.tag ev) == evaluateId)
                         (case SeqEvent.time ev of
                             ATime.Cons ATime.Absolute (ATime.Real rt) -> do
                                 Log.put "write waitChan"
