@@ -1,3 +1,84 @@
+{- |
+The tricky part of the event scheduling is how to achieve precise timing.
+
+We want to achieve:
+
+* Precisely timed sending of MIDI events.
+
+* Immediate start of music when you start the interpreter.
+
+* Immediate stop of music when you stop the interpreter.
+
+We achieve precise timing by sending the events with a fixed delay
+that the user can set with the 'latency' command line option.
+That is, if latency is 0.1s,
+then we tell ALSA at time point t to send an event at t+0.1s.
+This way we make ALSA responsible for precise timing,
+and it actually makes a good job.
+In order to prevent cumulation of rounding errors
+we maintain the ideal time in the 'stateTime' field of our 'State' record.
+This time should always be a little bit smaller than the time in the ALSA queue.
+
+In total, for every element in the MIDI stream we send two ALSA events:
+
+* If the current event is @Wait@ and we are in real-time mode,
+  then we send an Echo event with evaluateId to ourselves
+  with a delay according to the @Wait@ value.
+
+* If the current event is @Event@,
+  then we send the according MIDI event via ALSA with a delay of latency
+  with respect to the current ideal time.
+
+* In any case we send a delayed Echo event with visualizeId to ourselves.
+  This Echo makes sure that the display is updated
+  when ALSA ships the event and
+  not immediately after the computation of the event.
+
+The 'wait' function is responsible for waiting between events
+depending on the execution mode.
+Actually, the essence of execution modes is how we wait.
+In real-time mode it waits according to @Wait@ events.
+In slow-motion mode it waits a fixed duration between events.
+In single-step mode it waits for @Next step@ user commands.
+The function also reacts to execution mode changes within a waiting period.
+Actually, changes to execution mode can only happen during waiting.
+
+The very tricky part is how to react immediately
+to start and stop of the interpreter.
+Of course, if the user requests interpreter start
+we cannot send an event immediately
+because we have to compute one first.
+However, we pretend that the first event is sent immediately
+and send following events according to the ideal start time.
+The interpreter has to compute many events at once
+until it is @latency@ ahead of the current ALSA queue time.
+If the interpreter is paused
+then events for the duration of @latency@ will remain in the queue.
+If the user switches back from pause to realtime execution
+then the stored events shall be shipped regularly.
+However, if the user requests the next step in single step mode,
+then these events must be shipped at once,
+since we do not want to simply drop them.
+If we would drop them we would risk hanging tones.
+We achieve the shipping at once
+by moving the ALSA queue time by @latency@ forward.
+
+We use the trick of increasing the ALSA queue time at several places.
+We use it whenever it is necessary to react immediately to a user request.
+In order to avoid adding up multiple latencies
+we always add the latency to the ideal time,
+not to the current ALSA queue time.
+We also have to take care of order of ALSA MIDI events.
+Although stopping the interpreter
+shall immediately send an AllNotesOff,
+we must schedule the AllNotesOff event with a latency
+and increment ALSA queue time
+in order to assert correct ordering with previous and following MIDI events.
+In contrast to that we must send some Queue control commands
+like QueueContinue immediately,
+because the queue might be stopped and
+in this state scheduled events may not be processed.
+-}
 module Event where
 
 import Term ( Term(Number, StringLiteral), termRange )
