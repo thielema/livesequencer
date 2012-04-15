@@ -39,15 +39,15 @@ methods :: (GuiUpdate -> IO ()) -> HTTPServer.Methods
 methods output =
     HTTPServer.Methods {
         HTTPServer.getModuleList = do
-            (modListIn,modListOut) <- MVar.new
+            (modListIn,modListOut) <- MVar.newEmpty
             output $ GetModuleList modListIn
             MVar.take modListOut,
         HTTPServer.getModuleContent = \name -> Exc.ExceptionalT $ do
-            (contentIn,contentOut) <- MVar.new
+            (contentIn,contentOut) <- MVar.newEmpty
             output $ GetModuleContent name contentIn
             MVar.take contentOut,
         HTTPServer.updateModuleContent = \name edited -> Exc.ExceptionalT $ do
-            (newContentIn,newContentOut) <- MVar.new
+            (newContentIn,newContentOut) <- MVar.newEmpty
             output $ UpdateModuleContent name edited newContentIn
             MVar.take newContentOut
     }
