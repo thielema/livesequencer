@@ -274,6 +274,7 @@ Data-Files:
   data/base/Chords.hs
   data/base/Controls.hs
   data/base/Drum.hs
+  data/base/Enum.hs
   data/base/Function.hs
   data/base/Instrument.hs
   data/base/Integer.hs
@@ -330,6 +331,7 @@ Library
     Chords
     Controls
     Drum
+    Enum
     Function
     Instrument
     Integer
