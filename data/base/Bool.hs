@@ -12,6 +12,12 @@ not :: Bool -> Bool ;
 not False = True ;
 not True = False ;
 
+-- the same as (/=) for Bool
+xor :: Bool -> Bool -> Bool ;
+xor False True = True ;
+xor True False = True ;
+xor _ _ = False ;
+
 
 infixr 3 && ;
 
