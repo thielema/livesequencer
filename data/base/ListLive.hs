@@ -6,6 +6,7 @@ module ListLive (
     dropWhileRev,
 
     sumInteger,
+    productInteger,
     iterateInteger,
     iterateIntegerList,
     applyStrictList,
@@ -15,7 +16,7 @@ module ListLive (
 import Tuple
 import Function
 import Bool
-import Prelude ( (-), (+), Num, Int, Integer, Integral, Bool, foldr, null, reverse )
+import Prelude ( (-), (+), (*), Num, Int, Integer, Integral, Bool, foldr, null, reverse )
 
 
 cons :: a -> [a] -> [a] ;
@@ -61,6 +62,15 @@ sumIntegerAux :: (Integral a) => a -> [a] -> a ;
 sumIntegerAux 0 [] = 0 ;
 sumIntegerAux s [] = s ;
 sumIntegerAux s (x:xs) = sumIntegerAux (s+x) xs ;
+
+
+productInteger :: (Integral a) => [a] -> a ;
+productInteger = productIntegerAux 1 ;
+
+productIntegerAux :: (Integral a) => a -> [a] -> a ;
+productIntegerAux 0 [] = 0 ;
+productIntegerAux p [] = p ;
+productIntegerAux p (x:xs) = productIntegerAux (p*x) xs ;
 
 
 -- | constant space usage in contrast to 'iterate'
