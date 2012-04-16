@@ -98,7 +98,7 @@ transposeEvent d (Event (Off pitch velocity)) = Event (Off (pitch+d) velocity) ;
 transposeEvent _d event = event ;
 
 
-changeTempo :: Integer -> [Event Message] -> [Event Message] ;
+changeTempo :: Integer -> [Event a] -> [Event a] ;
 changeTempo d = map ( changeTempoEvent d ) ;
 
 changeTempoEvent :: Integer -> Event a -> Event a ;
