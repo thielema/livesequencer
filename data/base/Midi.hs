@@ -8,7 +8,7 @@ module Midi (
     Channel(Channel),
     Message(PgmChange, Controller, On, Off),
 
-    note,
+    note, noteOn, noteOff,
     rest,
     program,
     controller,
@@ -63,10 +63,14 @@ note duration = applyStrict (noteLazy duration) ;
 
 noteLazy :: Time -> Pitch -> [Event Message] ;
 noteLazy duration pitch =
-  [ Event (On pitch normalVelocity)
+  [ noteOn pitch
   , Wait duration
-  , Event (Off pitch normalVelocity)
+  , noteOff pitch
   ] ;
+
+noteOn, noteOff :: Pitch -> Event Message ;
+noteOn  pitch = Event (On  pitch normalVelocity) ;
+noteOff pitch = Event (Off pitch normalVelocity) ;
 
 rest :: Time -> [Event a] ;
 rest duration =
