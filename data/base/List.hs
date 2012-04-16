@@ -1,6 +1,7 @@
 module List (
     map,
     zipWith,
+    zipWith3,
     foldr,
     foldl,
     length,
@@ -42,6 +43,11 @@ zipWith :: (a -> b -> c) -> [a] -> [b] -> [c] ;
 zipWith f (x : xs) (y : ys) =
     f x y : zipWith f xs ys ;
 zipWith _f _xs _ys = [] ;
+
+zipWith3 :: (a -> b -> c -> d) -> [a] -> [b] -> [c] -> [d] ;
+zipWith3 f (x : xs) (y : ys) (z : zs) =
+    f x y z : zipWith3 f xs ys zs ;
+zipWith3 _f _xs _ys _zs = [] ;
 
 foldr :: (b -> a -> a) -> a -> [b] -> a ;
 foldr _ a [] = a ;
