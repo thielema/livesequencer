@@ -9,7 +9,7 @@ import Prelude ( Integer, (*), (+), mod ) ;
 
 main :: [ Event (Channel Message) ] ;
 main =
-   channel 0 $
+   channel 0 $ changeTempo timeUnit $
    concatMap (note qn . makePitch) $
    modFibonacci3 4 1 1 0 ;
 
@@ -44,5 +44,8 @@ modFibonacci3Rec n c0 c1 c2 x0 x1 x2 =
 
 -- * auxiliary
 
+timeUnit :: Time ;
+timeUnit = 150 ;
+
 qn :: Integer ;
-qn = 150 ;
+qn = 1 ;

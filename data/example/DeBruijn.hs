@@ -11,7 +11,7 @@ import Prelude ( Integer, fromInteger, fromIntegral, ($), (.), (+), (-), (<), mo
 
 main :: [ Event (Channel Message) ] ;
 main =
-   channel 0 $
+   channel 0 $ changeTempo timeUnit $
    concatMap (note qn . makePitch) $
    cycle $ deBruijnSequence 4 2 ;
 
@@ -45,5 +45,8 @@ deBruijnSequence n k =
 
 -- * auxiliary
 
+timeUnit :: Time ;
+timeUnit = 150 ;
+
 qn :: Integer ;
-qn = 150 ;
+qn = 1 ;

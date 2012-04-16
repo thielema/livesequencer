@@ -10,7 +10,7 @@ import Prelude ( Integer, fromInteger, (+), mod, div, succ ) ;
 
 main :: [ Event (Channel Message) ] ;
 main =
-   channel 0 $
+   channel 0 $ changeTempo timeUnit $
    concatMap (note qn . makePitch) $
    modCrossSums 4 ;
 
@@ -58,5 +58,8 @@ modAdd :: Integer -> Integer -> Integer -> Integer ;
 modAdd m x y = mod (x+y) m ;
 
 
+timeUnit :: Time ;
+timeUnit = 150 ;
+
 qn :: Integer ;
-qn = 150 ;
+qn = 1 ;
