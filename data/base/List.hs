@@ -24,6 +24,8 @@ module List (
     drop,
     filter,
     takeWhile,
+    inits,
+    tails,
     ) where
 
 import ListLive
@@ -139,3 +141,18 @@ takeWhile p =
 
 takeWhileElem :: (a -> Bool) -> a -> [a] -> [a] ;
 takeWhileElem p x xs = ifThenElse (p x) (x:xs) [] ;
+
+
+inits :: [a] -> [[a]] ;
+inits xs = [] : initsAux xs ;
+
+initsAux :: [a] -> [[a]] ;
+initsAux [] = [] ;
+initsAux (x:xs) = map (cons x) (inits xs) ;
+
+tails :: [a] -> [[a]] ;
+tails xs = xs : tailsAux xs ;
+
+tailsAux :: [a] -> [[a]] ;
+tailsAux [] = [] ;
+tailsAux (_:xs) = tails xs ;
