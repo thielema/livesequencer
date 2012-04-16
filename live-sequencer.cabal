@@ -268,6 +268,8 @@ Data-Files:
   data/example/CrossSum.hs
   data/example/Fibonacci.hs
   data/example/DeBruijn.hs
+  data/example/JohnsonTrotter.hs
+  data/example/GrayCode.hs
   data/example/Pattern.hs
 
   data/base/Bool.hs
@@ -347,6 +349,8 @@ Library
     CrossSum
     DeBruijn
     Fibonacci
+    JohnsonTrotter
+    GrayCode
 
 
 Executable live-sequencer
