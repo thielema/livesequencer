@@ -14,8 +14,8 @@ import Prelude ( Integer, (*), (+), mod ) ;
 main :: [ Event (Channel Message) ] ;
 main =
    channel 0 $ changeTempo timeUnit $ cycle $
-   (concatMap (addBass . concatMap (note qn . makePitch)) $
-    johnsonTrotter indexes) ;
+   concatMap (addBass . concatMap (note qn . makePitch)) $
+   johnsonTrotter indexes ;
 
 addBass :: [Event Message] -> [Event Message] ;
 addBass xs =
