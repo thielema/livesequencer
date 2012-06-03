@@ -5,6 +5,7 @@ import Midi
 import Drum
 import Prelude ( (*), (-), (.), ($) )
 
+drumTrack :: Time -> [Event (Channel Message)] ;
 drumTrack dur =
     drumChannel $
         program 0 ++
@@ -15,17 +16,23 @@ drumTrack dur =
         ] ;
 
 
+x, o :: Drum -> Time -> [Event Message] ;
 x drm dur =
     drum drm dur ;
 
-o drm dur =
+o _drm dur =
     rest dur ;
 
+applyDrum :: time -> drum -> (drum -> time -> a) -> a ;
 applyDrum dur drm f =
     f drm dur ;
 
---------------------------------
 
+bassDrumPattern, bassDrumLoop,
+    snareDrumPattern, snareDrumLoop,
+    hihatPattern, hihatLoop :: [Drum -> Time -> [Event Message]] ;
+
+--------------------------------
 bassDrumPattern =
     [ x, o, o, o, x, o, o, o, x, o, o, o ] ;
 
