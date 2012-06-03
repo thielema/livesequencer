@@ -8,6 +8,7 @@ License-file:  LICENSE
 Cabal-Version: >= 1.6
 Tested-With:   GHC==6.12.3, GHC==7.2.1
 Homepage:      http://www.haskell.org/haskellwiki/Live-Sequencer
+Bug-Reports:   http://dfa.imn.htwk-leipzig.de/bugzilla/describecomponents.cgi?product=live-sequencer
 Synopsis:      Live coding of MIDI music
 Description:
    An editor shows a textual description of music (like Haskore),
