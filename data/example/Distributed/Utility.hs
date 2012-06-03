@@ -1,4 +1,4 @@
-module Utility where
+module Distributed.Utility where
 
 multiIndex xs ns = map ( index xs ) ns ;
 

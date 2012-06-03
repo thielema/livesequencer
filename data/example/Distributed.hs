@@ -1,8 +1,8 @@
 module Distributed where
 
-import ChordTrack
-import BassTrack
-import DrumTrack
+import Distributed.Chord
+import Distributed.Bass
+import Distributed.Drum
 
 import Pitch
 import Midi

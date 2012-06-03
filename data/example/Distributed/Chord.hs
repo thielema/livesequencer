@@ -1,8 +1,8 @@
-module ChordTrack where
+module Distributed.Chord where
 
+import Distributed.Utility
 import List
 import Midi
-import Utility
 import Prelude ( (*), (-), (.), ($) )
 
 chordTrack dur harmonies =

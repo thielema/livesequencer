@@ -1,8 +1,8 @@
-module BassTrack where
+module Distributed.Bass where
 
+import Distributed.Utility
 import List
 import Midi
-import Utility
 import Prelude ( (*), (-), (.), ($) )
 
 bassTrack dur set =

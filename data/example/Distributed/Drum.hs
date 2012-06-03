@@ -1,4 +1,4 @@
-module DrumTrack where
+module Distributed.Drum where
 
 import List
 import Midi
