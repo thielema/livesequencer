@@ -313,15 +313,19 @@ signature t = S.fromList $ do
 
 peek :: Term -> Position -> Maybe Term
 peek t [] = return t
-peek (Node _f xs) (k : ks) | k < length xs =
-    peek (xs !! k) ks
+peek (Node _f xs) (k : ks) =
+    case drop k xs of
+        x:_ -> peek x ks
+        [] -> mzero
 peek _ _  = mzero
 
 poke :: Term -> Position -> Term -> Maybe Term
 poke _t [] s = return s
-poke (Node f xs) (k : ks) s | k < length xs = do
-    let (pre, x : post) = splitAt k xs
-    y <- poke x ks s
-    return $ Node f $ pre ++ y : post
+poke (Node f xs) (k : ks) s =
+    case splitAt k xs of
+        (pre, x : post) -> do
+            y <- poke x ks s
+            return $ Node f $ pre ++ y : post
+        (_, []) -> error "Term.poke: index too large"
 poke _ (_:_) _ =
     error "Term.poke: cannot access a leaf with an index"
