@@ -369,6 +369,7 @@ Executable live-sequencer
     Rule
     Step
     Term
+    TermFocus
     Time
     Type
     Log
@@ -444,6 +445,7 @@ Executable live-sequencer-gui
     Rule
     Step
     Term
+    TermFocus
     Time
     Type
     Log

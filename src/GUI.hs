@@ -49,7 +49,7 @@ import qualified Rewrite
 import qualified Option
 import qualified Log
 import Program ( Program )
-import Term ( Term, Identifier, mainName )
+import Term ( Term, Identifier )
 import Option.Utility ( exitFailureMsg )
 import Utility.WX ( cursor, editable, notebookSelection, splitterWindowSetSashGravity )
 
@@ -76,7 +76,7 @@ import qualified Control.Concurrent.Split.Chan as Chan
 import qualified Control.Concurrent.STM.Split.Chan as TChan
 import Control.Concurrent.STM.TVar  ( TVar, newTVarIO, readTVarIO, readTVar, writeTVar )
 import Control.Concurrent.STM.TMVar ( TMVar, newTMVarIO, putTMVar, readTMVar, takeTMVar )
-import Utility.Concurrent ( writeTMVar, liftSTM )
+import Utility.Concurrent ( MonadSTM, writeTMVar, liftSTM )
 import Control.Monad.STM ( STM )
 import qualified Control.Monad.STM as STM
 
@@ -130,8 +130,9 @@ import qualified Data.Monoid as Mn
 
 import qualified Data.Char as Char
 import qualified Data.List as List
-import Data.Tuple.HT ( mapSnd )
+import Data.Tuple.HT ( mapFst, mapSnd )
 import Data.Bool.HT ( if' )
+import Data.Maybe ( mapMaybe )
 
 import Prelude hiding ( log )
 
@@ -209,7 +210,7 @@ data Modification =
 
 -- | messages that are sent from machine to GUI
 data GuiUpdate =
-     ReductionSteps { _steps :: [ Rewrite.Message ] }
+     ReductionSteps { _steps :: [ Rewrite.Source ] }
    | CurrentTerm { _currentTerm :: String }
    | Exception { _message :: Exception.Message }
    | Register { _mainModName :: Module.Name, _modules :: M.Map Module.Name Module.Module }
@@ -223,6 +224,15 @@ data GuiUpdate =
    | HTTP HTTPGui.GuiUpdate
    | Running { _runningMode :: Event.WaitMode }
    | ResetDisplay
+
+-- | the messages describe the steps towards the stateTerm
+data State = State { stateMessages :: [ Rewrite.Message ], stateTerm :: Term }
+
+initialState :: State
+initialState = State [] Term.mainName
+
+stateFromTerm :: Term -> State
+stateFromTerm t = State [] t
 
 
 exceptionToGUI ::
@@ -381,7 +391,7 @@ machine :: Chan.Out Action -- ^ machine reads program text from here
         -> IO ()
 machine input output limits importPaths progInit sq = do
     program <- newTVarIO progInit
-    term <- newTMVarIO mainName
+    term <- newTMVarIO initialState
     (waitIn,waitOut) <- Chan.new
 
     void $ forkIO $ forever $ do
@@ -409,29 +419,29 @@ machine input output limits importPaths progInit sq = do
                             case mode of
                                 Event.RealTime     -> ALSA.continueQueue
                                 Event.SlowMotion _ -> ALSA.continueQueue
-                                Event.SingleStep   -> ALSA.pauseQueue
+                                Event.SingleStep _ -> ALSA.pauseQueue
                     Restart ->
                         withMode Event.RealTime
                             Event.forwardQuietContinueQueue
-                            (writeTMVar term mainName)
+                            (writeTMVar term initialState)
                     Stop ->
-                        withMode Event.SingleStep
+                        withMode Event.singleStep
                             Event.forwardStopQueue
-                            (writeTMVar term mainName)
+                            (writeTMVar term initialState)
                     NextStep -> Chan.write waitIn Event.NextStep
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ withMode Event.RealTime
                                    Event.forwardQuietContinueQueue
-                                   (writeTMVar term t)
+                                   (writeTMVar term $ stateFromTerm t)
                     ApplyTerm txt -> exceptionToGUIIO output $ do
                         fterm <- parseTerm txt
                         case fterm of
                             Term.Node f xs ->
                                 lift $ STM.atomically $ do
-                                    t0 <- readTMVar term
+                                    State _ t0 <- readTMVar term
                                     let t1 = Term.Node f (xs++[t0])
-                                    writeTMVar term t1
+                                    writeTMVar term $ stateFromTerm t1
                                     TChan.write output $ CurrentTerm $ show t1
                                     TChan.write output $ StatusLine $
                                         "applied function term " ++
@@ -470,7 +480,7 @@ machine input output limits importPaths progInit sq = do
                                 withMode Event.RealTime
                                       Event.forwardQuietContinueQueue $ do
                                     writeTVar program p
-                                    writeTMVar term mainName
+                                    writeTMVar term initialState
                                     registerProgram output (Module.Name stem) p
                                 Log.put "chased and parsed OK"
 
@@ -538,7 +548,7 @@ execute ::
        Option.Limits
     -> TVar Program
            -- ^ current program (GUI might change the contents)
-    -> TMVar Term -- ^ current term
+    -> TMVar State -- ^ current term
     -> Chan.In [ GuiUpdate ]
            -- ^ sink for time-stamped delayed messages (show current term)
     -> ( Exception.Message -> IO () )
@@ -600,13 +610,14 @@ checkMaxEvents limits = do
 executeStep ::
     Option.Limits ->
     TVar Program ->
-    TMVar Term ->
+    TMVar State ->
     ( Exception.Message -> IO () ) ->
     ALSA.Sequencer SndSeq.DuplexMode ->
     Bool ->
     MW.WriterT [ GuiUpdate ]
         ( MS.StateT Event.State IO ) ( Maybe ALSA.Time )
-executeStep limits program term sendWarning sq maxEventsSat =
+executeStep limits program term sendWarning sq maxEventsSat = do
+    waitMode <- lift $ AccM.get Event.stateWaitMode
     Exception.switchT
         (\e -> do
 --            liftIO $ ALSA.stopQueue sq
@@ -616,24 +627,27 @@ executeStep limits program term sendWarning sq maxEventsSat =
                 liftIO $ ALSA.runSend sq $ ALSA.stopQueueLater currentTime
             -- Chan.write waitChan $ Event.ModeChange Event.SingleStep
             writeUpdate $ Exception e
-            writeUpdate $ Running Event.SingleStep
+            writeUpdate $ Running Event.singleStep
             {-
             We have to alter the mode directly,
             since waitChan is only read when we wait for a duration other than Nothing
             -}
-            lift $ AccM.set Event.stateWaitMode Event.SingleStep
+            lift $ AccM.set Event.stateWaitMode Event.singleStep
             lift $ AccM.set Event.stateTime newTime
             return Nothing)
-        (\(x,s) -> do
+        (\(mx,s) -> do
             {-
             exceptions on processing an event are not fatal and we keep running
             -}
-            wait <- Exc.resolveT
-                (fmap (const Nothing) . writeUpdate . Exception)
-                (Exc.mapExceptionalT lift $
-                 Event.play sq sendWarning x)
+            wait <-
+                case mx of
+                    Nothing -> return Nothing
+                    Just x ->
+                        Exc.resolveT
+                           (fmap (const Nothing) . writeUpdate . Exception)
+                           (Exc.mapExceptionalT lift $
+                            Event.play sq sendWarning x)
 
-            waitMode <- lift $ AccM.get Event.stateWaitMode
             waiting  <- lift $ AccM.get Event.stateWaiting
             {-
             This way the term will be pretty printed in the GUI thread
@@ -651,42 +665,92 @@ executeStep limits program term sendWarning sq maxEventsSat =
             return wait)
         (Exc.mapExceptionalT (MW.mapWriterT (liftIO . STM.atomically)) $
             flip Exc.catchT (\(pos,msg) -> do
-                liftSTM $ putTMVar term mainName
-                Exc.throwT $ Exception.Message Exception.Term pos msg) $ do
-            t <- liftSTM $ takeTMVar term
-            p <- liftSTM $ readTVar program
-                {- this happens anew at each click
-                   since the program text might have changed in the editor -}
-            Exc.assertT
-                (Term.termRange t, "too many events in a too short period")
-                maxEventsSat
-            (s,log) <-
-                Exc.mapExceptionalT
-                    (fmap (\(ms,log) -> liftM2 (,) ms (return log)) .
-                     MW.runWriterT) $
-                Rewrite.runEval
-                    (Option.maxReductions limits) p (Rewrite.forceHead t)
-            Exc.assertT
-                (Term.termRange s,
-                 "term size exceeds limit " ++ show (Option.maxTermSize limits))
-                (null $ drop (Option.maxTermSize limits) $ Term.subterms s)
-            Exc.assertT
-                (Term.termRange s,
-                 "term depth exceeds limit " ++ show (Option.maxTermDepth limits))
-                (null $ drop (Option.maxTermDepth limits) $ Term.breadths s)
-            lift $ writeUpdate $ ReductionSteps log
-            case Term.viewNode s of
-                Just (":", [x, xs]) -> do
-                    liftSTM $ putTMVar term xs
-                    return (x,s)
-                Just ("[]", []) -> do
-                    lift $ writeUpdate $ CurrentTerm $ show s
-                    Exc.throwT (Term.termRange s, "finished.")
-                _ -> do
-                    lift $ writeUpdate $ CurrentTerm $ show s
-                    Exc.throwT (Term.termRange s,
-                        "I do not know how to handle this term: " ++ show s))
+                liftSTM $ putTMVar term initialState
+                Exc.throwT $ Exception.Message Exception.Term pos msg) $
+            computeStep limits program term maxEventsSat waitMode)
 
+
+computeStep ::
+    (MonadSTM m) =>
+    Option.Limits ->
+    TVar Program ->
+    TMVar State ->
+    Bool ->
+    Event.WaitMode ->
+    Exc.ExceptionalT
+        (Term.Range, String)
+        (MW.WriterT [GuiUpdate] m)
+        (Maybe Term, Term)
+computeStep limits program term maxEventsSat waitMode = do
+    t <- liftSTM $ takeTMVar term
+    p <- liftSTM $ readTVar program
+        {- this happens anew at each click
+           since the program text might have changed in the editor -}
+    Exc.assertT
+        (Term.termRange $ stateTerm t, "too many events in a too short period")
+        maxEventsSat
+
+    let forceHead =
+            Exc.mapExceptionalT
+                (liftM (\(ms,msgs) -> fmap ((,) msgs) ms) .
+                 MW.runWriterT) $
+            Rewrite.runEval
+                (Option.maxReductions limits) p
+                (Rewrite.forceHead $ stateTerm t)
+
+    (steps, focusedTerm, st@(State msgs s), fullyReduced) <-
+        case waitMode of
+            Event.SingleStep Event.NextReduction ->
+                case splitAtReduction $ stateMessages t of
+                    (steps, Just (red, rest)) ->
+                        return (steps, red, State rest (stateTerm t), False)
+                    (steps, Nothing) -> do
+                        st <- forceHead
+                        return (steps, stateTerm t, uncurry State st, True)
+            _ -> do
+                (msgs, nt) <- forceHead
+                return
+                    (mapMaybe (\msg ->
+                         case msg of
+                             Rewrite.Source step -> Just step
+                             _ -> Nothing) msgs,
+                     nt, State [] nt, True)
+
+    if fullyReduced
+      then do
+        Exc.assertT
+            (Term.termRange s,
+             "term size exceeds limit " ++ show (Option.maxTermSize limits))
+            (null $ drop (Option.maxTermSize limits) $ Term.subterms s)
+        Exc.assertT
+            (Term.termRange s,
+             "term depth exceeds limit " ++ show (Option.maxTermDepth limits))
+            (null $ drop (Option.maxTermDepth limits) $ Term.breadths s)
+        lift $ writeUpdate $ ReductionSteps steps
+        case Term.viewNode s of
+            Just (":", [x, xs]) -> do
+                liftSTM $ putTMVar term $ State msgs xs
+                return (Just x, focusedTerm)
+            Just ("[]", []) -> do
+                lift $ writeUpdate $ CurrentTerm $ show s
+                Exc.throwT (Term.termRange s, "finished.")
+            _ -> do
+                lift $ writeUpdate $ CurrentTerm $ show s
+                Exc.throwT (Term.termRange s,
+                    "I do not know how to handle this term: " ++ show s)
+      else do
+        lift $ writeUpdate $ ReductionSteps steps
+        liftSTM $ putTMVar term st
+        return (Nothing, focusedTerm)
+
+
+splitAtReduction ::
+    [ Rewrite.Message ] ->
+    ( [ Rewrite.Source ] , Maybe ( Term , [ Rewrite.Message ] ) )
+splitAtReduction [] = ( [], Nothing )
+splitAtReduction (Rewrite.SubTerm t _ : ms) = ( [], Just (t, ms ) )
+splitAtReduction (Rewrite.Source s : ms) =
+    mapFst (s:) $ splitAtReduction ms
 
 voidStateT :: (Monad m) => (s -> m s) -> MS.StateT s m ()
 voidStateT f = MS.StateT $ liftM ((,) ()) . f
@@ -1082,7 +1146,7 @@ gui input output procEvent = do
         updateSlowMotionDur
     onActivation singleStepItem $ do
         activateSingleStep
-        Chan.write input $ Execution $ Mode Event.SingleStep
+        Chan.write input $ Execution $ Mode Event.singleStep
 
     splitterWindowSetSashGravity splitter 0.5
     let initSplitterPosition = 0 {- equal division of heights -}
@@ -1292,7 +1356,7 @@ gui input output procEvent = do
                             ("interpreter in slow-motion mode with pause " ++
                              Time.format dur) ]
                         activateSlowMotion
-                    Event.SingleStep -> do
+                    Event.SingleStep _ -> do
                         set status [ text :=
                             "interpreter in single step mode," ++
                             " waiting for next step" ]

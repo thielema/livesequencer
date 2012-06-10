@@ -126,12 +126,21 @@ import Control.Concurrent ( forkIO )
 import Data.Bool.HT ( if' )
 
 
-data WaitMode = RealTime | SlowMotion (Time.Milliseconds Integer) | SingleStep
+data WaitMode =
+         RealTime | SlowMotion (Time.Milliseconds Integer) | SingleStep Continue
     deriving (Eq, Show)
 
 data WaitResult =
          ModeChange WaitMode | ReachedTime Time | NextStep |
          AlsaSend (MS.StateT State ALSA.Send ())
+
+data Continue =
+         NextElement | NextReduction
+    deriving (Eq, Show)
+
+
+singleStep :: WaitMode
+singleStep = SingleStep NextReduction
 
 
 termException ::
@@ -357,7 +366,7 @@ prepare mdur = do
                 Nothing -> return (False, Nothing)
                 Just dur -> sendEchoCont dur
         SlowMotion dur -> sendEchoCont $ Time.up $ Time.up dur
-        SingleStep -> return (True, Nothing)
+        SingleStep _ -> return (True, Nothing)
 
 
 newtype EchoId = EchoId SeqEvent.Tag

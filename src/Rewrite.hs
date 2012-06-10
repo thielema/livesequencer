@@ -2,6 +2,7 @@ module Rewrite where
 
 import Term ( Term(Node, Number, StringLiteral),
               Identifier(Identifier, range, name), Range, termRange )
+import TermFocus ( TermFocus )
 import Program ( Program )
 import qualified Program
 import qualified Term
@@ -26,6 +27,11 @@ import Data.List ( intercalate )
 
 
 data Message =
+      SubTerm { subTerm :: Term, superTerm :: [ TermFocus ] }
+    | Source { source :: Source }
+    deriving Show
+
+data Source =
       Step { target :: Identifier }
     | Rule { rule :: Identifier }
     | Data { origin :: Identifier }
@@ -85,7 +91,7 @@ full x = do
 
 -- | evaluate until root symbol is constructor.
 top :: Term -> Evaluator Term
-top t = case t of
+top t = (lift $ tell [ SubTerm t [] ] ) >> case t of
     Number {} -> return t
     StringLiteral {} -> return t
     Node f xs ->
@@ -99,7 +105,7 @@ eval ::
 eval i xs
   | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
       ys <- mapM top xs
-      lift $ tell $ [ Step { target = i } ]
+      lift $ tell $ [ Source $ Step { target = i } ]
       case ys of
           [ Number _ a, Number _ b] ->
               case name i of
@@ -141,7 +147,7 @@ evalDecls g =
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
                     conss <- lift $ asks ( Program.constructors . snd )
-                    lift $ tell $
+                    lift $ tell $ map Source $
                         Step g : Rule f :
                         ( map Data $ S.toList $ S.intersection conss $
                           S.fromList $ foldr constructors [] xs )
