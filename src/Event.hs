@@ -131,7 +131,7 @@ data WaitMode =
     deriving (Eq, Show)
 
 data WaitResult =
-         ModeChange WaitMode | ReachedTime Time | NextStep |
+         ModeChange WaitMode | ReachedTime Time | NextStep Continue |
          AlsaSend (MS.StateT State ALSA.Send ())
 
 data Continue =
@@ -140,7 +140,7 @@ data Continue =
 
 
 singleStep :: WaitMode
-singleStep = SingleStep NextReduction
+singleStep = SingleStep NextElement
 
 
 termException ::
@@ -316,7 +316,8 @@ wait sq waitChan mdur = do
                    if Just reached == target
                      then AccM.set stateTime reached
                      else loop target
-               NextStep -> do
+               NextStep cont -> do
+                   AccM.set stateWaitMode $ SingleStep cont
                    runSend sq forwardStoppedQueue
                    when (isJust target) $ loop target
                AlsaSend send -> do

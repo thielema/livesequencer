@@ -196,7 +196,7 @@ data Action =
    | Control Controls.Event
 
 data Execution =
-    Mode Event.WaitMode | Restart | Stop | NextStep |
+    Mode Event.WaitMode | Restart | Stop | NextStep Event.Continue |
     PlayTerm MarkedText | ApplyTerm MarkedText
 
 data Modification =
@@ -428,7 +428,7 @@ machine input output limits importPaths progInit sq = do
                         withMode Event.singleStep
                             Event.forwardStopQueue
                             (writeTMVar term initialState)
-                    NextStep -> Chan.write waitIn Event.NextStep
+                    NextStep cont -> Chan.write waitIn $ Event.NextStep cont
                     PlayTerm txt -> exceptionToGUIIO output $ do
                         t <- parseTerm txt
                         lift $ withMode Event.RealTime
@@ -919,11 +919,16 @@ gui input output procEvent = do
         [ text := "Slower\tCtrl-<",
           enabled := False,
           help := "increase pause in slow motion mode" ]
-    nextStepItem <- WX.menuItem execMenu
-        [ text := "Next step\tCtrl-N",
+    nextElemItem <- WX.menuItem execMenu
+        [ text := "Next element\tCtrl-N",
           enabled := False,
-          on command := Chan.write input (Execution NextStep),
-          help := "perform next step in single step mode" ]
+          on command := Chan.write input (Execution $ NextStep Event.NextElement),
+          help := "compute next list element in single step mode" ]
+    nextRedItem <- WX.menuItem execMenu
+        [ text := "Next reduction\tCtrl-Shift-N",
+          enabled := False,
+          on command := Chan.write input (Execution $ NextStep Event.NextReduction),
+          help := "compute next reduction in single step mode" ]
 
 
     windowMenu <- WX.menuPane [text := "&Window"]
@@ -1116,7 +1121,8 @@ gui input output procEvent = do
 
         setSingleStep b = do
             set singleStepItem [ checked := b ]
-            set nextStepItem [ enabled := b ]
+            set nextElemItem [ enabled := b ]
+            set nextRedItem [ enabled := b ]
 
         onActivation w act =
             set w [ on command := do
