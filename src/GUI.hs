@@ -39,6 +39,7 @@ Waits for and responds to incoming HTTP requests.
 -}
 
 import qualified IO
+import qualified TermFocus
 import qualified Term
 import qualified Time
 import qualified Program
@@ -49,6 +50,7 @@ import qualified Rewrite
 import qualified Option
 import qualified Log
 import Program ( Program )
+import TermFocus ( TermFocus )
 import Term ( Term, Identifier )
 import Option.Utility ( exitFailureMsg )
 import Utility.WX ( cursor, editable, notebookSelection, splitterWindowSetSashGravity )
@@ -656,7 +658,7 @@ executeStep limits program term sendWarning sq maxEventsSat = do
             which is not better.
             -}
             when (waiting || waitMode /= Event.RealTime) $
-                writeUpdate $ CurrentTerm $ show s
+                writeUpdate $ CurrentTerm $ TermFocus.format s
             {-
             liftIO $ Log.put $
                 "term size: " ++ ( show $ length $ Term.subterms s ) ++
@@ -680,7 +682,7 @@ computeStep ::
     Exc.ExceptionalT
         (Term.Range, String)
         (MW.WriterT [GuiUpdate] m)
-        (Maybe Term, Term)
+        (Maybe Term, TermFocus)
 computeStep limits program term maxEventsSat waitMode = do
     t <- liftSTM $ takeTMVar term
     p <- liftSTM $ readTVar program
@@ -706,7 +708,8 @@ computeStep limits program term maxEventsSat waitMode = do
                         return (steps, red, State rest (stateTerm t), False)
                     (steps, Nothing) -> do
                         st <- forceHead
-                        return (steps, stateTerm t, uncurry State st, True)
+                        return (steps, TermFocus.fromTerm $ stateTerm t,
+                                uncurry State st, True)
             _ -> do
                 (msgs, nt) <- forceHead
                 return
@@ -714,7 +717,7 @@ computeStep limits program term maxEventsSat waitMode = do
                          case msg of
                              Rewrite.Source step -> Just step
                              _ -> Nothing) msgs,
-                     nt, State [] nt, True)
+                     TermFocus.fromTerm nt, State [] nt, True)
 
     if fullyReduced
       then do
@@ -746,9 +749,9 @@ computeStep limits program term maxEventsSat waitMode = do
 
 splitAtReduction ::
     [ Rewrite.Message ] ->
-    ( [ Rewrite.Source ] , Maybe ( Term , [ Rewrite.Message ] ) )
+    ( [ Rewrite.Source ] , Maybe ( TermFocus , [ Rewrite.Message ] ) )
 splitAtReduction [] = ( [], Nothing )
-splitAtReduction (Rewrite.SubTerm t _ : ms) = ( [], Just (t, ms ) )
+splitAtReduction (Rewrite.Term t : ms) = ( [], Just (t, ms ) )
 splitAtReduction (Rewrite.Source s : ms) =
     mapFst (s:) $ splitAtReduction ms
 

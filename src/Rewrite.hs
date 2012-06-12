@@ -2,9 +2,10 @@ module Rewrite where
 
 import Term ( Term(Node, Number, StringLiteral),
               Identifier(Identifier, range, name), Range, termRange )
-import TermFocus ( TermFocus )
+import TermFocus ( TermFocus(TermFocus), SuperTerm )
 import Program ( Program )
 import qualified Program
+import qualified TermFocus
 import qualified Term
 import qualified Rule
 
@@ -19,6 +20,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Traversable as Trav
 
+import Data.Monoid ( Monoid )
 import Data.Maybe.HT ( toMaybe )
 import Data.Tuple.HT ( mapSnd )
 import Data.List ( intercalate )
@@ -27,7 +29,7 @@ import Data.List ( intercalate )
 
 
 data Message =
-      SubTerm { subTerm :: Term, superTerm :: [ TermFocus ] }
+      Term { term :: TermFocus }
     | Source { source :: Source }
     deriving Show
 
@@ -37,10 +39,17 @@ data Source =
     | Data { origin :: Identifier }
     deriving Show
 
+data Context =
+    Context {
+        maxReductions :: Count,
+        program :: Program,
+        superTerms :: [ SuperTerm ]
+    }
+
 type Count = Int
 
 type Evaluator =
-    ExceptionalT (Range, String) ( RWS (Count, Program) [ Message ] Count )
+    ExceptionalT (Range, String) ( RWS Context [ Message ] Count )
 
 
 runEval ::
@@ -49,7 +58,8 @@ runEval ::
     ExceptionalT (Range, String) ( MW.WriterT [ Message ] m ) a
 runEval maxRed p =
     -- in transformers-0.3 you can write MW.writer instead of MW.WriterT . return
-    mapExceptionalT (\evl -> MW.WriterT $ return $ MRWS.evalRWS evl (maxRed,p) 0)
+    mapExceptionalT (\evl ->
+        MW.WriterT $ return $ MRWS.evalRWS evl (Context {maxReductions = maxRed, program = p, superTerms = []}) 0)
 {-
     mapExceptionalT (\evl ->
         MW.WriterT $ return $
@@ -71,7 +81,7 @@ forceHead t = do
     t' <- top t
     case t' of
       Node i [ x, xs ] | name i == ":" -> do
-        y <- full x
+        y <- localSuperTerm i [] [xs] $ full x
         return $ Node i [ y, xs ]
       Node i [] | name i == "[]" ->
         return $ Node i []
@@ -84,14 +94,13 @@ full :: Term -> Evaluator Term
 full x = do
     x' <- top x
     case x' of
-        Node f args ->
-            fmap (Node f) $ mapM full args
+        Node f args -> fmap (Node f) $ mapArgs f full args
         Number _ _ -> return x'
         StringLiteral _ _ -> return x'
 
 -- | evaluate until root symbol is constructor.
 top :: Term -> Evaluator Term
-top t = (lift $ tell [ SubTerm t [] ] ) >> case t of
+top t = ( lift $ tell . (:[]) . Term . TermFocus t =<< asks superTerms ) >> case t of
     Number {} -> return t
     StringLiteral {} -> return t
     Node f xs ->
@@ -99,12 +108,33 @@ top t = (lift $ tell [ SubTerm t [] ] ) >> case t of
           then return t
           else eval f xs  >>=  top
 
+mapArgs :: Identifier -> (Term -> Evaluator Term) -> [Term] -> Evaluator [Term]
+mapArgs i f =
+    let go _ [] = return []
+        go done (x:xs) = do
+            y <- localSuperTerm i done xs $ f x
+            fmap (y:) $ go (y:done) xs
+    in  go []
+
+localSuperTerm ::
+    (Monad m, Monoid w) =>
+    Identifier ->
+    [Term] ->
+    [Term] ->
+    ExceptionalT e (MRWS.RWST Context w s m) b ->
+    ExceptionalT e (MRWS.RWST Context w s m) b
+localSuperTerm i done xs =
+    mapExceptionalT
+        (MRWS.local (\ctx -> ctx{superTerms =
+            TermFocus.Node i (TermFocus.List done xs) :
+            superTerms ctx}))
+
 -- | do one reduction step at the root
 eval ::
     Identifier -> [Term] -> Evaluator Term
 eval i xs
   | name i `elem` [ "compare", "<", "-", "+", "*", "div", "mod" ] = do
-      ys <- mapM top xs
+      ys <- mapArgs i top xs
       lift $ tell $ [ Source $ Step { target = i } ]
       case ys of
           [ Number _ a, Number _ b] ->
@@ -128,7 +158,7 @@ eval i xs
           _ -> exception (range i) $ "wrong number of arguments"
 
 eval g ys = do
-    funcs <- lift $ asks ( Program.functions . snd )
+    funcs <- lift $ asks ( Program.functions . program )
     case M.lookup g funcs of
         Nothing ->
             exception (range g) $
@@ -142,11 +172,11 @@ evalDecls ::
 evalDecls g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
-            (m, ys') <- matchExpandList M.empty xs ys
+            (m, ys') <- matchExpandList M.empty g [] xs ys
             case m of
                 Nothing -> go ys'
                 Just (substitions, additionalArgs) -> do
-                    conss <- lift $ asks ( Program.constructors . snd )
+                    conss <- lift $ asks ( Program.constructors . program )
                     lift $ tell $ map Source $
                         Step g : Rule f :
                         ( map Data $ S.toList $ S.intersection conss $
@@ -188,7 +218,7 @@ matchExpand pat t = case pat of
                 if f /= g
                     then return ( Nothing, t' )
                     else do
-                         ( m, ys' ) <- matchExpandList M.empty xs ys
+                         ( m, ys' ) <- matchExpandList M.empty g [] xs ys
                          return ( fmap fst m, Node f ys' )
             _ ->
                 exception (termRange t') $
@@ -216,26 +246,28 @@ matchExpand pat t = case pat of
 
 matchExpandList ::
     M.Map Identifier Term ->
+    Identifier ->
+    [Term] ->
     [Term] ->
     [Term] ->
     Evaluator (Maybe (M.Map Identifier Term, [Term]), [Term])
-matchExpandList s [] ys = return ( Just (s,ys), ys )
-matchExpandList s (x:xs) (y:ys) = do
-    (m, y') <- matchExpand x y
-    case m of
-        Nothing -> return ( Nothing, y' : ys )
-        Just s' -> do
-            s'' <-
-                case MW.runWriter $ Trav.sequenceA $
-                     M.unionWithKey (\var t _ -> MW.tell [var] >> t)
-                         (fmap return s) (fmap return s') of
-                    (un, []) -> return $ un
-                    (_, vars) -> exception (termRange y') $
-                        "variables bound more than once in pattern: " ++
-                        intercalate ", " (map name vars)
-            fmap (mapSnd (y':)) $
-                matchExpandList s'' xs ys
-matchExpandList _ (x:_) _ =
+matchExpandList s _ _ [] ys = return ( Just (s,ys), ys )
+matchExpandList s i done (x:xs) (y:ys) = do
+    (m, y') <- localSuperTerm i done ys $ matchExpand x y
+    fmap (mapSnd (y':)) $
+        case m of
+            Nothing -> return ( Nothing, ys )
+            Just s' -> do
+                s'' <-
+                    case MW.runWriter $ Trav.sequenceA $
+                         M.unionWithKey (\var t _ -> MW.tell [var] >> t)
+                             (fmap return s) (fmap return s') of
+                        (un, []) -> return un
+                        (_, vars) -> exception (termRange y') $
+                            "variables bound more than once in pattern: " ++
+                            intercalate ", " (map name vars)
+                matchExpandList s'' i (y':done) xs ys
+matchExpandList _ _ _ (x:_) _ =
     exception (termRange x) "too few arguments"
 
 apply :: M.Map Identifier Term -> Term -> Evaluator Term
@@ -249,7 +281,7 @@ apply m t = checkMaxReductions (termRange t) >> case t of
 
 checkMaxReductions :: Range -> Evaluator ()
 checkMaxReductions rng = do
-    maxCount <- lift $ asks fst
+    maxCount <- lift $ asks maxReductions
     count <- lift get
     assertT (rng, "number of reductions exceeds limit " ++ show maxCount) $
         count < maxCount
