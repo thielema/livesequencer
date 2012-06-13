@@ -6,6 +6,10 @@ import IO ( Output, output )
 
 import Text.PrettyPrint.HughesPJ ( Doc, (<+>), fsep, parens, render, text )
 
+import Data.Tuple.HT ( mapPair )
+import Data.List.HT ( tails )
+import Data.List ( isPrefixOf )
+
 
 data TermFocus =
         TermFocus { subTerm :: Term, superTerms :: [ SuperTerm ] }
@@ -35,11 +39,36 @@ outputSubTerm t = case t of
     Term.Node f args ->
         ( text $ mark $ Term.name f ) <+> fsep ( map Term.protected args )
 
-mark :: String -> String
-mark str = "{{" ++ str ++ "}}"
+markStart, markStop :: String
+markStart = "{{"
+markStop  = "}}"
 
-format :: TermFocus -> String
-format = render . output
+mark :: String -> String
+mark str = markStart ++ str ++ markStop
+
+format :: TermFocus -> ((Int, Int), String)
+format t =
+    let s = render $ output t
+    in  case splitAtInfix markStart s of
+            (_, Nothing) -> ((0,0), s)
+            (prefix, Just suffix0) ->
+                let n = length prefix
+                in  mapPair ((\j -> (n, n+j)), (prefix ++)) $
+                    case splitAtInfix markStop suffix0 of
+                        (_, Nothing) ->
+                            (length suffix0, suffix0)
+                        (marked, Just suffix) ->
+                            (length marked, marked ++ suffix)
+
+splitAtInfix :: Eq a => [a] -> [a] -> ([a], Maybe [a])
+splitAtInfix infx str =
+    mapPair
+        (map head,
+         \suffix ->
+            case suffix of
+                [] -> Nothing
+                xs:_ -> Just $ drop (length infx) xs) $
+    break (isPrefixOf infx) $ init $ tails str
 
 fromTerm :: Term -> TermFocus
 fromTerm t = TermFocus t []

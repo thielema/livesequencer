@@ -213,7 +213,7 @@ data Modification =
 -- | messages that are sent from machine to GUI
 data GuiUpdate =
      ReductionSteps { _steps :: [ Rewrite.Source ] }
-   | CurrentTerm { _currentTerm :: String }
+   | CurrentTerm { _range :: (Int, Int), _currentTerm :: String }
    | Exception { _message :: Exception.Message }
    | Register { _mainModName :: Module.Name, _modules :: M.Map Module.Name Module.Module }
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
@@ -444,7 +444,8 @@ machine input output limits importPaths progInit sq = do
                                     State _ t0 <- readTMVar term
                                     let t1 = Term.Node f (xs++[t0])
                                     writeTMVar term $ stateFromTerm t1
-                                    TChan.write output $ CurrentTerm $ show t1
+                                    TChan.write output $ uncurry CurrentTerm $
+                                        TermFocus.format $ TermFocus.fromTerm t1
                                     TChan.write output $ StatusLine $
                                         "applied function term " ++
                                         show (markedString txt)
@@ -658,7 +659,7 @@ executeStep limits program term sendWarning sq maxEventsSat = do
             which is not better.
             -}
             when (waiting || waitMode /= Event.RealTime) $
-                writeUpdate $ CurrentTerm $ TermFocus.format s
+                writeUpdate $ uncurry CurrentTerm $ TermFocus.format s
             {-
             liftIO $ Log.put $
                 "term size: " ++ ( show $ length $ Term.subterms s ) ++
@@ -735,10 +736,12 @@ computeStep limits program term maxEventsSat waitMode = do
                 liftSTM $ putTMVar term $ State msgs xs
                 return (Just x, focusedTerm)
             Just ("[]", []) -> do
-                lift $ writeUpdate $ CurrentTerm $ show s
+                lift $ writeUpdate $ uncurry CurrentTerm $
+                    TermFocus.format $ TermFocus.fromTerm s
                 Exc.throwT (Term.termRange s, "finished.")
             _ -> do
-                lift $ writeUpdate $ CurrentTerm $ show s
+                lift $ writeUpdate $ uncurry CurrentTerm $
+                    TermFocus.format $ TermFocus.fromTerm s
                 Exc.throwT (Term.termRange s,
                     "I do not know how to handle this term: " ++ show s)
       else do
@@ -1232,9 +1235,12 @@ gui input output procEvent = do
 
     procEvent f $ \msg ->
         case msg of
-            CurrentTerm sr -> do
+            CurrentTerm rng sr ->
                 get reducerVisibleItem checked >>=
-                    flip when ( set reducer [ text := sr, cursor := 0 ] )
+                    flip when (
+                        set reducer [ text := sr, cursor := 0 ] >>
+                        setColorCurrentTerm reducer ( rgb 200 100 (0::Int) ) rng
+                    )
 
             ReductionSteps steps -> do
                 hls <- fmap (fmap highlighter) $ readIORef panels
@@ -1555,6 +1561,20 @@ setColor highlighters hicolor positions = do
                         (from, to) <-
                             textRangeFromRange hl $ Term.range ident
                         WXCMZ.textCtrlSetStyle hl from to attr
+
+setColorCurrentTerm ::
+    TextCtrl a ->
+    Color ->
+    (Int, Int)->
+    IO ()
+setColorCurrentTerm reducer hicolor (from, to) = do
+    attr <- WXCMZ.textCtrlGetDefaultStyle reducer
+    bracket
+        (WXCMZ.textAttrGetBackgroundColour attr)
+        (WXCMZ.textAttrSetBackgroundColour attr) $ const $ do
+            WXCMZ.textAttrSetBackgroundColour attr hicolor
+            void $ WXCMZ.textCtrlSetStyle reducer from to attr
+            return ()
 
 
 data MarkedText =
