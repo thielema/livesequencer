@@ -283,6 +283,8 @@ Data-Files:
   data/base/Integer.hs
   data/base/List.hs
   data/base/ListLive.hs
+  data/base/List/Basic.hs
+  data/base/List/Advanced.hs
   data/base/Midi.hs
   data/base/Music.hs
   data/base/Pitch.hs
@@ -345,6 +347,8 @@ Library
     Tuple
   Other-Modules:
     List
+    List.Advanced
+    List.Basic
     Pattern
     Finite
     CrossSum

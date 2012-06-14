@@ -29,9 +29,9 @@ module List (
     tails,
     ) where
 
+import List.Basic
 import ListLive
 import Function
-import Bool
 import Prelude ( (-), (+), Num, Int, Bool(False,True), error )
 
 
@@ -95,12 +95,6 @@ iterate :: (a -> a) -> a -> [a] ;
 iterate f x = x : iterate f (f x) ;
 
 
-(++) :: [a] -> [a] -> [a] ;
-xs ++ ys = foldr cons ys xs ;
-
-concat :: [[a]] -> [a] ;
-concat = foldr append [];
-
 concatMap :: (a -> [b]) -> [a] -> [b] ;
 concatMap f = concat . map f ;
 
@@ -121,32 +115,10 @@ null _ = False ;
 (_:xs) !! n = xs !! (n-1) ;
 [] !! _ = error "!!: index too large" ;
 
-take :: Int -> [a] -> [a] ;
-take n xs = foldr takeElem (const []) xs n ;
-
-takeElem :: a -> (Int -> [a]) -> Int -> [a] ;
-takeElem _ _go 0 = [] ;
-takeElem x go m = x : go (m-1) ;
-
 drop :: Int -> [b] -> [b] ;
 drop 0 xs = xs ;
 drop _ [] = [] ;
 drop n (_ : xs) = drop (n-1) xs ;
-
-
-filter :: (a -> Bool) -> [a] -> [a] ;
-filter p =
-   foldr (filterElem p) [] ;
-
-filterElem :: (a -> Bool) -> a -> [a] -> [a] ;
-filterElem p x xs = ifThenElse (p x) (x:xs) xs ;
-
-takeWhile :: (a -> Bool) -> [a] -> [a] ;
-takeWhile p =
-   foldr (takeWhileElem p) [] ;
-
-takeWhileElem :: (a -> Bool) -> a -> [a] -> [a] ;
-takeWhileElem p x xs = ifThenElse (p x) (x:xs) [] ;
 
 
 inits :: [a] -> [[a]] ;
