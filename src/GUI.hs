@@ -228,13 +228,13 @@ data GuiUpdate =
    | ResetDisplay
 
 -- | the messages describe the steps towards the stateTerm
-data State = State { stateMessages :: [ Rewrite.Message ], stateTerm :: Term }
+data State = State { stateMessages :: Maybe [ Rewrite.Message ], stateTerm :: Term }
 
 initialState :: State
-initialState = State [] Term.mainName
+initialState = State Nothing Term.mainName
 
 stateFromTerm :: Term -> State
-stateFromTerm t = State [] t
+stateFromTerm t = State Nothing t
 
 
 exceptionToGUI ::
@@ -441,8 +441,8 @@ machine input output limits importPaths progInit sq = do
                         case fterm of
                             Term.Node f xs ->
                                 lift $ STM.atomically $ do
-                                    State _ t0 <- readTMVar term
-                                    let t1 = Term.Node f (xs++[t0])
+                                    t0 <- readTMVar term
+                                    let t1 = Term.Node f (xs ++ [stateTerm t0])
                                     writeTMVar term $ stateFromTerm t1
                                     TChan.write output $ uncurry CurrentTerm $
                                         TermFocus.format $ TermFocus.fromTerm t1
@@ -701,16 +701,18 @@ computeStep limits program term maxEventsSat waitMode = do
                 (Option.maxReductions limits) p
                 (Rewrite.forceHead $ stateTerm t)
 
-    (steps, focusedTerm, st@(State msgs s), fullyReduced) <-
+    (steps, focusedTerm, mst) <-
         case waitMode of
-            Event.SingleStep Event.NextReduction ->
-                case splitAtReduction $ stateMessages t of
+            Event.SingleStep Event.NextReduction -> do
+                (msgs, nt) <-
+                    case stateMessages t of
+                        Nothing -> forceHead
+                        Just msgs -> return (msgs, stateTerm t)
+                case splitAtReduction msgs of
                     (steps, Just (red, rest)) ->
-                        return (steps, red, State rest (stateTerm t), False)
-                    (steps, Nothing) -> do
-                        st <- forceHead
-                        return (steps, TermFocus.fromTerm $ stateTerm t,
-                                uncurry State st, True)
+                        return (steps, red, Just (rest, nt))
+                    (steps, Nothing) ->
+                        return (steps, TermFocus.fromTerm nt, Nothing)
             _ -> do
                 (msgs, nt) <- forceHead
                 return
@@ -718,36 +720,38 @@ computeStep limits program term maxEventsSat waitMode = do
                          case msg of
                              Rewrite.Source step -> Just step
                              _ -> Nothing) msgs,
-                     TermFocus.fromTerm nt, State [] nt, True)
+                     TermFocus.fromTerm nt, Nothing)
 
-    if fullyReduced
-      then do
-        Exc.assertT
-            (Term.termRange s,
-             "term size exceeds limit " ++ show (Option.maxTermSize limits))
-            (null $ drop (Option.maxTermSize limits) $ Term.subterms s)
-        Exc.assertT
-            (Term.termRange s,
-             "term depth exceeds limit " ++ show (Option.maxTermDepth limits))
-            (null $ drop (Option.maxTermDepth limits) $ Term.breadths s)
-        lift $ writeUpdate $ ReductionSteps steps
-        case Term.viewNode s of
-            Just (":", [x, xs]) -> do
-                liftSTM $ putTMVar term $ State msgs xs
-                return (Just x, focusedTerm)
-            Just ("[]", []) -> do
-                lift $ writeUpdate $ uncurry CurrentTerm $
-                    TermFocus.format $ TermFocus.fromTerm s
-                Exc.throwT (Term.termRange s, "finished.")
-            _ -> do
-                lift $ writeUpdate $ uncurry CurrentTerm $
-                    TermFocus.format $ TermFocus.fromTerm s
-                Exc.throwT (Term.termRange s,
-                    "I do not know how to handle this term: " ++ show s)
-      else do
-        lift $ writeUpdate $ ReductionSteps steps
-        liftSTM $ putTMVar term st
-        return (Nothing, focusedTerm)
+    liftM (flip (,) focusedTerm) $
+        case mst of
+            Nothing -> do
+                let s = TermFocus.subTerm focusedTerm
+                Exc.assertT
+                    (Term.termRange s,
+                     "term size exceeds limit " ++ show (Option.maxTermSize limits))
+                    (null $ drop (Option.maxTermSize limits) $ Term.subterms s)
+                Exc.assertT
+                    (Term.termRange s,
+                     "term depth exceeds limit " ++ show (Option.maxTermDepth limits))
+                    (null $ drop (Option.maxTermDepth limits) $ Term.breadths s)
+                lift $ writeUpdate $ ReductionSteps steps
+                case Term.viewNode s of
+                    Just (":", [x, xs]) -> do
+                        liftSTM $ putTMVar term $ stateFromTerm xs
+                        return (Just x)
+                    Just ("[]", []) -> do
+                        lift $ writeUpdate $ uncurry CurrentTerm $
+                            TermFocus.format $ TermFocus.fromTerm s
+                        Exc.throwT (Term.termRange s, "finished.")
+                    _ -> do
+                        lift $ writeUpdate $ uncurry CurrentTerm $
+                            TermFocus.format $ TermFocus.fromTerm s
+                        Exc.throwT (Term.termRange s,
+                            "I do not know how to handle this term: " ++ show s)
+            Just (msgs, nt) -> do
+                lift $ writeUpdate $ ReductionSteps steps
+                liftSTM $ putTMVar term $ State (Just msgs) nt
+                return Nothing
 
 
 splitAtReduction ::
