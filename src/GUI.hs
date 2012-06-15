@@ -103,7 +103,6 @@ import qualified Sound.MIDI.Message.Channel.Voice as VM
 
 import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Trans.Writer as MW
-import qualified Control.Monad.Trans.Maybe as MaybeT
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.IO.Class ( liftIO )
 import Control.Monad.Trans.Class ( lift )
@@ -1209,22 +1208,19 @@ gui input output procEvent = do
         let moduleIdent =
                 Module.Name $
                 Pos.sourceName $ Term.start errorRng
-        pnls <- liftIO $ readIORef panels
-        pnl <- MaybeT.MaybeT $ return $ M.lookupIndex moduleIdent pnls
-        liftIO $ set nb [ notebookSelection := pnl ]
-        let activateText textField = do
-                h <- MaybeT.MaybeT $ return $
-                     M.lookup moduleIdent textField
-                (i,j) <- liftIO $ textRangeFromRange h errorRng
-                liftIO $ set h [ cursor := i ]
-                liftIO $ WXCMZ.textCtrlSetSelection h i j
-        case typ of
-            Exception.Parse ->
-                activateText $ fmap editor pnls
-            Exception.Term ->
-                activateText $ fmap highlighter pnls
-            Exception.InOut ->
-                return ()
+        pnls <- readIORef panels
+        forM_ (liftM2 (,)
+                 (M.lookupIndex moduleIdent pnls)
+                 (M.lookup moduleIdent pnls)) $
+            \ (i,pnl) -> do
+                set nb [ notebookSelection := i ]
+                case typ of
+                    Exception.Parse ->
+                        flip markText errorRng $ editor pnl
+                    Exception.Term ->
+                        flip markText errorRng $ highlighter pnl
+                    Exception.InOut ->
+                        return ()
 
     let closeOther =
             writeIORef appRunning False >>
@@ -1445,16 +1441,18 @@ newFrameError = do
     return rec
 
 onErrorSelection ::
-    FrameError -> (Exception.Message -> MaybeT.MaybeT IO ()) -> IO ()
+    FrameError -> (Exception.Message -> IO ()) -> IO ()
 onErrorSelection r act =
     set (errorLog r)
-        [ on listEvent := \ev -> void $ MaybeT.runMaybeT $ do
-              WXEvent.ListItemSelected n <- return ev
-              errors <- liftIO $ readIORef (errorList r)
-              let msg@(Exception.Message _typ _errorRng descr) =
-                      Seq.index errors n
-              liftIO $ set (errorText r) [ text := descr ]
-              act msg
+        [ on listEvent := \ev ->
+              case ev of
+                  WXEvent.ListItemSelected n -> do
+                      errors <- readIORef (errorList r)
+                      let msg@(Exception.Message _typ _errorRng descr) =
+                              Seq.index errors n
+                      set (errorText r) [ text := descr ]
+                      act msg
+                  _ -> return ()
         ]
 
 updateErrorLog ::
@@ -1473,6 +1471,13 @@ addToErrorLog ::
 addToErrorLog r exc = do
     itemAppend (errorLog r) $ Exception.lineFromMessage exc
     modifyIORef (errorList r) (Seq.|> exc)
+
+
+markText :: TextCtrl a -> Term.Range -> IO ()
+markText textCtrl rng = do
+    (i,j) <- textRangeFromRange textCtrl rng
+    set textCtrl [ cursor := i ]
+    WXCMZ.textCtrlSetSelection textCtrl i j
 
 
 data Panel =
