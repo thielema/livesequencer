@@ -575,7 +575,7 @@ execute limits program term delayedUpdatesIn sendWarning sq waitChan =
             executeStep limits program term sendWarning sq maxEventsSat
         {-
         This update will take effect
-        when the above visualisation trigger event is arrives.
+        when the above visualisation trigger event arrives.
         -}
         lift $ Chan.write delayedUpdatesIn updates
         Event.wait sq waitChan mdur
