@@ -144,6 +144,10 @@ Description:
      This mode is for demonstration, debugging and as a pause mode,
      when the interpreter reaches the end of the main list.
      You can trigger evaluation of the next element using @CTRL-N@.
+     You can perform a single reduction with @CTRL-U@,
+     which also highlights the rule that will be applied next.
+     Changes to the program are only respected
+     when an element is completely reduced and sent via MIDI.
      Unfortunately it is currently not possible to undo a step.
    .
    6. Editing *****
