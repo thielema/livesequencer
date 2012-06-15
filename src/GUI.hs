@@ -133,7 +133,7 @@ import qualified Data.Char as Char
 import qualified Data.List as List
 import Data.Tuple.HT ( mapFst, mapSnd )
 import Data.Bool.HT ( if' )
-import Data.Maybe ( mapMaybe )
+import Data.Maybe ( mapMaybe, maybeToList )
 
 import Prelude hiding ( log )
 
@@ -216,6 +216,7 @@ data GuiUpdate =
    | Exception { _message :: Exception.Message }
    | Register { _mainModName :: Module.Name, _modules :: M.Map Module.Name Module.Module }
    | Refresh { _moduleName :: Module.Name, _content :: String, _position :: Int }
+   | SelectPage Module.Name ( Maybe Term.Range )
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
    | RenamePage Module.Name Module.Name
@@ -700,18 +701,40 @@ computeStep limits program term maxEventsSat waitMode = do
                 (Option.maxReductions limits) p
                 (Rewrite.forceHead $ stateTerm t)
 
+        nextReduction = do
+            (msgs, nt) <-
+                case stateMessages t of
+                    Nothing -> forceHead
+                    Just msgs -> return (msgs, stateTerm t)
+            case splitAtReduction msgs of
+                (steps, Just (red, rest)) ->
+                    return (steps, red, Just (rest, nt))
+                (steps, Nothing) ->
+                    return (steps, TermFocus.fromTerm nt, Nothing)
+
     (steps, focusedTerm, mst) <-
         case waitMode of
-            Event.SingleStep Event.NextReduction -> do
-                (msgs, nt) <-
-                    case stateMessages t of
-                        Nothing -> forceHead
-                        Just msgs -> return (msgs, stateTerm t)
-                case splitAtReduction msgs of
-                    (steps, Just (red, rest)) ->
-                        return (steps, red, Just (rest, nt))
-                    (steps, Nothing) ->
-                        return (steps, TermFocus.fromTerm nt, Nothing)
+            Event.SingleStep Event.NextReduction -> nextReduction
+            Event.SingleStep Event.NextReductionShow -> do
+                {-
+                Using these statements
+                we will highlight the rule that led to the current focusTerm.
+                x@(steps, _, _) <- nextReduction
+                case do {Rewrite.Rule r <- steps; return r} of
+                -}
+                {-
+                Using these statements
+                we will highlight the rule that will be tried next.
+                -}
+                x@(_, _, mst) <- nextReduction
+                case do {st <- maybeToList mst; Rewrite.Rule r <- fst $ splitAtReduction $ fst st; return r} of
+                    (f : _) ->
+                        lift $ writeUpdate $
+                        SelectPage
+                            (Module.nameFromIdentifier f)
+                            (Just $ Term.range f)
+                    _ -> return ()
+                return x
             _ -> do
                 (msgs, nt) <- forceHead
                 return
@@ -938,6 +961,12 @@ gui input output procEvent = do
           enabled := False,
           on command := Chan.write input (Execution $ NextStep Event.NextReduction),
           help := "compute next reduction in single step mode" ]
+    nextShowItem <- WX.menuItem execMenu
+        [ text := "Next reduction and highlight rule\tCtrl-U",
+          enabled := False,
+          on command := Chan.write input (Execution $ NextStep Event.NextReductionShow),
+          help := "compute next reduction in single step mode " ++
+                  "and highlight currently processed rule" ]
 
 
     windowMenu <- WX.menuPane [text := "&Window"]
@@ -1132,6 +1161,7 @@ gui input output procEvent = do
             set singleStepItem [ checked := b ]
             set nextElemItem [ enabled := b ]
             set nextRedItem [ enabled := b ]
+            set nextShowItem [ enabled := b ]
 
         onActivation w act =
             set w [ on command := do
@@ -1307,6 +1337,15 @@ gui input output procEvent = do
 
                 set status [ text :=
                     "modules loaded: " ++ formatModuleList ( M.keys mods ) ]
+
+            SelectPage modName mrng -> do
+                pnls <- readIORef panels
+                forM_ (liftM2 (,)
+                         (M.lookupIndex modName pnls)
+                         (M.lookup modName pnls)) $
+                    \ (i,pnl) -> do
+                        set nb [ notebookSelection := i ]
+                        Fold.mapM_ ( markText ( highlighter pnl ) ) mrng
 
             InsertPage act modu -> do
                 pnls <- readIORef panels

@@ -135,7 +135,7 @@ data WaitResult =
          AlsaSend (MS.StateT State ALSA.Send ())
 
 data Continue =
-         NextElement | NextReduction
+         NextElement | NextReduction | NextReductionShow
     deriving (Eq, Show)
 
 
