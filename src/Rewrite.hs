@@ -35,6 +35,7 @@ data Message =
 
 data Source =
       Step { target :: Identifier }
+    | AttemptRule { rule :: Identifier }
     | Rule { rule :: Identifier }
     | Data { origin :: Identifier }
     deriving Show
@@ -172,6 +173,7 @@ evalDecls ::
 evalDecls g =
     foldr
         (\(Rule.Rule f xs rhs) go ys -> do
+            lift $ tell [ Source $ AttemptRule f ]
             (m, ys') <- matchExpandList M.empty g [] xs ys
             case m of
                 Nothing -> go ys'

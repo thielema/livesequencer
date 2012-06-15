@@ -727,7 +727,7 @@ computeStep limits program term maxEventsSat waitMode = do
                 we will highlight the rule that will be tried next.
                 -}
                 x@(_, _, mst) <- nextReduction
-                case do {st <- maybeToList mst; Rewrite.Rule r <- fst $ splitAtReduction $ fst st; return r} of
+                case do {st <- maybeToList mst; Rewrite.AttemptRule r <- fst $ splitAtReduction $ fst st; return r} of
                     (f : _) ->
                         lift $ writeUpdate $
                         SelectPage
@@ -1286,12 +1286,13 @@ gui input output procEvent = do
 
                 let prep step =
                         case step of
-                            Rewrite.Step target -> (AccTuple.first3, (target:))
-                            Rewrite.Rule rule   -> (AccTuple.second3, (rule:))
-                            Rewrite.Data origin -> (AccTuple.third3, (origin:))
+                            Rewrite.Step target -> Just (AccTuple.first3, (target:))
+                            Rewrite.Rule rule   -> Just (AccTuple.second3, (rule:))
+                            Rewrite.Data origin -> Just (AccTuple.third3, (origin:))
+                            Rewrite.AttemptRule _ -> Nothing
                     (targets, rules, origins) =
                         foldr (uncurry Acc.modify) ([],[],[]) $
-                        map prep steps
+                        mapMaybe prep steps
 
                 highlight 0 200 200 targets
                 highlight 200 0 200 rules
