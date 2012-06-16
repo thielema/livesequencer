@@ -877,7 +877,7 @@ gui input output procEvent = do
     WX.menuLine fileMenu
 
     newModuleItem <- WX.menuItem fileMenu
-        [ text := "&New module\tCtrl-Shift-N",
+        [ text := "&New module\tCtrl-Shift-M",
           help := "add a new empty module" ]
 
     closeModuleItem <- WX.menuItem fileMenu
