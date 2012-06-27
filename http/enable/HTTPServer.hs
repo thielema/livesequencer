@@ -64,13 +64,14 @@ run dict opt =
     case Option.port opt of
         Option.Port port ->
             void $ HTTPd.initServer port $
-                handleException . server dict
+                handleException . server dict opt
 
 server ::
     Methods ->
+    Option.Option ->
     HTTPd.Request ->
     ExceptionalT Error IO HTTPd.Response
-server dict req =
+server dict opt req =
     case HTTPd.reqMethod req of
         "GET" ->
             case uriPath (HTTPd.reqURI req) of
@@ -83,7 +84,7 @@ server dict req =
                     modIdent <- parseModuleName modName
                     content <- getModuleContent dict modIdent
                     return $ HTTPd.Response 200 headers $
-                        formatModuleContent modList modIdent (Nothing, content)
+                        formatModuleContent opt modList modIdent (Nothing, content)
                 _ ->
                     Exc.throwT $ badRequest $ "Bad path in URL"
         "POST" ->
@@ -99,7 +100,7 @@ server dict req =
                     updatedContent <-
                         updateModuleContent dict modIdent editable
                     return $ HTTPd.Response 200 headers $
-                        formatModuleContent modList modIdent updatedContent
+                        formatModuleContent opt modList modIdent updatedContent
                 _ ->
                     Exc.throwT $ badRequest $ "Bad path in URL"
         method ->
@@ -141,8 +142,9 @@ formatModuleList list =
     Html.body (htmlFromModuleList list)
 
 formatModuleContent ::
+    Option.Option ->
     [Module.Name] -> Module.Name -> (Maybe String, String) -> String
-formatModuleContent list name (mmsg, content) =
+formatModuleContent opt list name (mmsg, content) =
     Html.renderHtml $
     Html.header (Html.thetitle <<
         ("Haskell Live Sequencer - " ++ Module.tellName name)) +++
@@ -167,7 +169,8 @@ formatModuleContent list name (mmsg, content) =
                                   +++
                                   Html.textarea
                                       Html.! [Html.name "content",
-                                              Html.rows "30", Html.cols "100"]
+                                              Html.rows $ Option.rows opt,
+                                              Html.cols $ Option.columns opt]
                                       << editable
                                   +++
                                   Html.br

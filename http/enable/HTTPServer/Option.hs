@@ -7,6 +7,7 @@ import System.Console.GetOpt (ArgDescr(..), )
 
 
 data Option = Option {
+        rows, columns :: String,
         port :: Port
     }
 
@@ -16,6 +17,7 @@ newtype Port = Port { deconsPort :: Int }
 deflt :: Option
 deflt =
     Option {
+        rows = "30", columns = "100",
         port = Port 8080
     }
 
@@ -28,4 +30,14 @@ description =
             parseNumber "HTTP port" (\n -> 0<n && n<65536) "positive 16 bit" str)
         ("provide a web server under this port,\ndefault " ++
          (show $ deconsPort $ port deflt) ) :
+    Opt.Option [] ["html-rows"]
+        (flip ReqArg "NUMBER" $ \str flags ->
+            return $ flags{rows = str})
+        ("number of rows in the text area for the module content,\ndefault " ++
+         rows deflt) :
+    Opt.Option [] ["html-columns"]
+        (flip ReqArg "NUMBER" $ \str flags ->
+            return $ flags{columns = str})
+        ("number of columns in the text area for the module content,\ndefault " ++
+         columns deflt) :
     []
