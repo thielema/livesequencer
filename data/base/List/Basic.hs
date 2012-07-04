@@ -26,9 +26,9 @@ take n (x:xs) = x : take (n-1) xs ;
 take _ [] = [] ;
 
 filter :: (a -> Bool) -> [a] -> [a] ;
-filter p (x:xs) = ifThenElse (p x) (filter p xs) (x : filter p xs) ;
+filter p (x:xs) = ifThenElse (p x) (x : filter p xs) (filter p xs) ;
 filter _ [] = [] ;
 
 takeWhile :: (a -> Bool) -> [a] -> [a] ;
-takeWhile p (x:xs) = ifThenElse (p x) [] (x : takeWhile p xs) ;
+takeWhile p (x:xs) = ifThenElse (p x) (x : takeWhile p xs) [] ;
 takeWhile _ [] = [] ;
