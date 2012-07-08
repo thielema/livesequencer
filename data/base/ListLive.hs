@@ -27,8 +27,8 @@ append = flip ( foldr cons ) ;
 
 
 {-
-This does not work well and fails for infinite lists,
-because consFirst matches strictly on Pair.
+This is not very efficient
+since the result of the recursive call to 'splitAt' cannot be shared.
 -}
 splitAt :: Int -> [a] -> Tuple.Pair [a] [a] ;
 splitAt 0 xs = Pair [] xs ;
