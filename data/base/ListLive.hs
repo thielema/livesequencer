@@ -2,6 +2,7 @@ module ListLive (
     cons,
     append,
     splitAt,
+    span,
     afterEach,
     dropWhileRev,
 
@@ -34,6 +35,11 @@ splitAt :: Int -> [a] -> Tuple.Pair [a] [a] ;
 splitAt 0 xs = Pair [] xs ;
 splitAt _ [] = Pair [] [] ;
 splitAt n (x : xs) = consFirst x ( splitAt (n-1) xs ) ;
+
+span :: (a -> Bool) -> [a] -> Tuple.Pair [a] [a] ;
+span _ [] = Pair [] [] ;
+span p (x : xs) =
+   ifThenElse (p x) ( consFirst x ( span p xs ) ) (Pair [] (x:xs)) ;
 
 consFirst :: a -> Tuple.Pair [a] [a] -> Tuple.Pair [a] [a] ;
 consFirst x p = Pair (x : fst p) (snd p) ;
