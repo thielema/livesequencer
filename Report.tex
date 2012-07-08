@@ -1,0 +1,57 @@
+\begin{hcarentry}{Live-Sequencer}
+\report{Henning Thielemann}
+\status{experimental, active}
+\participants{Johannes Waldmann}% optional
+\makeheader
+
+The Live-Sequencer allows to program music in the style of Haskore,
+but it is inherently interactive.
+You cannot only listen to changes to the music quickly,
+but you can alter the music while it is played.
+Changes to the music may not have an immediate effect
+but are respected when their time has come.
+
+Additionally users can alter parts of the modules of a musical work
+via a WWW interface.
+This way multiple people including the auditory
+can take part in a live composition.
+This mode can also be used in education,
+when students shall solve small problems in an exercise.
+
+Technical background:
+The music is represented as lazy list of MIDI events.
+(MIDI is the Musical Instrument Digital Interface).
+The MIDI events are sent via ALSA and
+thus can control any kind of MIDI application,
+be it software synthesizers on the same computer
+or external hardware synthesizers.
+The application can also receive MIDI events
+that are turned into program code.
+We need certain ALSA functionality for precise timing of events.
+Thus the sequencer is currently bound to Linux.
+
+The Live-Sequencer can be run either as command-line program
+without editing functions
+or as an interactive program based on wxwidgets.
+
+The used language is a much simplified kind of Haskell.
+It provides no sharing, misses many syntactic constructs and is untyped.
+However the intersection between Haskell and the Live-Sequencer language
+is large enough for algorithmic music patterns
+and we provide several examples that are contained in this intersection.
+
+
+\FuturePlans
+\begin{compactitem}
+\item Define proper semantics for live changes to a program
+\item Use of Helium's parser, module system and type checker
+\item Refined reduction steps for educational purposes
+\item Highlighting of active terms that better fits to the music
+\end{compactitem}
+
+\FurtherReading
+Development information, videos and papers can be found at
+\begin{center}
+  \url{http://www.haskell.org/haskellwiki/Live-Sequencer}
+\end{center}
+\end{hcarentry}
