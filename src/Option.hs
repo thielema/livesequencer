@@ -20,7 +20,7 @@ import qualified System.Exit as Exit
 
 import Control.Monad ( when )
 
-import qualified Utility.NonEmptyList as NEList
+import qualified Data.NonEmpty as NEList
 import Data.Traversable ( forM )
 import Data.Bool.HT ( if' )
 import Data.List.HT ( chop )
@@ -30,7 +30,7 @@ import Data.List ( intercalate )
 data Option = Option {
         moduleNames :: [Module.Name],
         importPaths :: [FilePath],
-        connect :: NEList.T Port,
+        connect :: NEList.T [] Port,
         sequencerName :: String,
         latency :: Double,
         limits :: Limits,

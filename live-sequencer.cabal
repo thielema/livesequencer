@@ -382,7 +382,6 @@ Executable live-sequencer
     Type
     Log
     Paths_live_sequencer
-    Utility.NonEmptyList
   Other-Modules:
     Lilypond
   GHC-Options: -Wall -threaded
@@ -403,6 +402,7 @@ Executable live-sequencer
     data-accessor >=0.2.1 && <0.3,
     strict >=0.3.2 && <0.4,
     utility-ht >=0.0.8 && <0.1,
+    non-empty >=0.0 && <0.1,
     containers >=0.3 && <0.6,
     process >=1.0 && <1.2,
     directory >=1.0 && <1.2,
@@ -427,6 +427,7 @@ Executable live-sequencer-gui
       data-accessor-transformers >=0.2.1 && <0.3,
       data-accessor >=0.2.1 && <0.3,
       strict >=0.3.2 && <0.4,
+      non-empty >=0.0 && <0.1,
       utility-ht >=0.0.8 && <0.1,
       containers >=0.3 && <0.6,
       process >=1.0 && <1.2,
@@ -458,7 +459,6 @@ Executable live-sequencer-gui
     Type
     Log
     Paths_live_sequencer
-    Utility.NonEmptyList
     Utility.Concurrent
     Utility.WX
 

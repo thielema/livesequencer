@@ -22,7 +22,7 @@ import qualified Sound.MIDI.ALSA as MIDI
 import qualified System.IO as IO
 
 import qualified Data.Sequence as Seq
-import qualified Utility.NonEmptyList as NEList
+import qualified Data.NonEmpty as NEList
 
 import qualified Control.Monad.Trans.Class as MT
 import qualified Control.Monad.Trans.State as MS
