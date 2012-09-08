@@ -13,7 +13,7 @@ import qualified System.Console.GetOpt as Opt
 import System.Console.GetOpt
           (getOpt, usageInfo, ArgDescr(NoArg, ReqArg), )
 import System.Environment (getArgs, getProgName, )
-import System.FilePath ( (</>), searchPathSeparator )
+import System.FilePath ( (</>), searchPathSeparator, isSearchPathSeparator, )
 
 import System.Directory ( getCurrentDirectory )
 import qualified System.Exit as Exit
@@ -24,7 +24,6 @@ import qualified Data.NonEmpty as NEList
 import Data.Traversable ( forM )
 import Data.Bool.HT ( if' )
 import Data.List.HT ( chop )
-import Data.List ( intercalate )
 
 
 data Option = Option {
@@ -44,10 +43,12 @@ defltLatencyStr = "0.05"
 getDeflt :: IO Option
 getDeflt = do
     dataDir <- Paths.getDataDir
+    curDir <- getCurrentDirectory
     return $
         Option {
             moduleNames = [],
             importPaths =
+                curDir :
                 map ((dataDir </>) . ("data" </>))
                     [ "prelude", "base", "example" ],
             connect = NEList.singleton (Port "inout" (Just []) (Just [])),
@@ -99,9 +100,17 @@ description deflt =
         "show options" :
     Opt.Option ['i'] ["import-paths"]
         (flip ReqArg "PATHS" $ \str flags ->
-            return $ flags{importPaths = chop (searchPathSeparator==) str})
-        ("colon separated import paths,\ndefault " ++
-         intercalate ":" (importPaths deflt)) :
+            return $ flags{importPaths =
+               if null str
+                 then []
+                 else chop isSearchPathSeparator str ++ importPaths flags
+            })
+        ("if empty: clear import paths\n" ++
+         "otherwise: add colon separated import paths,\n" ++
+         "default:  " ++
+         (case importPaths deflt of
+            [] -> ""
+            x:xs -> unlines $ x : map (("   "++) . (searchPathSeparator:)) xs)) :
     Opt.Option ['p'] ["connect-to"]
         (flip ReqArg "ADDRESS" $ \str flags ->
             case connect flags of
