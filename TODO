@@ -120,6 +120,17 @@
   sufficiently ahead of the actual current time.
   When we stop the queue this will also happen instantly.
 
+* JACK support
+  We should support JACK
+  in order to control multiple synthesizers
+  simultaneously and with precise timing.
+  JACK is also portable in contrast to ALSA.
+  To this end it would be great
+  if we could cleanly separate MIDI handling
+  from the remaining application.
+  Maybe reactive programming can help here.
+  Today this seems to be even more important than PortMidi support.
+
 * PortMidi support
   We could fall back to threadDelay timing
   and WX-timer event for polling incoming MIDI keys.
