@@ -92,6 +92,7 @@ import qualified Log
 import qualified Sound.MIDI.Message.Channel as CM
 import qualified Sound.MIDI.Message.Channel.Voice as VM
 import qualified Sound.MIDI.ALSA as MidiAlsa
+import qualified Sound.MIDI.MachineControl as MMC
 
 import qualified Sound.ALSA.Sequencer.RealTime as RealTime
 import qualified Sound.ALSA.Sequencer.Time as ATime
@@ -101,10 +102,12 @@ import qualified Sound.ALSA.Sequencer as SndSeq
 
 import qualified Control.Monad.Trans.State as MS
 import qualified Control.Monad.Trans.Class as MT
+import qualified Control.Monad.Exception.Asynchronous as ExcA
 import Control.Monad.Exception.Synchronous ( ExceptionalT, throwT )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad ( when, forever )
 import Control.Functor.HT ( void )
+import Data.Foldable ( forM_ )
 
 import Data.Monoid ( mempty, mappend )
 
@@ -112,18 +115,19 @@ import qualified System.Process as Proc
 import qualified System.Exit as Exit
 import qualified System.IO.Strict as StrictIO
 import qualified System.IO as IO
+import Data.IORef ( newIORef, readIORef, modifyIORef )
 
 import qualified Data.Accessor.Monad.Trans.State as AccM
 import qualified Data.Accessor.Basic as Acc
 import Data.Accessor.Basic ((^.), )
 
 import qualified Data.Sequence as Seq
+import qualified Data.ByteString as B
 import Data.Maybe ( isJust )
+import Data.Bool.HT ( if' )
 
 import qualified Control.Concurrent.Split.Chan as Chan
 import Control.Concurrent ( forkIO )
-
-import Data.Bool.HT ( if' )
 
 
 data WaitMode =
@@ -419,6 +423,7 @@ listen sq noteInput visualize waitChan = do
     Log.put "listen to ALSA port"
 
     dest <- ALSA.privateAddress sq
+    recording <- newIORef True
 
     forever $ do
         Log.put "wait, wait for echo"
@@ -426,7 +431,18 @@ listen sq noteInput visualize waitChan = do
         Log.put $ "wait, get message " ++ show ev
         case SeqEvent.body ev of
             SeqEvent.NoteEv SeqEvent.NoteOn note ->
-                noteInput $ note ^. MidiAlsa.notePitch
+                readIORef recording
+                    >>= flip when (noteInput $ note ^. MidiAlsa.notePitch)
+            SeqEvent.ExtEv SeqEvent.SysEx msg ->
+                {- FIXME: How to cope with the device id? -}
+                case B.unpack msg of
+                    0xF0 : 0x7F : 0x00 : 0x06 : cmds ->
+                        forM_ (ExcA.result $ fst $
+                               MMC.runParser MMC.getCommands cmds) $ \cmd ->
+                            case cmd of
+                                MMC.RecordStrobe -> modifyIORef recording not
+                                _ -> return ()
+                    _ -> return ()
             SeqEvent.CustomEv SeqEvent.Echo _cust ->
                 when (dest == SeqEvent.dest ev) $
                     if' (EchoId (SeqEvent.tag ev) == evaluateId)
