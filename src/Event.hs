@@ -408,6 +408,17 @@ sendEcho (EchoId echoId) dur = do
     return targetTime
 
 
+data Command =
+      NoteInput VM.Pitch
+    | Transportation Transportation
+    deriving (Show)
+
+data Transportation =
+      Play
+    | Stop
+    | Forward
+    deriving (Show)
+
 {-
 We cannot concurrently wait for different kinds of ALSA sequencer events.
 Thus we run one thread that listens to all incoming ALSA sequencer events
@@ -416,7 +427,7 @@ and distributes them to who they might concern.
 listen ::
     (SndSeq.AllowInput mode) =>
     Sequencer mode ->
-    (VM.Pitch -> IO ()) ->
+    (Command -> IO ()) ->
     IO () ->
     Chan.In WaitResult -> IO ()
 listen sq noteInput visualize waitChan = do
@@ -432,7 +443,7 @@ listen sq noteInput visualize waitChan = do
         case SeqEvent.body ev of
             SeqEvent.NoteEv SeqEvent.NoteOn note ->
                 readIORef recording
-                    >>= flip when (noteInput $ note ^. MidiAlsa.notePitch)
+                    >>= flip when (noteInput $ NoteInput $ note ^. MidiAlsa.notePitch)
             SeqEvent.ExtEv SeqEvent.SysEx msg ->
                 {- FIXME: How to cope with the device id? -}
                 case B.unpack msg of
@@ -441,6 +452,9 @@ listen sq noteInput visualize waitChan = do
                                MMC.runParser MMC.getCommands cmds) $ \cmd ->
                             case cmd of
                                 MMC.RecordStrobe -> modifyIORef recording not
+                                MMC.Play -> noteInput $ Transportation Play
+                                MMC.Stop -> noteInput $ Transportation Stop
+                                MMC.FastForward -> noteInput $ Transportation Forward
                                 _ -> return ()
                     _ -> return ()
             SeqEvent.CustomEv SeqEvent.Echo _cust ->

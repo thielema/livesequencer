@@ -183,6 +183,7 @@ main = do
             gui guiIn machineIn (forEvent machineOut)
             void $ forkIO $
                 machine guiOut machineIn
+                    (processMidiCommand guiIn machineIn)
                     (Option.limits opt) (Option.importPaths opt) p sq
             void $ forkIO $
                 HTTPGui.run
@@ -267,6 +268,19 @@ parseTerm (MarkedText pos str) =
             Exc.throwT $ Exception.messageFromParserError msg
         Right t -> return t
 
+
+processMidiCommand ::
+    Chan.In Action -> TChan.In GuiUpdate ->
+    Event.Command -> IO ()
+processMidiCommand machineChan guiChan cmd =
+    case cmd of
+        Event.NoteInput p ->
+            TChan.writeIO guiChan . InsertText . formatPitch $ p
+        Event.Transportation trans ->
+            case trans of
+                Event.Play -> Chan.write machineChan $ Execution Restart
+                Event.Stop -> Chan.write machineChan $ Execution Stop
+                Event.Forward -> Chan.write machineChan $ Execution $ NextStep Event.NextElement
 
 formatPitch :: VM.Pitch -> String
 formatPitch p =
@@ -386,12 +400,13 @@ machine :: Chan.Out Action -- ^ machine reads program text from here
                    -- (module name, module contents)
         -> TChan.In GuiUpdate -- ^ and writes output to here
                    -- (log message (for highlighting), current term)
+        -> (Event.Command -> IO ())
         -> Option.Limits
         -> [FilePath]
         -> Program -- ^ initial program
         -> ALSA.Sequencer SndSeq.DuplexMode
         -> IO ()
-machine input output limits importPaths progInit sq = do
+machine input output procMidi limits importPaths progInit sq = do
     program <- newTVarIO progInit
     term <- newTMVarIO initialState
     (waitIn,waitOut) <- Chan.new
@@ -537,8 +552,7 @@ machine input output limits importPaths progInit sq = do
     (delayedUpdatesIn, delayedUpdatesOut) <- Chan.new
 
     void $ forkIO $
-        Event.listen sq
-            ( TChan.writeIO output . InsertText . formatPitch )
+        Event.listen sq procMidi
             ( STM.atomically . mapM_ (TChan.write output)
                   =<< Chan.read delayedUpdatesOut )
             waitIn
