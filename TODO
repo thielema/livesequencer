@@ -227,18 +227,3 @@
 
 * allow IO or restricted IO monad
     such that the live program can send the messages itself
-
-* single step mode: allow finer steps
-  For finer steps we have to break the recursion and remember the application focus.
-  How to do this?
-  Using a Zipper on the Term?
-  Using a Map Id Node and an Id that points to the focus?
-  Do not represent a focus but extend the Term tree
-    such that each node contains a sequence of reductions.
-    Flattening all sequences should give a sequence of term trees.
-    Since the flattening is lazy,
-    we can decide later what information to present to the user.
-    We could even reverse steps back to the last sent event.
-
-* replace Pattern.index and distributed/Utility.index
-  by operator section on (!!) once this syntax is availabe in the sequencer
