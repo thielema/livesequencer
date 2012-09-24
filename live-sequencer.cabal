@@ -242,7 +242,7 @@ Description:
      and then set @--event-period@ large enough
      to match the power of your machine.
    .
-   8. ALSA
+   8. ALSA *****
    .
    Using the @--new-out-port@ option
    you may add more ALSA MIDI ports.
@@ -260,6 +260,40 @@ Description:
    to any synthesizer once it is running
    using @aconnect@ (command line) or
    @kaconnect@, @alsa-patch-bay@, @patchage@ (graphical interfaces).
+   .
+   The live-sequencer itself can be controlled to some extent.
+   You may start the live-sequencer this way
+   .
+   > live-sequencer --connect-from YourMidiController
+   .
+   or connect to it once it is running.
+   This enables the following functions:
+   .
+   * If you press a key on your MIDI keyboard named YourMidiController,
+     then the according note name is inserted in the current module.
+     However, note durations cannot be preserved
+     and velocities are ignored, as well.
+     Thus don't expect that the live-sequencer captures complex songs,
+     this function is just intended as assistance for note input.
+   .
+   * You can control execution of the live-sequencer
+     using MIDI Machine Control SysEx messages.
+     Some MIDI controller keyboards have transportation buttons
+     that support those messages.
+   .
+   The supported MMC commands are:
+   .
+   * RECORD STROBE:
+     Toggle between receiving and ignoring note input from MIDI keyboard
+   .
+   * PLAY: Restart the interpreter
+   .
+   * STOP: Halt the interpreter and turn sound off
+   .
+   * PAUSE: Toggle between real time and single step mode
+   .
+   * FAST FORWARD: Next element in single step mode
+
 Build-Type: Simple
 
 Data-Files:
