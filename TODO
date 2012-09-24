@@ -1,3 +1,60 @@
+* sharing
+  Support sharing by providing a restricted form of 'let'
+  or by providing a 'lambda' with sharing.
+  Sharing simplifies handling of Wait times in 'merge'
+  and the current state in 'iterate'.
+  Currently we have to use a bunch of complicated strictifying functions
+  that evaluate the state immediately instead of splitting it first
+  and compute the duplicated terms separately later.
+  In the source code 'let' could be written everywhere,
+  but in the current term I think it is easier to have only one global 'let',
+  since we have to update its definitions frequently.
+  On the other hand a global 'let' requires disambiguation of local identifiers,
+  which might then conflict with top-level identifiers.
+  However, even with local 'let's we need identifier disambiguation.
+  Since local identifiers shall not be affected by program updates
+  we could make local identifiers distinct from global ones
+  by prefixing them with '%' or so.
+
+  We also need a kind of garbage collection.
+  If a 'let'-bound identifier is used
+   * zero times, then its definition should be removed,
+   * once, then its call shall be unfolded,
+   * more than once, then everything should remain as it is.
+
+  A typical reduction could start here:
+    let y = f x
+    in  g y (h y)
+  Say, we must match the first argument of 'g',
+  Thus we have to reduce 'y' once,
+  this may result in:
+    let y = Cons z
+        z = ff x
+    in  g (Cons z) (h y)
+  Now 'y' is used only once and
+  this should make the garbage collector rewrite it to
+    let z = ff x
+    in  g (Cons z) (h (Cons z))
+  An interesting question is how often shall we run the garbage collector?
+  After every reduction or after every list element?
+  Additionally at user demand?
+
+* avoid space leaks
+  Add a hard-wired function, say 'simple'.
+  'simple' is reduced at every garbage collection,
+  if its application does not require reductions of its arguments.
+  This would avoid a space leak in:
+    let x = splitAt 2 "abcde"
+    in  fst x ++ simple snd x
+  But it would only work, if the 'snd' in 'splitAt' is 'simple', too.
+  I think in GHC all record accessors are 'simple' in this sense.
+  I think we should just mark such functions as simple.
+
+* reload and parse module if file is modified on disk
+  This way we could also allow editing modules in command-line mode.
+  But also in GUI mode it would simplify the work with external editors.
+  Package 'hinotify' is what we need, but it depends on UNIX.
+
 * under Ubuntu the splitterwindow position is the left-most on startup
   This behavior is not nice, but I do not know how to improve it.
   At least it would be good if moving the sash in one module
