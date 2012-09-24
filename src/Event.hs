@@ -135,7 +135,8 @@ data WaitMode =
     deriving (Eq, Show)
 
 data WaitResult =
-         ModeChange WaitMode | ReachedTime Time | NextStep Continue |
+         ModeChange WaitMode | SwitchMode (WaitMode -> IO ()) |
+         ReachedTime Time | NextStep Continue |
          AlsaSend (MS.StateT State ALSA.Send ())
 
 data Continue =
@@ -314,6 +315,13 @@ wait sq waitChan mdur = do
                          (cont,newTarget) <- runSend sq $ prepare mdur
                          when cont $ loop newTarget
                      else loop target
+               SwitchMode update -> do
+                   oldMode <- AccM.get stateWaitMode
+                   liftIO $ update $
+                       case oldMode of
+                           SingleStep _ -> RealTime
+                           _ -> SingleStep NextElement
+                   loop target
                ReachedTime reached ->
                    {- check for equality only works
                       because we have not set TimeStamping -}
@@ -416,6 +424,7 @@ data Command =
 data Transportation =
       Play
     | Stop
+    | Pause
     | Forward
     deriving (Show)
 
@@ -454,6 +463,7 @@ listen sq noteInput visualize waitChan = do
                                 MMC.RecordStrobe -> modifyIORef recording not
                                 MMC.Play -> noteInput $ Transportation Play
                                 MMC.Stop -> noteInput $ Transportation Stop
+                                MMC.Pause -> noteInput $ Transportation Pause
                                 MMC.FastForward -> noteInput $ Transportation Forward
                                 _ -> return ()
                     _ -> return ()

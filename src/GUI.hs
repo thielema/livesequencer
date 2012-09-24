@@ -198,7 +198,8 @@ data Action =
    | Control Controls.Event
 
 data Execution =
-    Mode Event.WaitMode | Restart | Stop | NextStep Event.Continue |
+    Mode Event.WaitMode | SwitchMode | Restart | Stop |
+    NextStep Event.Continue |
     PlayTerm MarkedText | ApplyTerm MarkedText
 
 data Modification =
@@ -280,6 +281,7 @@ processMidiCommand machineChan guiChan cmd =
             case trans of
                 Event.Play -> Chan.write machineChan $ Execution Restart
                 Event.Stop -> Chan.write machineChan $ Execution Stop
+                Event.Pause -> Chan.write machineChan $ Execution SwitchMode
                 Event.Forward -> Chan.write machineChan $ Execution $ NextStep Event.NextElement
 
 formatPitch :: VM.Pitch -> String
@@ -419,6 +421,12 @@ machine input output procMidi limits importPaths progInit sq = do
                 STM.atomically $ do
                     TChan.write output $ Running mode
                     transaction
+            setMode mode =
+                flip (withMode mode) (return ()) $
+                    case mode of
+                        Event.RealTime     -> ALSA.continueQueue
+                        Event.SlowMotion _ -> ALSA.continueQueue
+                        Event.SingleStep _ -> ALSA.pauseQueue
         case action of
             Control event -> do
                 Log.put $ show event
@@ -431,12 +439,8 @@ machine input output procMidi limits importPaths progInit sq = do
 
             Execution exec ->
                 case exec of
-                    Mode mode ->
-                        flip (withMode mode) (return ()) $
-                            case mode of
-                                Event.RealTime     -> ALSA.continueQueue
-                                Event.SlowMotion _ -> ALSA.continueQueue
-                                Event.SingleStep _ -> ALSA.pauseQueue
+                    Mode mode -> setMode mode
+                    SwitchMode -> Chan.write waitIn $ Event.SwitchMode setMode
                     Restart ->
                         withMode Event.RealTime
                             Event.forwardQuietContinueQueue
