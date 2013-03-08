@@ -11,6 +11,8 @@ import Bool
 import Prelude ( (-), Num, Int, Bool )
 
 
+infixr 5 ++
+
 (++) :: [a] -> [a] -> [a] ;
 (x:xs) ++ ys = x : (xs ++ ys) ;
 [] ++ ys = ys ;
