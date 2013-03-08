@@ -24,6 +24,9 @@ module Midi (
     skipTime,
     compressTime,
 
+    lazyPause,
+    duration,
+
     (+:+),
     merge, (=:=),
     mergeWait,
@@ -59,12 +62,12 @@ This way we assert that a pressed note
 will be released later.
 -}
 note :: Time -> Pitch -> [Event Message] ;
-note duration = applyStrict (noteLazy duration) ;
+note dur = applyStrict (noteLazy dur) ;
 
 noteLazy :: Time -> Pitch -> [Event Message] ;
-noteLazy duration pitch =
+noteLazy dur pitch =
   [ noteOn pitch
-  , Wait duration
+  , Wait dur
   , noteOff pitch
   ] ;
 
@@ -73,8 +76,8 @@ noteOn  pitch = Event (On  pitch normalVelocity) ;
 noteOff pitch = Event (Off pitch normalVelocity) ;
 
 rest :: Time -> [Event a] ;
-rest duration =
-  [ Wait duration ] ;
+rest dur =
+  [ Wait dur ] ;
 
 program :: Program -> [Event Message] ;
 program n =
@@ -89,7 +92,7 @@ channel chan = map ( channelEvent chan ) ;
 
 channelEvent :: Chan -> Event a -> Event (Channel a) ;
 channelEvent chan (Event event) = Event (Channel chan event) ;
-channelEvent _chan (Wait duration) = Wait duration ;
+channelEvent _chan (Wait dur) = Wait dur ;
 channelEvent _chan (Say text) = Say text ;
 
 
@@ -179,13 +182,34 @@ compressTime :: Integer -> Time -> [Event a] -> [Event a] ;
 compressTime k = applyStrict (applyStrict compressTimeAux k) ;
 
 compressTimeAux :: Integer -> Time -> [Event a] -> [Event a] ;
-compressTimeAux _ _ [] = [] ;
+compressTimeAux _k _t [] = [] ;
 compressTimeAux k t ( Wait x : xs ) =
   ifThenElse (t<x)
     ( applyStrict consWait (div t k + (x-t)) xs )
     ( applyStrict consWait (div x k)
          ( applyStrict (compressTimeAux k) (t-x) xs ) ) ;
 compressTimeAux k t ( ev : xs ) = ev : compressTimeAux k t xs ;
+
+
+{- |
+Keep only Wait constructors.
+You can use this as a lazily generated pause
+which is usually more efficient than @(Wait (duration xs))@.
+-}
+lazyPause :: [Event a] -> [Event a] ;
+lazyPause = filter isWait ;
+
+isWait :: Event a -> Bool ;
+isWait (Wait _d) = True ;
+isWait _ = False ;
+
+duration :: [Event a] -> Time ;
+duration = durationAux 0 ;
+
+durationAux :: Time -> [Event a] -> Time ;
+durationAux t ( Wait d : xs ) = applyStrict durationAux (t+d) xs ;
+durationAux t ( _ : xs ) = durationAux t xs ;
+durationAux t [] = t ;
 
 
 consWait :: Time -> [Event a] -> [Event a] ;
