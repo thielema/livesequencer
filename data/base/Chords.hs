@@ -1,30 +1,31 @@
 module Chords where
 
 import Midi
+import Pitch ( Pitch )
 
 
 chord ::
-   Integer -> [Integer] ->
+   Time -> [Pitch] ->
    [Midi.Event Midi.Message] ;
 chord dur =
    mergeMany . map (note dur) ;
 
 
 chord3 ::
-   Integer ->
-   Integer -> Integer -> Integer ->
+   Time ->
+   Pitch -> Pitch -> Pitch ->
    [Midi.Event Midi.Message] ;
 chord3 dur p0 p1 p2 = chord dur [p0, p1, p2] ;
 
 chord4 ::
-   Integer ->
-   Integer -> Integer -> Integer -> Integer ->
+   Time ->
+   Pitch -> Pitch -> Pitch -> Pitch ->
    [Midi.Event Midi.Message] ;
 chord4 dur p0 p1 p2 p3 = chord dur [p0, p1, p2, p3] ;
 
 
 major, major7, minor, minor7 ::
-   Integer -> Integer -> [Midi.Event Midi.Message] ;
+   Time -> Pitch -> [Midi.Event Midi.Message] ;
 
 major dur base =
    chord4 dur base (base + 4) (base + 7) (base + 12) ;
