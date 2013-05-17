@@ -6,7 +6,8 @@ Category:      Sound, Music, GUI
 License:       GPL
 License-file:  LICENSE
 Cabal-Version: >= 1.6
-Tested-With:   GHC==6.12.3, GHC==7.2.1
+Tested-With:   GHC==6.12.3
+Tested-With:   GHC==7.2.1, GHC==7.4.2, GHC==7.6.3
 Homepage:      http://www.haskell.org/haskellwiki/Live-Sequencer
 Bug-Reports:   http://dfa.imn.htwk-leipzig.de/bugzilla/describecomponents.cgi?product=live-sequencer
 Synopsis:      Live coding of MIDI music
@@ -440,7 +441,7 @@ Executable live-sequencer
     containers >=0.3 && <0.6,
     bytestring >=0.9 && <0.11,
     process >=1.0 && <1.2,
-    directory >=1.0 && <1.2,
+    directory >=1.0 && <1.3,
     filepath >=1.1 && <1.4,
     base >=4.2 && <5
 
@@ -467,7 +468,7 @@ Executable live-sequencer-gui
       containers >=0.3 && <0.6,
       bytestring >=0.9 && <0.11,
       process >=1.0 && <1.2,
-      directory >=1.0 && <1.2,
+      directory >=1.0 && <1.3,
       filepath >=1.1 && <1.4,
       base >=4.2 && <5
   Else
@@ -526,7 +527,7 @@ Executable live-mplayer-control
       alsa-seq >=0.6 && <0.7,
       alsa-core >=0.5 && <0.6,
       unix >=2.4 && <2.7,
-      directory >=1.0 && <1.2,
+      directory >=1.0 && <1.3,
       transformers >=0.2.2 && <0.4,
       base >=4.2 && <5
   Else
