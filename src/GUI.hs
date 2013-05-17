@@ -1025,9 +1025,7 @@ gui input output procEvent = do
 
     nb <- WX.notebook splitter [ ]
 
-    reducer <-
-        WX.textCtrl splitter
-            [ font := fontFixed, editable := False, wrap := WrapNone ]
+    reducer <- textCtrlMono splitter [ editable := False ]
 
     status <- WX.statusField
         [ text := "Welcome to interactive music composition with Haskell" ]
@@ -1472,8 +1470,7 @@ newFrameError = do
         ]
     list <- newIORef Seq.empty
 
-    txt <- WX.textCtrl splitter
-        [ font := fontFixed, wrap := WrapNone, editable := False ]
+    txt <- textCtrlMono splitter [ editable := False ]
 
     let rec =
             FrameError {
@@ -1552,9 +1549,8 @@ displayModule ::
 displayModule nb modu = do
     psub <- WX.splitterWindow nb []
     splitterWindowSetSashGravity psub 0.5
-    ed <- WX.textCtrl psub [ font := fontFixed, wrap := WrapNone ]
-    hl <- WX.textCtrlRich psub
-        [ font := fontFixed, wrap := WrapNone, editable := False ]
+    ed <- textCtrlMono psub []
+    hl <- textCtrlRichMono psub [ editable := False ]
     set ed [ text := Module.sourceText modu ]
     set hl [ text := Module.sourceText modu ]
     void $ WXCMZ.splitterWindowSplitVertically psub ed hl 0
@@ -1564,6 +1560,27 @@ displayModule nb modu = do
             WX.vsplit psub 5 0 (WX.fill $ widget ed) (WX.fill $ widget hl) ]
 -}
     return $ Panel psub ed hl $ Module.sourceLocation modu
+
+
+textCtrlMono ::
+    WXCore.Window a -> [Prop (TextCtrl ())] -> IO (TextCtrl ())
+textCtrlMono parent prop =
+{-
+    WX.textCtrlEx parent
+        ( WXCore.wxTE_MULTILINE WXCore..+. WXCore.wxTE_RICH ) $
+-}
+    WX.textCtrl parent $
+        ( font := fontFixed ) : ( wrap := WrapNone ) : prop
+
+textCtrlRichMono ::
+    WXCore.Window a -> [Prop (TextCtrl ())] -> IO (TextCtrl ())
+textCtrlRichMono parent prop =
+{-
+    WX.textCtrlEx parent
+        ( WXCore.wxTE_MULTILINE WXCore..+. WXCore.wxTE_RICH2 ) $
+-}
+    WX.textCtrlRich parent $
+        ( font := fontFixed ) : ( wrap := WrapNone ) : prop
 
 
 getFromNotebook ::
