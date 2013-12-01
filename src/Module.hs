@@ -145,7 +145,7 @@ instance Input Type where
         reserved lexer "type"
         l <- input
         reservedOp lexer "="
-        r <- input
+        r <- Type.parseExpression
         void $ Token.semi lexer
         return $ Type { typeLhs = l, typeRhs = r }
 
