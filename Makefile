@@ -14,6 +14,25 @@ testbuild:
 	runhaskell Setup haddock
 
 
+TESTDIR = liveseqtest
+
+testgit-first:
+	(export LIVE=$$PWD && cd /tmp/ && git clone $$LIVE $(TESTDIR) && cd $(TESTDIR) && \
+	 cabal configure --disable-shared --disable-library-profiling)
+	make testgit-run
+
+testgit-again:
+	(export LIVE=$$PWD && cd /tmp/$(TESTDIR)/ && git pull $$LIVE)
+	make testgit-run
+
+testgit-run:
+	(export LIVE=$$PWD && cd /tmp/$(TESTDIR)/ && cabal build && cabal haddock)
+
+testgit-revert:
+	(cd /tmp/$(TESTDIR)/ && git reset HEAD^ && git checkout -f)
+
+
+
 # targets for screencasts
 
 SIZE = 1280x720
