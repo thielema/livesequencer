@@ -20,6 +20,7 @@ import qualified System.Exit as Exit
 
 import Control.Monad ( when )
 
+import qualified Data.NonEmpty.Class as NEClass
 import qualified Data.NonEmpty as NEList
 import Data.Traversable ( forM )
 import Data.Bool.HT ( if' )
@@ -141,7 +142,7 @@ description deflt =
     Opt.Option [] ["new-out-port"]
         (flip ReqArg "PORTNAME" $ \str flags ->
             return $ flags{connect =
-                NEList.cons (Port str Nothing (Just [])) $
+                NEClass.cons (Port str Nothing (Just [])) $
                 connect flags})
         ("create new ALSA output port and add 16 MIDI channels") :
     Opt.Option [] ["sequencer-name"]
