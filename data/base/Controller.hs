@@ -1,4 +1,4 @@
-module Controls where
+module Controller where
 {-
 Do not alter this module!
 The live-sequencer relies on the module content as it is.

@@ -83,12 +83,12 @@ Description:
    hence, we don't have local bindings.
    .
    You may import and use
-   the special functions 'Controls.checkBox', 'Controls.slider'
-   from the "Controls" module.
+   the special functions 'Controller.checkBox', 'Controller.slider'
+   from the "Controller" module.
    For every call to these functions a widget is added to the control window
    and the state of the widget is the result of the function call.
    Technically every change of these widgets
-   internally adds or updates a rule in the "Controls" module.
+   internally adds or updates a rule in the "Controller" module.
    The effect is very similar to updating a value definition in a module
    and then reloading that module to the interpreter,
    but using the widgets is more intuitive.
@@ -314,7 +314,7 @@ Data-Files:
 
   data/base/Bool.hs
   data/base/Chords.hs
-  data/base/Controls.hs
+  data/base/Controller.hs
   data/base/Drum.hs
   data/base/Enum.hs
   data/base/Function.hs
@@ -373,7 +373,7 @@ Library
     Render
     Bool
     Chords
-    Controls
+    Controller
     Drum
     Enum
     Function
@@ -484,8 +484,8 @@ Executable live-sequencer-gui
     Module
     Option
     Option.Utility
-    Controls
-    ControlsBase
+    Controller
+    ControllerBase
     Program
     Rewrite
     Rule

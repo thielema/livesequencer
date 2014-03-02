@@ -3,7 +3,7 @@ module Module where
 import IO ( Input, Output, input, output )
 import Term ( Term, Identifier, lexer )
 import Rule ( Rule )
-import qualified ControlsBase as Controls
+import qualified ControllerBase as Controller
 import qualified Type
 import qualified Term
 import qualified Rule
@@ -252,7 +252,7 @@ data Module =
         , declarations :: [ Declaration ]
         , functions :: FunctionDeclarations
         , constructors :: ConstructorDeclarations
-        , controls :: Controls.Assignments
+        , controls :: Controller.Assignments
         , sourceText :: String
         , sourceLocation :: FilePath
         }
@@ -355,12 +355,12 @@ makeConstructors decls = S.fromList $ do
     Term.Node ident _ <- summands
     return ident
 
-makeControls ::
+makeControllers ::
     [Declaration] ->
-    Exc.Exceptional Exception.Message Controls.Assignments
-makeControls decls =
+    Exc.Exceptional Exception.Message Controller.Assignments
+makeControllers decls =
     flip (foldr
-        (\r go a -> Controls.collect r >>= Controls.union a >>= go)
+        (\r go a -> Controller.collect r >>= Controller.union a >>= go)
         return) M.empty $ do
     Module.RuleDeclaration rule <- decls
     return $ Rule.rhs rule
@@ -388,7 +388,7 @@ parser srcLoc srcText = do
     is <- Parsec.many input
     ds <- Parsec.many input
     return $ do
-        ctrls <- makeControls ds
+        ctrls <- makeControllers ds
         return $ Module {
             name = m, imports = is, declarations = ds,
             functions = makeFunctions ds,

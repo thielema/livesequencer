@@ -45,7 +45,7 @@ import qualified Time
 import qualified Program
 import qualified Exception
 import qualified Module
-import qualified Controls
+import qualified Controller
 import qualified Rewrite
 import qualified Option
 import qualified Log
@@ -195,7 +195,7 @@ main = do
 data Action =
      Execution Execution
    | Modification Modification
-   | Control Controls.Event
+   | Control Controller.Event
 
 data Execution =
     Mode Event.WaitMode | SwitchMode | Restart | Stop |
@@ -222,7 +222,7 @@ data GuiUpdate =
    | InsertPage { _activate :: Bool, _module :: Module.Module }
    | DeletePage Module.Name
    | RenamePage Module.Name Module.Name
-   | RebuildControls Controls.Assignments
+   | RebuildControllers Controller.Assignments
    | InsertText { _insertedText :: String }
    | StatusLine { _statusLine :: String }
    | HTTP HTTPGui.GuiUpdate
@@ -377,18 +377,18 @@ modifyModule importPaths program output moduleName sourceCode pos = do
                 M.difference ( Program.modules p2 ) ( Program.modules p1 )
             -- Refresh must happen after a Rename
             MW.tell [ Refresh (Module.name m) sourceCode pos,
-                      RebuildControls $ Program.controls p2 ]
+                      RebuildControllers $ Program.controls p2 ]
             return p2
 
 registerProgram :: TChan.In GuiUpdate -> Module.Name -> Program -> STM ()
 registerProgram output mainModName p = do
     TChan.write output $ Register mainModName $ Program.modules p
-    TChan.write output $ RebuildControls $ Program.controls p
+    TChan.write output $ RebuildControllers $ Program.controls p
 
 updateProgram :: TVar Program -> TChan.In GuiUpdate -> Program -> STM ()
 updateProgram program output p = do
     liftSTM $ writeTVar program p
-    liftSTM $ TChan.write output $ RebuildControls $ Program.controls p
+    liftSTM $ TChan.write output $ RebuildControllers $ Program.controls p
 
 
 {-
@@ -432,9 +432,9 @@ machine input output procMidi limits importPaths progInit sq = do
                 Log.put $ show event
                 STM.atomically $ exceptionToGUI output $ do
                     p <- lift $ readTVar program
-                    p' <- Exception.lift $ Controls.changeControllerModule p event
+                    p' <- Exception.lift $ Controller.changeControllerModule p event
                     lift $ writeTVar program p'
-                    -- return $ Controls.getControllerModule p'
+                    -- return $ Controller.getControllerModule p'
                 -- Log.put $ show m
 
             Execution exec ->
@@ -1413,8 +1413,8 @@ gui input output procEvent = do
                 set status [ text := "renamed " ++ Module.tellName fromName ++
                                      " to " ++ Module.tellName toName ]
 
-            RebuildControls ctrls ->
-                Controls.create frameControls ctrls $
+            RebuildControllers ctrls ->
+                Controller.create frameControls ctrls $
                     Chan.write input . Control
 
             Running mode -> do

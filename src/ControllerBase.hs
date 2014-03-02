@@ -1,8 +1,8 @@
 {-
-This is a part of the Controls module
+This is a part of the Controller module
 that is separated in order to prevent an import cycle.
 -}
-module ControlsBase where
+module ControllerBase where
 
 import qualified Exception
 import qualified Term

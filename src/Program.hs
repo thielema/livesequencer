@@ -6,7 +6,7 @@ import qualified Term
 import qualified Module
 import qualified Log
 import qualified Exception
-import qualified ControlsBase as Controls
+import qualified ControllerBase as Controller
 
 import qualified Control.Monad.Exception.Synchronous as Exc
 import Control.Monad.Trans.Class ( lift )
@@ -30,8 +30,8 @@ data Program =
         { modules :: M.Map Module.Name Module
         , functions :: Module.FunctionDeclarations
         , constructors :: Module.ConstructorDeclarations
-        , controls :: Controls.Assignments
-        , controlValues :: Controls.Values
+        , controls :: Controller.Assignments
+        , controlValues :: Controller.Values
         }
 --    deriving (Show)
 
@@ -42,7 +42,7 @@ empty =
         functions = M.empty,
         constructors = S.empty,
         controls = M.empty,
-        controlValues = Controls.emptyValues
+        controlValues = Controller.emptyValues
     }
 
 singleton :: Module -> Program
@@ -52,7 +52,7 @@ singleton m =
         functions = Module.functions m,
         constructors = Module.constructors m,
         controls = Module.controls m,
-        controlValues = Controls.emptyValues
+        controlValues = Controller.emptyValues
     }
 
 {- |
@@ -72,8 +72,8 @@ addModule m p =
           unionDecls
               ( mapFromSet $ Module.constructors m )
               ( mapFromSet $ constructors p ) )
-        ( Controls.union
-              ( Controls.updateValues
+        ( Controller.union
+              ( Controller.updateValues
                     ( controlValues p ) ( Module.controls m ) )
               ( controls p ) )
         ( return $ controlValues p )

@@ -1,6 +1,6 @@
 module BandControlled where
 
-import Controls
+import Controller
 import Drum
 import Chords
 import Pitch

@@ -1,17 +1,17 @@
--- |  controls are widgets that are:
+-- |  controllers are widgets that are:
 -- * specified in the program text,
 -- * displayed in the GUI,
 -- * read while executing the program.
 
-module Controls (
-    module Controls,
-    module ControlsBase,
+module Controller (
+    module Controller,
+    module ControllerBase,
     ) where
 
-import ControlsBase
+import ControllerBase
           ( Name, deconsName, Assignments,
             Value (Bool, Number), Values (boolValues, numberValues) )
-import qualified ControlsBase as C
+import qualified ControllerBase as C
 import qualified Program
 import qualified Module
 import qualified Rule
@@ -42,7 +42,7 @@ data Event = Event Name Value
 
 
 moduleName :: Module.Name
-moduleName = Module.Name "Controls"
+moduleName = Module.Name "Controller"
 
 defltIdent :: Term.Term
 defltIdent = read "deflt"
