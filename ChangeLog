@@ -1,0 +1,6 @@
+0.0.5:
+
+* uniform singular names for modules
+
+  data/Controls -> data/Controller
+  data/Chords -> data/Chord

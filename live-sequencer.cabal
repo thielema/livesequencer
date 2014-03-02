@@ -333,6 +333,7 @@ Data-Files:
   data/prelude/Prelude.hs
 
 Extra-Source-Files:
+  ChangeLog
   http/enable/HTTPServer.hs
   http/enable/HTTPServer/GUI.hs
   http/enable/HTTPServer/Option.hs
