@@ -1,7 +1,7 @@
 module UD where
 
 import Drum
-import Chords
+import Chord
 import Pitch
 import Midi
 import List

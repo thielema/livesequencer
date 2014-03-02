@@ -313,7 +313,7 @@ Data-Files:
   data/example/Pattern.hs
 
   data/base/Bool.hs
-  data/base/Chords.hs
+  data/base/Chord.hs
   data/base/Controller.hs
   data/base/Drum.hs
   data/base/Enum.hs
@@ -372,7 +372,7 @@ Library
   Exposed-Modules:
     Render
     Bool
-    Chords
+    Chord
     Controller
     Drum
     Enum

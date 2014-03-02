@@ -1,4 +1,4 @@
-module Chords where
+module Chord where
 
 import Midi
 import Pitch ( Pitch )
