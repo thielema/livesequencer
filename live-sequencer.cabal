@@ -324,6 +324,7 @@ Data-Files:
   data/base/ListLive.hs
   data/base/List/Basic.hs
   data/base/List/Advanced.hs
+  data/base/Maybe.hs
   data/base/Midi.hs
   data/base/Music.hs
   data/base/Pitch.hs
@@ -381,6 +382,7 @@ Library
     Instrument
     Integer
     ListLive
+    Maybe
     Midi
     Music
     Pitch
