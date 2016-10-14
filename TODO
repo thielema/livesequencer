@@ -1,3 +1,15 @@
+* Problem:
+  Wenn man zu große Notenlängen verwendet (bsp. 1000000ms),
+  dann kann man Interpreter nicht mehr neu starten.
+
+* Fehler:
+  Wenn Dateiname von Modulname abweicht, werden Symbole nicht hervorgehoben.
+
+* Beispiel:
+  Musik mit Markov-Ketten oder Markov-Modellen
+  Markov-Ketten: lege Listen an, welche Noten nach welchen anderen kommen können
+  Markov-Modelle: benutze Akkord als Zustand und passende Noten als Ausgabe
+
 * sharing
   Support sharing by providing a restricted form of 'let'
   or by providing a 'lambda' with sharing.
