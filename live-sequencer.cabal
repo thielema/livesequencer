@@ -59,6 +59,7 @@ Data-Files:
 
 Extra-Source-Files:
   ChangeLog
+  README.md
   http/enable/HTTPServer.hs
   http/enable/HTTPServer/GUI.hs
   http/enable/HTTPServer/Option.hs
