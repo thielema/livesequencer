@@ -73,7 +73,7 @@ Source-Repository head
 Source-Repository this
   Type: git
   Tag: 0.0.5.1
-  Location: http://code.haskell.org/~thielema/livesequencer/
+  Location: https://github.com/thielema/livesequencer
 
 Flag gui
   Description: Build the wxWidgets GUI for the sequencer
