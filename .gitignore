@@ -1,0 +1,15 @@
+dist
+*.diff
+attic
+devil
+data/test
+doc/*.aux
+doc/*.bbl
+doc/*.blg
+doc/*.pdf
+doc/*.log
+*.flv
+*.s16
+*.wav
+*.mid
+*.tar.gz
