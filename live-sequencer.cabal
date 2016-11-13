@@ -165,12 +165,12 @@ Executable live-sequencer
     data-accessor >=0.2.1 && <0.3,
     strict >=0.3.2 && <0.4,
     utility-ht >=0.0.8 && <0.1,
-    non-empty >=0.2 && <0.3,
+    non-empty >=0.2 && <0.4,
     containers >=0.3 && <0.6,
     bytestring >=0.9 && <0.11,
-    process >=1.0 && <1.2,
+    process >=1.0 && <1.5,
     directory >=1.0 && <1.3,
-    filepath >=1.1 && <1.4,
+    filepath >=1.1 && <1.5,
     base >=4.2 && <5
 
 Executable live-sequencer-gui
@@ -178,7 +178,7 @@ Executable live-sequencer-gui
     Build-Depends:
       wx >=0.12.1 && <0.14,
       wxcore >=0.12.1 && <0.14,
-      stm >=2.2 && <2.4,
+      stm >=2.2 && <2.5,
       concurrent-split >=0.0 && <0.1,
       transformers >=0.2.2 && <0.6,
       explicit-exception >=0.1.5 && <0.2,
@@ -191,13 +191,13 @@ Executable live-sequencer-gui
       data-accessor-transformers >=0.2.1 && <0.3,
       data-accessor >=0.2.1 && <0.3,
       strict >=0.3.2 && <0.4,
-      non-empty >=0.2 && <0.3,
+      non-empty >=0.2 && <0.4,
       utility-ht >=0.0.8 && <0.1,
       containers >=0.3 && <0.6,
       bytestring >=0.9 && <0.11,
-      process >=1.0 && <1.2,
+      process >=1.0 && <1.5,
       directory >=1.0 && <1.3,
-      filepath >=1.1 && <1.4,
+      filepath >=1.1 && <1.5,
       base >=4.2 && <5
   Else
     Buildable: False
@@ -237,8 +237,9 @@ Executable live-sequencer-gui
       HTTPServer
     Build-Depends:
       httpd-shed >=0.4 && <0.5,
-      network >=2.3 && <2.4,
-      cgi >=3001.1 && <3001.2,
+      network >=2.6 && <2.7,
+      network-uri >= 2.6 && <2.7,
+      cgi >=3001.1 && <3001.4,
       html >=1.0 && <1.1
   Else
     Hs-Source-Dirs: http/disable
@@ -254,7 +255,7 @@ Executable live-mplayer-control
       midi >=0.2 && <0.3,
       alsa-seq >=0.6 && <0.7,
       alsa-core >=0.5 && <0.6,
-      unix >=2.4 && <2.7,
+      unix >=2.4 && <2.8,
       directory >=1.0 && <1.3,
       transformers >=0.2.2 && <0.6,
       base >=4.2 && <5
