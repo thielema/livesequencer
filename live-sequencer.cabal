@@ -1,7 +1,7 @@
 Name:          live-sequencer
 Version:       0.0.5.2
 Author:        Henning Thielemann and Johannes Waldmann
-Maintainer:    Johannes Waldmann <waldmann@imn.htwk-leipzig.de>, Henning Thielemann <haskell@henning-thielemann.de>
+Maintainer:    Henning Thielemann <haskell@henning-thielemann.de>, Johannes Waldmann <waldmann@imn.htwk-leipzig.de>
 Category:      Sound, Music, GUI
 License:       GPL
 License-file:  LICENSE
