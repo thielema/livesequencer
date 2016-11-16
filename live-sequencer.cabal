@@ -1,5 +1,5 @@
 Name:          live-sequencer
-Version:       0.0.5.1
+Version:       0.0.5.2
 Author:        Henning Thielemann and Johannes Waldmann
 Maintainer:    Johannes Waldmann <waldmann@imn.htwk-leipzig.de>, Henning Thielemann <haskell@henning-thielemann.de>
 Category:      Sound, Music, GUI
@@ -72,7 +72,7 @@ Source-Repository head
 
 Source-Repository this
   Type: git
-  Tag: 0.0.5.1
+  Tag: 0.0.5.2
   Location: https://github.com/thielema/livesequencer
 
 Flag gui
